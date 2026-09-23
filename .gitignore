@@ -1,0 +1,22 @@
+# 파이썬
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 가상환경 (경로가 하드코딩되어 있음)
+venv/
+.venv/
+
+# IDE 설정 (로컬 인터프리터 경로가 들어감)
+.idea/
+.vscode/
+
+# 빌드 산출물
+build/
+dist/
+frontend/dist/
+frontend/node_modules/
+
+# 개인 파일
+CLAUDE.md
+메이플 MVP 결제실적 계산 스크립트.txt
