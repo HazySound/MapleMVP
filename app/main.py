@@ -71,6 +71,7 @@ def main() -> None:
 
     def remember_geometry():
         if not api._maximized:
+            settings = cache.load(paths.SETTINGS)   # 그 사이 다른 값이 저장됐을 수 있다
             settings["window"] = {"width": win.width + offset[0], "height": win.height + offset[1],
                                   "x": win.x, "y": win.y}
             cache.save(paths.SETTINGS, settings)

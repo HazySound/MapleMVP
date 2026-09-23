@@ -63,7 +63,7 @@ export async function boot() {
   const s = await py.get_state()
   if (s.status === 'empty') app.overlay = 'first-sync'
   else handle(s)
-  refresh()
+  if (s.status !== 'needs_login') refresh()   // 로그인부터 해야 하면 수집은 로그인한 뒤에
 }
 
 export async function refresh() {

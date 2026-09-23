@@ -198,6 +198,9 @@ class Api:
         self._maximized = False
         self._main_hwnd = 0
         self._resizing = False
+        # 로그인한 적이 있는지. 기록이 없으면(예전 버전에서 넘어왔으면) 로그인 창 저장소로 판단한다
+        seen = cache.load(paths.SETTINGS).get("loggedIn")
+        self._fresh = not demo_mode and not (any(paths.WEBVIEW.glob("*")) if seen is None else seen)
 
     def _attach(self, window) -> None:
         self._main = window
@@ -221,6 +224,9 @@ class Api:
     def get_state(self) -> dict:
         """캐시된 결과를 바로 돌려준다. 캐시가 없으면 status='empty'."""
         if not self._demo and not self._cache.get("months"):
+            if self._fresh:   # 로그인한 적이 없으면 수집을 시도해 볼 것도 없이 로그인부터 안내한다
+                self._remember_login(False)
+                return {"status": "needs_login", "demo": False}
             return {"status": "empty", "demo": False}
         return self._build("cached")
 
@@ -231,6 +237,7 @@ class Api:
             try:
                 self._sync()
             except NeedsLogin:
+                self._remember_login(False)   # 다음에 열 때는 바로 로그인부터 안내한다
                 if self._cache.get("months"):
                     return self._build("needs_login")
                 return {"status": "needs_login", "demo": False}
@@ -418,7 +425,13 @@ class Api:
         return self._build("ok")
 
     def _logged_in(self) -> None:
+        self._remember_login(True)
         self._push("onLoggedIn", {})
+
+    def _remember_login(self, ok: bool) -> None:
+        settings = cache.load(paths.SETTINGS)
+        settings["loggedIn"] = ok
+        cache.save(paths.SETTINGS, settings)
 
     def _shutdown(self) -> None:
         if self._scraper:
