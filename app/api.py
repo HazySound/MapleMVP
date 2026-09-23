@@ -377,7 +377,7 @@ class Api:
 
     # ---- 내부 ----
     def _fetch_month(self, y: int, m: int, label: str, done: int, total: int) -> list[dict]:
-        self._push("onProgress", {"label": label, "done": done, "total": total})
+        self._push("onProgress", {"label": label, "done": done, "total": total, "count": len(self._rows())})
         rows = self._scraper.fetch_month(y, m)
         self._cache["months"][f"{y:04d}-{m:02d}"] = {"rows": rows, "fetchedAt": datetime.now(KST).isoformat()}
         return rows
@@ -405,6 +405,7 @@ class Api:
         while (y, m) > floor and empty_streak < ARCHIVE_EMPTY_STOP:
             y, m = (y - 1, 12) if m == 1 else (y, m - 1)
             rows = self._fetch_month(y, m, f"지난 내역 보관 · {y}년 {m}월", 0, 0)
+            cache.save(paths.CACHE, self._cache)  # 중간에 닫아도 다음에 이어받게
             empty_streak = empty_streak + 1 if not rows else 0
         self._cache["archiveDone"] = True
         cache.save(paths.CACHE, self._cache)

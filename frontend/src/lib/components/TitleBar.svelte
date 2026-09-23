@@ -11,7 +11,7 @@
   const status = $derived.by(() => {
     if (app.syncing) {
       const p = app.progress
-      return p ? `불러오는 중 · ${p.label}` : '불러오는 중'
+      return p ? `불러오는 중 · ${p.label}${p.count ? ` · ${p.count}건` : ''}` : '불러오는 중'
     }
     if (!app.data?.syncedAt) return '아직 동기화 전'
     const min = Math.floor((now - new Date(app.data.syncedAt).getTime()) / 60000)

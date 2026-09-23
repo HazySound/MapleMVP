@@ -4,6 +4,14 @@
   import { REDUCED } from '../format'
 
   const pct = $derived(app.progress && app.progress.total ? (app.progress.done / app.progress.total) * 100 : 6)
+  // 과거 내역은 어디까지 있는지 미리 알 수 없어서 전체 개수 대신 받은 건수를 보여준다
+  const busy = $derived(!app.progress?.total)
+  const detail = $derived.by(() => {
+    const p = app.progress
+    if (!p) return '넥슨 페이지 여는 중'
+    const got = p.count ? ` · ${p.count}건 받음` : ''
+    return p.total ? `${p.label} · ${p.done}/${p.total}${got}` : `${p.label}${got}`
+  })
 
   function pop(node: HTMLElement) {
     if (!REDUCED) gsap.from(node, { y: 20, scale: 0.97, opacity: 0, duration: 0.5, ease: 'back.out(1.6)' })
@@ -33,8 +41,8 @@
         </div>
         <h2>구매내역 불러오는 중</h2>
         <p>처음에는 이월 계산을 위해 최근 1년 치를 읽어서 조금 걸려요. 다음부터는 이번 달만 새로 읽어요.</p>
-        <div class="prog"><i style="width:{pct}%"></i></div>
-        <div class="fine mono">{app.progress ? `${app.progress.label} · ${app.progress.done}/${app.progress.total}` : '넥슨 페이지 여는 중'}</div>
+        <div class="prog" class:busy><i style={busy ? '' : `width:${pct}%`}></i></div>
+        <div class="fine mono">{detail}</div>
       {:else if app.overlay === 'first-error'}
         <div class="ic warn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
@@ -79,6 +87,8 @@
   .fine { font-size: 12px; color: var(--color-tx3); margin-top: 12px; }
   .prog { height: 8px; border-radius: 99px; background: var(--color-bg2); border: 1px solid var(--color-line); overflow: hidden; }
   .prog i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--color-lav), var(--color-mint)); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+  .prog.busy i { width: 34%; animation: slide 1.5s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -34%; } 100% { margin-left: 100%; } }
   .toast {
     position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 25;
     display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 18px; border-radius: 14px;

@@ -38,7 +38,7 @@ export interface State {
 /** 데이터가 하나도 없을 때의 응답 */
 export interface Bare { status: 'empty' | 'needs_login' | 'error'; message?: string; demo: boolean }
 
-export interface Progress { label: string; done: number; total: number }
+export interface Progress { label: string; done: number; total: number; count?: number }
 
 export interface ExportResult { path?: string; name?: string; count?: number; canceled?: boolean; error?: string }
 
