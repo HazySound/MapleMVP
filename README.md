@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/HazySound/MapleMVP/releases/latest/download/MapleMVP.zip"><img src="https://img.shields.io/badge/Windows%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-MapleMVP.zip-b8a8ff?style=for-the-badge&logo=windows&logoColor=1b1c21&labelColor=2a2b33" alt="Windows 다운로드"></a>
-  <a href="https://github.com/HazySound/MapleMVP/releases"><img src="https://img.shields.io/github/v/release/HazySound/MapleMVP?style=for-the-badge&color=95e2c4&labelColor=2a2b33&label=release" alt="최신 릴리스"></a>
+  <img src="https://img.shields.io/github/v/release/HazySound/MapleMVP?style=flat-square&color=2a2b33&labelColor=2a2b33&label=latest" alt="최신 릴리스 버전">
 </p>
 
 <p align="center">
