@@ -12,6 +12,7 @@ export interface PyApi {
   history(page: number, size: number, q: string, start: string, end: string, sort: string, desc: boolean): Promise<HistoryPage>
   export_history(q: string, start: string, end: string, sort: string, desc: boolean): Promise<ExportResult>
   open_login(): Promise<void>
+  hide_login(): Promise<void>
   minimize(): Promise<void>
   toggle_maximize(): Promise<void>
   close(): Promise<void>

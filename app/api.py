@@ -201,6 +201,7 @@ class Api:
         # 로그인한 적이 있는지. 기록이 없으면(예전 버전에서 넘어왔으면) 로그인 창 저장소로 판단한다
         seen = cache.load(paths.SETTINGS).get("loggedIn")
         self._fresh = not demo_mode and not (any(paths.WEBVIEW.glob("*")) if seen is None else seen)
+        self._logged_out = self._fresh
 
     def _attach(self, window) -> None:
         self._main = window
@@ -214,7 +215,7 @@ class Api:
         self._base = Base(self._rows(), datetime.now(KST))
         synced = self._cache.get("syncedAt") if not self._demo else datetime.now(KST).isoformat()
         return {"status": status, "message": message, "syncedAt": synced, "demo": self._demo,
-                **self._base.state()}
+                "loggedOut": self._logged_out, **self._base.state()}
 
     def _push(self, fn: str, payload) -> None:
         if self._main:
@@ -245,7 +246,12 @@ class Api:
                 if self._cache.get("months"):
                     return self._build("error", str(e))
                 return {"status": "error", "message": str(e), "demo": False}
+            self._remember_login(True)
             return self._build("ok")
+
+    def hide_login(self) -> None:
+        if self._scraper:
+            self._scraper.park()
 
     def simulate(self, extra) -> dict:
         return self._base.simulate(max(0, int(extra))) if self._base else {}
@@ -429,6 +435,7 @@ class Api:
         self._push("onLoggedIn", {})
 
     def _remember_login(self, ok: bool) -> None:
+        self._logged_out = not ok
         settings = cache.load(paths.SETTINGS)
         settings["loggedIn"] = ok
         cache.save(paths.SETTINGS, settings)

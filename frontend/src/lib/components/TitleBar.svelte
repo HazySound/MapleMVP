@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { app, refresh, win } from '../store.svelte'
+  import { app, refresh, showLogin, win } from '../store.svelte'
 
   let now = $state(Date.now())
   onMount(() => {
@@ -13,6 +13,7 @@
       const p = app.progress
       return p ? `불러오는 중 · ${p.label}${p.count ? ` · ${p.count}건` : ''}` : '불러오는 중'
     }
+    if (app.loggedOut) return '로그아웃됨'
     if (!app.data?.syncedAt) return '아직 동기화 전'
     const min = Math.floor((now - new Date(app.data.syncedAt).getTime()) / 60000)
     return min < 1 ? '방금 동기화됨' : min < 60 ? `${min}분 전 동기화` : `${Math.floor(min / 60)}시간 전 동기화`
@@ -38,8 +39,14 @@
   <div class="pywebview-drag-region drag"></div>
 
   <div class="sync">
-    <span class="dot" class:busy={app.syncing} class:err={!!app.error}></span>
-    <span class="txt">{app.error ? '동기화 실패 · 이전 결과 표시 중' : status}</span>
+    {#if app.loggedOut && !app.syncing}
+      <button class="stat" onclick={showLogin} title="넥슨에 다시 로그인">
+        <span class="dot out"></span><span class="txt">로그아웃됨 · 다시 로그인</span>
+      </button>
+    {:else}
+      <span class="dot" class:busy={app.syncing} class:err={!!app.error}></span>
+      <span class="txt">{app.error ? '동기화 실패 · 이전 결과 표시 중' : status}</span>
+    {/if}
     <button class="ib" class:spinning={app.syncing} onclick={refresh} disabled={app.syncing} aria-label="새로고침" title="새로고침 (F5)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
@@ -80,6 +87,15 @@
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-mint); animation: ping 2.4s infinite; }
   .dot.busy { background: var(--color-lav); }
   .dot.err { background: var(--color-peach); animation: none; }
+  .dot.out { background: var(--color-bad); animation: none; }
+  .stat {
+    appearance: none; cursor: pointer; font: inherit; font-size: 12px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 10px 4px 8px; border-radius: 8px;
+    border: 1px solid color-mix(in oklab, var(--color-bad) 40%, var(--color-line));
+    background: color-mix(in oklab, var(--color-bad) 12%, transparent); color: var(--color-bad);
+  }
+  .stat:hover { background: color-mix(in oklab, var(--color-bad) 20%, transparent); }
   @keyframes ping {
     0% { box-shadow: 0 0 0 0 rgba(149, 226, 196, .6); }
     70%, 100% { box-shadow: 0 0 0 7px transparent; }

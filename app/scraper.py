@@ -115,15 +115,18 @@ class Scraper:
         self._window.hide()
         self._on_logged_in()
 
-    def _on_closing(self):
-        if self._quitting:
-            return True
-        # 사용자가 로그인 창을 닫아도 세션 유지를 위해 창은 숨기기만 한다
+    def park(self) -> None:
+        """로그인 창을 숨기고 원래 페이지로 돌려놓는다 (세션 유지를 위해 창을 없애지는 않는다)."""
         self._login_mode = False
 
-        def park():
+        def run():
             self._window.hide()
             self._window.load_url(HOME)
 
-        threading.Thread(target=park, daemon=True).start()
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_closing(self):
+        if self._quitting:
+            return True
+        self.park()
         return False

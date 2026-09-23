@@ -17,6 +17,7 @@ export const app = $state({
   syncing: false,
   progress: null as Progress | null,
   loginOpened: false,
+  loggedOut: false,   // 넥슨 로그인이 풀린 상태
   error: null as string | null, // 데이터는 있는데 동기화에 실패했을 때
   showHistory: false,
   medal: false,   // MVP 등급 카드 가운데: false=합계, true=메달
@@ -41,9 +42,10 @@ function apply(s: State, initial: boolean) {
 
 function handle(s: State | Bare) {
   const first = !app.data
-  if (hasData(s)) apply(s, first)
+  if (hasData(s)) { apply(s, first); app.loggedOut = s.loggedOut }
   app.error = null
   if (s.status === 'needs_login') {
+    app.loggedOut = true
     app.overlay = 'login'
   } else if (s.status === 'error') {
     if (hasData(s)) { app.error = s.message; app.overlay = null }
@@ -104,6 +106,17 @@ export function toggleMedal() {
 export function openLogin() {
   app.loginOpened = true
   py.open_login()
+}
+
+/** 로그인 안내를 닫는다. 받아둔 내역만으로 계속 볼 수 있다 */
+export function dismissLogin() {
+  app.loginOpened = false
+  app.overlay = null
+  py.hide_login()
+}
+
+export function showLogin() {
+  app.overlay = 'login'
 }
 
 export const win = {

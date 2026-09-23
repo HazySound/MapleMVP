@@ -9,7 +9,7 @@
 </script>
 
 <article class="card" use:spotlight>
-  <h3 class="card-title">등급 사다리 <span class="sub">최근 13주 합계{d.carry ? ' + 이월' : ''} 기준</span></h3>
+  <h3 class="card-title">등급별 달성 현황 <span class="sub">최근 13주 합계{d.carry ? ' + 이월' : ''} 기준</span></h3>
   <div class="ladder">
     {#each [...d.tiers].reverse() as t (t.key)}
       {@const ok = v >= t.th}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import gsap from 'gsap'
-  import { app, openLogin, refresh } from '../store.svelte'
+  import { app, dismissLogin, openLogin, refresh } from '../store.svelte'
   import { REDUCED } from '../format'
 
   const pct = $derived(app.progress && app.progress.total ? (app.progress.done / app.progress.total) * 100 : 6)
@@ -35,6 +35,9 @@
           <button class="btn primary" onclick={openLogin}>넥슨 로그인 창 열기</button>
         {/if}
         <div class="fine">로그인 창은 넥슨 공식 로그인 페이지예요.</div>
+        {#if app.data}
+          <button class="link" onclick={dismissLogin}>나중에 하기 · 저장된 내역 보기</button>
+        {/if}
       {:else if app.overlay === 'first-sync'}
         <div class="ic spin">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
@@ -85,6 +88,12 @@
   h2 { font-family: var(--font-display); font-weight: 400; font-size: 21px; margin: 14px 0 6px; }
   p { color: var(--color-tx2); margin: 0 0 18px; font-size: 13.5px; line-height: 1.6; }
   .fine { font-size: 12px; color: var(--color-tx3); margin-top: 12px; }
+  .link {
+    appearance: none; border: 0; background: none; cursor: pointer;
+    font: inherit; font-size: 12.5px; color: var(--color-tx3);
+    margin-top: 10px; padding: 4px; text-decoration: underline; text-underline-offset: 3px;
+  }
+  .link:hover { color: var(--color-tx2); }
   .prog { height: 8px; border-radius: 99px; background: var(--color-bg2); border: 1px solid var(--color-line); overflow: hidden; }
   .prog i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--color-lav), var(--color-mint)); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
   .prog.busy i { width: 34%; animation: slide 1.5s ease-in-out infinite; }

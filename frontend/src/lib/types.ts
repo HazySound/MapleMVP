@@ -19,6 +19,7 @@ export interface Sim {
 
 export interface State {
   status: 'cached' | 'ok' | 'needs_login' | 'error'
+  loggedOut: boolean
   message: string | null
   syncedAt: string | null
   demo: boolean
