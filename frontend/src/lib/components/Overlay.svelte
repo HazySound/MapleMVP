@@ -40,7 +40,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         </div>
         <h2>구매내역 불러오는 중</h2>
-        <p>처음 한 번만 오래 걸려요. 이월 계산에 쓸 최근 1년 치를 먼저 읽고, 이어서 보관함에 담을 지난 내역을 끝까지 받아와요. 중간에 창을 닫아도 받은 만큼 저장돼서 다음에 이어받고, 그 다음부터는 이번 달만 새로 읽어요.</p>
+        <p>처음 한 번은 지난 구매내역을 전부 받아와요. 몇 분 걸릴 수 있고, 중간에 창을 닫아도 받은 만큼 저장돼서 다음에 이어받아요. 그 다음부터는 이번 달만 새로 읽어요.</p>
         <div class="prog" class:busy><i style={busy ? '' : `width:${pct}%`}></i></div>
         <div class="fine mono">{detail}</div>
       {:else if app.overlay === 'first-error'}

@@ -57,7 +57,11 @@ export async function boot() {
   py = await pyReady()
   window.__mvp = {
     onProgress: p => { app.progress = p },
-    onLoggedIn: () => { app.loginOpened = false; refresh() },
+    onLoggedIn: () => {
+      app.loginOpened = false
+      if (!app.data) app.overlay = 'first-sync'   // 로그인 안내를 내리고 수집 화면으로 넘어간다
+      refresh()
+    },
   }
   py.get_ui().then(ui => { if (typeof ui?.medal === 'boolean') app.medal = ui.medal })
   const s = await py.get_state()
