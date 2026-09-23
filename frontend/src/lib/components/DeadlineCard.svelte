@@ -98,7 +98,7 @@
         </div>
         <div class="v mono"><span use:countup={sim.extra ? needLeft : needBase}>0</span><small>원</small></div>
       </div>
-      <button class="btn primary" disabled={needBase === 0} onclick={() => setExtra(Math.ceil(needBase / 1000) * 1000, true)}>
+      <button class="btn primary" onclick={() => setExtra(Math.ceil(needBase / 1000) * 1000, true)}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         시뮬레이터에 넣기
       </button>
