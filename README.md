@@ -3,6 +3,11 @@
 <p align="center">메이플스토리 결제 내역을 읽어서 MVP 등급 현황과 목표 계획을 보여주는 윈도우 데스크톱 앱</p>
 
 <p align="center">
+  <a href="https://github.com/HazySound/MapleMVP/releases/latest/download/MapleMVP.zip"><img src="https://img.shields.io/badge/Windows%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-MapleMVP.zip-b8a8ff?style=for-the-badge&logo=windows&logoColor=1b1c21&labelColor=2a2b33" alt="Windows 다운로드"></a>
+  <a href="https://github.com/HazySound/MapleMVP/releases"><img src="https://img.shields.io/github/v/release/HazySound/MapleMVP?style=for-the-badge&color=95e2c4&labelColor=2a2b33&label=release" alt="최신 릴리스"></a>
+</p>
+
+<p align="center">
   <img src="docs/dashboard.png" width="920" alt="현황 화면">
 </p>
 
@@ -60,7 +65,13 @@
 
 ### 빌드된 exe로 쓰기
 
-`MapleMVP.exe` 파일 하나만 있으면 된다. 설치 과정은 없고 아무 폴더에 두고 실행하면 된다. 코드 서명이 없어서 처음 실행할 때 윈도우 SmartScreen 경고가 뜨는데, `추가 정보` → `실행`을 누르면 된다.
+<p align="center">
+  <a href="https://github.com/HazySound/MapleMVP/releases/latest/download/MapleMVP.zip"><img src="https://img.shields.io/badge/Windows%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-MapleMVP.zip-b8a8ff?style=for-the-badge&logo=windows&logoColor=1b1c21&labelColor=2a2b33" alt="Windows 다운로드"></a>
+</p>
+
+압축을 풀면 나오는 `MapleMVP.exe` 하나가 전부다. 설치 과정은 없고 아무 폴더에 두고 실행하면 된다. 코드 서명이 없어서 처음 실행할 때 윈도우 SmartScreen 경고가 뜨는데, `추가 정보` → `실행`을 누르면 된다.
+
+[지난 버전 모아보기](https://github.com/HazySound/MapleMVP/releases)
 
 ### 소스에서 실행하기
 
