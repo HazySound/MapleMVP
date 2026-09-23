@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from typing import Callable
 from urllib.parse import quote, urlparse
 
@@ -16,6 +17,20 @@ log = logging.getLogger(__name__)
 HOME = "https://maplestory.nexon.com/Home/Main"
 LOGIN = "https://nxlogin.nexon.com/common/login.aspx?redirect=" + quote(HOME, safe="")
 DATE_RE = re.compile(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})")
+
+# 넥슨 로그인 창의 '로그인 상태 유지'를 켠다. 일반 체크박스가 아니라 role=checkbox 버튼이다
+KEEP_JS = """Promise.resolve((function () {
+  var boxes = document.querySelectorAll('button[role="checkbox"]');
+  for (var i = 0; i < boxes.length; i++) {
+    var b = boxes[i];
+    var around = b.parentElement ? b.parentElement.innerText || '' : '';
+    if (around.indexOf('유지') < 0) continue;
+    if (b.getAttribute('aria-checked') === 'true') return 'already';
+    b.click();
+    return 'checked';
+  }
+  return 'none';
+})())"""
 
 
 class NeedsLogin(Exception):
@@ -65,6 +80,16 @@ class Scraper:
             rows.append({"date": f"{y:04d}-{mo:02d}-{d:02d}", "item": r["item"], "price": int(r["price"] or 0)})
         return rows
 
+    def _eval(self, script: str, timeout: float = 5):
+        """결과를 기다리되, 실패하면 None을 돌려준다."""
+        done = threading.Event()
+        box = {}
+        try:
+            self._window.evaluate_js(script, lambda v: (box.update(v=v), done.set()))
+        except Exception:
+            return None
+        return box.get("v") if done.wait(timeout) else None
+
     def _run(self, script: str, timeout: float = 60):
         w = self._window
         if not w.events.loaded.wait(30):
@@ -90,6 +115,16 @@ class Scraper:
         self._login_mode = True
         self._window.load_url(LOGIN)
         self._window.show()
+        threading.Thread(target=self._keep_signed_in, daemon=True).start()
+
+    def _keep_signed_in(self) -> None:
+        """'로그인 상태 유지'를 미리 켜 둔다. 넥슨이 이 선택을 기억해 주지 않아서 매번 켜 줘야 한다."""
+        for _ in range(30):
+            time.sleep(0.5)
+            if not self._login_mode:
+                return
+            if self._eval(KEEP_JS) in ("checked", "already"):
+                return
 
     def _on_loaded(self) -> None:
         if not self._login_mode:

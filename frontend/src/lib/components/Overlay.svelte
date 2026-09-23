@@ -34,7 +34,7 @@
           <p>처음 한 번만 로그인하면 이 PC에 로그인 상태가 저장돼서, 다음부터는 열자마자 불러와요. 앱은 아이디와 비밀번호를 보지도, 저장하지도 않아요.</p>
           <button class="btn primary" onclick={openLogin}>넥슨 로그인 창 열기</button>
         {/if}
-        <div class="fine">로그인 창은 넥슨 공식 로그인 페이지예요.<br><b>‘로그인 상태 유지’를 체크</b>해야 다음에 열 때 다시 로그인하지 않아요.</div>
+        <div class="fine">로그인 창은 넥슨 공식 로그인 페이지예요.<br>다음에 열 때 또 로그인하지 않도록 <b>‘로그인 상태 유지’는 자동으로 켜 둬요.</b></div>
         {#if app.data}
           <button class="link" onclick={dismissLogin}>나중에 하기 · 저장된 내역 보기</button>
         {/if}
