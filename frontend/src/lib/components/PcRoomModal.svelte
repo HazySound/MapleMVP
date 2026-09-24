@@ -162,6 +162,30 @@
     if (item) { e.preventDefault(); fromFile(item.getAsFile()) }
   }
 
+  /** 붙여넣기 단추. 브라우저는 사용자가 누를 때만 클립보드를 열어 준다. */
+  async function pasteFromClipboard() {
+    scanning = true
+    scanBad = scanPartial = false
+    try {
+      const items = await navigator.clipboard.read()
+      for (const it of items) {
+        const type = it.types.find(t => t.startsWith('image/'))
+        if (!type) continue
+        const blob = await it.getType(type)
+        scanning = false
+        fromFile(new File([blob], 'capture.png', { type }))
+        return
+      }
+      scanBad = true
+      scanMsg = '클립보드에 이미지가 없어요. 게임 화면에서 PrintScreen을 눌러 주세요.'
+    } catch {
+      scanBad = true
+      scanMsg = '클립보드를 열지 못했어요. 권한을 허용하거나 Ctrl+V로 붙여넣어 주세요.'
+    } finally {
+      scanning = false
+    }
+  }
+
 </script>
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showPcRoom = false)}>
@@ -193,11 +217,14 @@
         ondrop={e => { e.preventDefault(); fromFile(e.dataTransfer?.files?.[0]) }}>
         <div class="capmain">
           <b>게임에서 <kbd>PrintScreen</kbd>을 누른 뒤</b>
-          <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍어 주세요. 이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.</span>
+          <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍어 주세요.
+            {#if app.web}여기에 <kbd>Ctrl</kbd>+<kbd>V</kbd> 하거나 이미지를 끌어다 놓으면 읽어 드려요.
+            {:else}이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.{/if}</span>
         </div>
-        <button class="btn primary" disabled={scanning} onclick={() => grab()}>
+        <button class="btn primary" disabled={scanning}
+          onclick={() => (app.web ? pasteFromClipboard() : grab())}>
           {#if scanning}<span class="spin" aria-hidden="true"></span>{/if}
-          {scanning ? '읽는 중…' : '클립보드에서 읽기'}
+          {scanning ? '읽는 중…' : '붙여넣기'}
         </button>
         <label class="chip file" class:off={scanning}>
           파일 선택

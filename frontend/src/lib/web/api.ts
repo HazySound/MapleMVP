@@ -60,6 +60,15 @@ export function clearRows(): void {
 
 export const isWeb = () => import.meta.env.VITE_TARGET === 'web' || !window.pywebview
 
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('이미지 형식을 알 수 없어요'))
+    img.src = src
+  })
+}
+
 function raw(): Raw {
   return {
     status: 'ok',
@@ -77,10 +86,28 @@ export const webApi: PyApi = {
   async get_state() { return raw() },
   async refresh() { return raw() },
 
-  async pcroom_scan() {
-    // 캡처 인식은 canvas로 옮기는 중이다. 그전까지는 직접 입력으로 쓴다.
-    return { ok: false, readings: [], amounts: [], scale: 1,
-             message: '이 화면에서는 아직 캡처 인식을 못 해요. 아래에 숫자를 직접 넣어 주세요.' } as PcRoomScan
+  async pcroom_scan(dataUrl, scale) {
+    // exe에서는 파이썬이 하던 일을 여기서는 canvas가 한다. 결과 모양은 같다.
+    if (!dataUrl) {
+      return { ok: false, readings: [], amounts: [], scale: 1,
+               message: '이미지를 붙여넣거나 끌어다 놓아 주세요. (브라우저는 클립보드를 마음대로 볼 수 없어요)' }
+    }
+    try {
+      const { scan, toGray } = await import('../core/ocr')
+      const img = await loadImage(dataUrl)
+      const cv = document.createElement('canvas')
+      cv.width = img.width
+      cv.height = img.height
+      const ctx = cv.getContext('2d', { willReadFrequently: true })!
+      ctx.drawImage(img, 0, 0)
+      const px = ctx.getImageData(0, 0, cv.width, cv.height)
+      const r = scan(toGray(px.data, cv.width, cv.height), scale || 0)
+      const ok = !!(r.readings.length || r.amounts.length)
+      return { ok, ...r,
+               message: ok ? '' : 'MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요.' }
+    } catch (e) {
+      return { ok: false, readings: [], amounts: [], scale: 1, message: `이미지를 읽지 못했어요. ${e}` }
+    }
   },
 
   async pcroom_save(weeks) {

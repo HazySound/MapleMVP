@@ -20,3 +20,6 @@ frontend/node_modules/
 # 개인 파일
 CLAUDE.md
 메이플 MVP 결제실적 계산 스크립트.txt
+
+# 인식기 검증용 인게임 캡처 (개인 정보가 담겨 있어 올리지 않는다)
+frontend/test/captures/
