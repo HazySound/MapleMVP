@@ -6,6 +6,7 @@
   import DecayChart from './lib/components/DecayChart.svelte'
   import GradeCard from './lib/components/GradeCard.svelte'
   import HistoryModal from './lib/components/HistoryModal.svelte'
+  import ImportModal from './lib/components/ImportModal.svelte'
   import PcRoomModal from './lib/components/PcRoomModal.svelte'
   import Ladder from './lib/components/Ladder.svelte'
   import Overlay from './lib/components/Overlay.svelte'
@@ -73,6 +74,7 @@
   <Overlay />
   {#if app.data && app.showHistory}<HistoryModal />{/if}
   {#if app.data && app.showPcRoom}<PcRoomModal />{/if}
+  {#if app.data && app.web && app.showImport}<ImportModal />{/if}
 </div>
 <ResizeHandles />
 

@@ -1,5 +1,5 @@
 import gsap from 'gsap'
-import { hasData, pyReady, type PyApi } from './api'
+import { hasData, pyReady, runtime, type PyApi } from './api'
 import { REDUCED } from './format'
 import { initPlan, requestPlan } from './plan.svelte'
 import { buildBase, buildState, simulate as simCalc } from './core/engine'
@@ -24,7 +24,9 @@ export const app = $state({
   error: null as string | null, // 데이터는 있는데 동기화에 실패했을 때
   showHistory: false,
   showPcRoom: false,
+  showImport: false,
   maximized: false,
+  web: false,        // 브라우저에서 도는 중 (넥슨 수집을 직접 못 한다)
   simBusy: false,    // 시뮬레이션 금액이 움직이는 중
   simTarget: 0,      // 움직여 가는 목표 금액 (0이면 원래대로 돌아가는 중)
   medal: false,   // MVP 등급 카드 가운데: false=합계, true=메달
@@ -73,6 +75,7 @@ function handle(s: Raw | Bare) {
 
 export async function boot() {
   py = await pyReady()
+  app.web = runtime.web
   window.__mvp = {
     onProgress: p => { app.progress = p },
     onLoggedIn: () => {
@@ -127,6 +130,11 @@ export function pcroomScan(dataUrl = '', scale = 0) {
 
 export async function pcroomSave(weeks: Record<string, number>) {
   handle(await py.pcroom_save(weeks))
+}
+
+/** 북마클릿이 보내온 구매내역이 저장된 뒤 화면을 다시 만든다 */
+export async function reloadWeb() {
+  handle(await py.get_state())
 }
 
 export async function pcroomClear() {

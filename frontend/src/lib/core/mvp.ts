@@ -45,7 +45,7 @@ export function todayKst(now: Date = new Date()): string {
   return iso(new Date(now.getTime() + 9 * 3_600_000))
 }
 
-export interface Row { date: string; item: string; price: number }
+export interface Row { date: string; item: string; price: number; id?: string }
 
 /** 이번 주를 마지막으로 하는 nWeeks개 주의 결제 합계 (오래된 주 → 이번 주). */
 export function weeklyAmounts(rows: Row[], thisWeek: string, nWeeks: number): number[] {

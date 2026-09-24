@@ -29,11 +29,25 @@ declare global {
   }
 }
 
+/**
+ * 어디서 도는지에 따라 구현을 고른다.
+ * exe 안이면 파이썬(pywebview), 그냥 브라우저면 web/api.ts.
+ * 웹으로 빌드할 때는 VITE_TARGET=web이라 기다리지 않고 바로 고른다.
+ */
 export function pyReady(): Promise<PyApi> {
   return new Promise(resolve => {
+    if (import.meta.env.VITE_TARGET === 'web') { runtime.web = true; return void import('./web/api').then(m => resolve(m.webApi)) }
     if (window.pywebview?.api) return resolve(window.pywebview.api)
-    window.addEventListener('pywebviewready', () => resolve(window.pywebview!.api), { once: true })
+    // 브라우저에서 그냥 열어 본 경우 (npm run dev 등) — 잠깐 기다려 보고 웹 구현으로 넘어간다
+    const timer = setTimeout(() => { runtime.web = true; void import('./web/api').then(m => resolve(m.webApi)) }, 2000)
+    window.addEventListener('pywebviewready', () => {
+      clearTimeout(timer)
+      resolve(window.pywebview!.api)
+    }, { once: true })
   })
 }
+
+/** 브라우저에서 도는 중인지 (exe가 아니면 참) */
+export const runtime = { web: false }
 
 export const hasData = (s: Raw | Bare): s is Raw => 'rows' in s

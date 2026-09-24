@@ -39,7 +39,9 @@
   <div class="pywebview-drag-region drag"></div>
 
   <div class="sync">
-    {#if app.loggedOut && !app.syncing}
+    {#if app.web}
+      <span class="txt">{app.data?.syncedAt ? status : '구매내역을 가져와 주세요'}</span>
+    {:else if app.loggedOut && !app.syncing}
       <button class="stat" onclick={showLogin} title="넥슨에 다시 로그인">
         <span class="dot out"></span><span class="txt">로그아웃됨 · 다시 로그인</span>
       </button>
@@ -47,7 +49,9 @@
       <span class="dot" class:busy={app.syncing} class:err={!!app.error}></span>
       <span class="txt">{app.error ? '동기화 실패 · 이전 결과 표시 중' : status}</span>
     {/if}
-    <button class="ib" class:spinning={app.syncing} onclick={refresh} disabled={app.syncing} aria-label="새로고침" title="새로고침 (F5)">
+    <button class="ib" class:spinning={app.syncing}
+      onclick={() => (app.web ? (app.showImport = true) : refresh())}
+      disabled={app.syncing} aria-label="구매내역 가져오기" title={app.web ? '구매내역 가져오기' : '새로고침 (F5)'}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
   </div>
