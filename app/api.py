@@ -11,10 +11,12 @@ from datetime import date, datetime, timedelta
 
 import webview
 
-from . import cache, demo, paths
+from . import cache, demo, paths, pcroom
 from .mvp import (KST, TIERS, WINDOW, forecast, need_for, need_now, plan, replay,
                   tier_index, tier_now, today_kst, week_start, weekly_amounts)
-from .scraper import NeedsLogin, Scraper, ScrapeError
+from .rows import merge_months, normalize_usage
+from .scraper import (HOME, MAPLE_HOST, USAGE, USAGE_HOST, NeedsLogin, Scraper,
+                      ScrapeError)
 
 log = logging.getLogger(__name__)
 
@@ -116,13 +118,21 @@ def _write_xlsx(path: str, rows: list[dict]) -> None:
 class Base:
     """한 번의 동기화 결과에서 시뮬레이션에 필요한 값."""
 
-    def __init__(self, rows: list[dict], now: datetime):
+    def __init__(self, rows: list[dict], now: datetime, saved: dict[str, int] | None = None):
         self.today = today_kst(now)
         self.this_week = week_start(self.today)
-        amounts = weekly_amounts(rows, self.this_week, HISTORY_WEEKS + WINDOW + 1)
+        span = HISTORY_WEEKS + WINDOW + 1
+        purchases = weekly_amounts(rows, self.this_week, span)
+        first = self.this_week - timedelta(weeks=span - 1)
+        starts = [(first + timedelta(weeks=i)).isoformat() for i in range(span)]
+        # PC방 반영액은 구매내역에 안 잡혀서, 사용자가 확인해 준 값을 여기서 더한다
+        self.saved = saved or {}
+        amounts = pcroom.apply(purchases, starts, self.saved)
         # 이번 주가 시작될 때 정해진 등급과 이월 잔액
         self.week_start_tier, self.carry = replay(amounts)
-        self.last13 = amounts[-WINDOW:]          # 1주차(가장 오래된) ~ 이번 주
+        self.starts = starts[-WINDOW:]
+        self.purchases = purchases[-WINDOW:]     # 수집한 구매액만
+        self.last13 = amounts[-WINDOW:]          # 보정까지 더한 금액 (1주차 ~ 이번 주)
         self.current = tier_now(self.last13, self.carry)
         self.rows = rows
 
@@ -167,8 +177,8 @@ class Base:
         weeks = [
             {"start": (first + timedelta(weeks=i)).isoformat(),
              "end": (first + timedelta(weeks=i, days=6)).isoformat(),
-             "amount": a}
-            for i, a in enumerate(self.last13)
+             "amount": a, "spent": p, "pc": a - p}
+            for i, (a, p) in enumerate(zip(self.last13, self.purchases))
         ]
         recent = sorted(self.rows, key=lambda r: r["date"], reverse=True)[:12]
         deadline = datetime.combine(self.this_week + timedelta(days=7), datetime.min.time(), KST)
@@ -184,6 +194,11 @@ class Base:
             "needNow": {t.key: need_now(t, self.last13, self.carry) for t in TIERS},
             "recent": recent,
             "sim": self.simulate(0),
+            "pcroom": {
+                "weeks": {s: self.saved[s] for s in self.starts if s in self.saved},
+                "missing": pcroom.missing(self.starts, self.saved),
+                "total": sum(a - p for a, p in zip(self.last13, self.purchases)),
+            },
         }
 
 
@@ -198,6 +213,7 @@ class Api:
         self._maximized = False
         self._main_hwnd = 0
         self._resizing = False
+        self._usage_error: str | None = None
         # 로그인한 적이 있는지. 기록이 없으면(예전 버전에서 넘어왔으면) 로그인 창 저장소로 판단한다
         seen = cache.load(paths.SETTINGS).get("loggedIn")
         self._fresh = not demo_mode and not (any(paths.WEBVIEW.glob("*")) if seen is None else seen)
@@ -209,13 +225,16 @@ class Api:
     def _rows(self) -> list[dict]:
         if self._demo:
             return demo.rows(today_kst())
-        return [r for m in self._cache.get("months", {}).values() for r in m["rows"]]
+        return merge_months(self._cache.get("months", {}), self._cache.get("usage", {}))
+
+    def _pcroom_weeks(self) -> dict[str, int]:
+        return {k: int(v) for k, v in cache.load(paths.PCROOM).get("weeks", {}).items()}
 
     def _build(self, status: str, message: str | None = None) -> dict:
-        self._base = Base(self._rows(), datetime.now(KST))
+        self._base = Base(self._rows(), datetime.now(KST), self._pcroom_weeks())
         synced = self._cache.get("syncedAt") if not self._demo else datetime.now(KST).isoformat()
         return {"status": status, "message": message, "syncedAt": synced, "demo": self._demo,
-                "loggedOut": self._logged_out, **self._base.state()}
+                "loggedOut": self._logged_out, "usageError": self._usage_error, **self._base.state()}
 
     def _push(self, fn: str, payload) -> None:
         if self._main:
@@ -238,11 +257,13 @@ class Api:
             try:
                 self._sync()
             except NeedsLogin:
+                log.info("로그인이 필요합니다")
                 self._remember_login(False)   # 다음에 열 때는 바로 로그인부터 안내한다
                 if self._cache.get("months"):
                     return self._build("needs_login")
                 return {"status": "needs_login", "demo": False}
             except ScrapeError as e:
+                log.warning("동기화 실패: %s", e)
                 if self._cache.get("months"):
                     return self._build("error", str(e))
                 return {"status": "error", "message": str(e), "demo": False}
@@ -258,6 +279,48 @@ class Api:
 
     def plan(self, target: str, date_iso: str, fixed: dict, skip_this_week: bool = False) -> dict:
         return self._base.plan(target, date_iso, fixed, bool(skip_this_week)) if self._base else {}
+
+    # ---- PC방 반영액 보정 ----
+    def pcroom_restore(self, needs: list, next_index: int, remaining: int, keep_need=None) -> dict:
+        """인게임 툴팁 숫자로 주차별 PC방 반영액을 뽑아 검수용 표를 만든다.
+
+        needs:      '현재 등급 유지까지' 12개 (1주 뒤 → 12주 뒤)
+        next_index: 상단에 적힌 등급의 자리 ('레드 등급까지'면 레드)
+        remaining:  그 등급까지 남은 금액
+        """
+        b = self._base
+        if not b:
+            return {"ok": False, "issues": ["아직 데이터를 불러오지 못했어요."], "rows": []}
+        ths = [t.th for t in TIERS]
+        if not 0 <= int(next_index) < len(ths):
+            return {"ok": False, "issues": ["등급을 고르지 않았어요."], "rows": []}
+        tier_th, total = pcroom.anchor(ths, int(next_index), int(remaining))
+        r = pcroom.restore([int(n) for n in needs], tier_th, total,
+                           None if keep_need in (None, "") else int(keep_need))
+        if not r.ok:
+            return {"ok": False, "issues": r.issues, "rows": [], "total": total}
+
+        gaps = pcroom.compare(r.weeks, b.purchases, b.starts)
+        rows = [{"start": g.start, "end": (date.fromisoformat(g.start) + timedelta(days=6)).isoformat(),
+                 "nexon": g.nexon, "spent": g.collected, "amount": g.amount,
+                 "minutes": g.minutes, "note": g.note, "warn": g.warn} for g in gaps]
+        return {"ok": all(g.ok for g in gaps), "issues": [g.note for g in gaps if g.note],
+                "rows": rows, "total": total, "tierTh": tier_th,
+                "pcTotal": sum(g.amount for g in gaps)}
+
+    def pcroom_save(self, weeks: dict) -> dict:
+        """검수를 마친 보정값을 저장한다. 주 시작일이 키라서 주가 지나면 알아서 밀려난다."""
+        saved = self._pcroom_weeks()
+        saved.update({str(k): max(0, int(v)) for k, v in (weeks or {}).items()})
+        floor = (week_start(today_kst()) - timedelta(weeks=HISTORY_WEEKS + WINDOW)).isoformat()
+        saved = pcroom.prune(saved, floor)
+        cache.save(paths.PCROOM, {"weeks": saved})
+        log.info("PC방 보정 저장: %d주, 합계 %s원", len(saved), f"{sum(saved.values()):,}")
+        return self._build("ok")
+
+    def pcroom_clear(self) -> dict:
+        cache.save(paths.PCROOM, {"weeks": {}})
+        return self._build("ok")
 
     # ---- 구매내역 보관함 ----
     def history(self, page: int = 1, size: int = 50, q: str = "", start: str = "", end: str = "",
@@ -403,9 +466,50 @@ class Api:
                 if not (f"{y:04d}-{m:02d}" in months and _month_final(y, m, months[f"{y:04d}-{m:02d}"]["fetchedAt"]))]
         for i, (y, m) in enumerate(reversed(todo)):  # 최신 달부터: 로그인 문제를 빨리 발견
             self._fetch_month(y, m, f"{y}년 {m}월", i, len(todo))
+        try:
+            self._sync_usage(first, today)
+        except NeedsLogin:
+            raise
+        except Exception as e:   # 넥슨이 API를 바꿔도 메이플 구매내역만으로 계속 돌아가게 한다
+            log.exception("넥슨 통합 사용내역 수집 실패 — 메이플 구매내역만으로 계산합니다")
+            self._usage_error = str(e)
+        else:
+            self._usage_error = None
         self._cache["syncedAt"] = datetime.now(KST).isoformat()
         cache.save(paths.CACHE, self._cache)
         self._archive(today)
+
+    def _sync_usage(self, first: date, today: date) -> None:
+        """넥슨 통합 사용내역을 받아 둔다.
+
+        메이플 아이템 구매내역에 안 뜨는 결제가 있어서(예: 게임 내 결제 일부) 이쪽이 정본이다.
+        다른 오리진이라 숨김 창을 잠시 옮겼다가 돌려놓는다.
+        """
+        usage = self._cache.setdefault("usage", {})
+        todo = [(y, m) for y, m in _months(first, today)
+                if not (f"{y:04d}-{m:02d}" in usage and _month_final(y, m, usage[f"{y:04d}-{m:02d}"]["fetchedAt"]))]
+        if not todo:
+            return
+        self._scraper.goto(USAGE, USAGE_HOST)
+        try:
+            skipped: dict[str, int] = {}
+            for i, (y, m) in enumerate(reversed(todo)):
+                self._push("onProgress", {"label": f"넥슨 사용내역 · {y}년 {m}월", "done": i,
+                                          "total": len(todo), "count": len(self._rows())})
+                rows, skip = normalize_usage(self._scraper.fetch_usage_month(y, m))
+                log.info("  %d-%02d 메이플 %d건 %s원", y, m, len(rows),
+                         f"{sum(r['price'] for r in rows):,}")
+                for k, v in skip.items():
+                    skipped[k] = skipped.get(k, 0) + v
+                usage[f"{y:04d}-{m:02d}"] = {"rows": rows, "fetchedAt": datetime.now(KST).isoformat()}
+            total = sum(len(usage[k]["rows"]) for k in usage)
+            log.info("통합 사용내역 %d개월 수집 완료 — 메이플 %d건%s",
+                     len(todo), total, f", 제외 {skipped}" if skipped else "")
+        finally:
+            try:
+                self._scraper.goto(HOME, MAPLE_HOST)
+            except (NeedsLogin, ScrapeError) as e:
+                log.warning("메이플 페이지로 돌아가지 못했어요: %s", e)
 
     def _archive(self, today: date) -> None:
         """보관용으로 과거 내역을 끝까지 받아 둔다. 한 번 끝을 확인하면 다시 하지 않는다."""

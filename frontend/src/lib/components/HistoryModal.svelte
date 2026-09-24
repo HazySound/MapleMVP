@@ -5,8 +5,19 @@
 
   let term = $state('')   // 입력 중인 검색어
   let q = $state('')      // 실제로 적용된 검색어
-  let start = $state('')
+  // 기간은 '월별'(연·월 드롭다운)이 기본이고, 필요하면 '기간 지정'으로 날짜를 직접 넣는다
+  const TODAY = new Date()
+  let mode = $state<'month' | 'range'>('month')
+  let year = $state(TODAY.getFullYear())
+  let month = $state(TODAY.getMonth() + 1)
+  let start = $state('')   // 기간 지정 모드에서만 쓴다
   let end = $state('')
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const period = $derived.by(() => {
+    if (mode === 'range') return { start, end }
+    const lastDay = new Date(year, month, 0).getDate()   // 다음 달 0일 = 이번 달 말일
+    return { start: `${year}-${pad(month)}-01`, end: `${year}-${pad(month)}-${pad(lastDay)}` }
+  })
   // null이면 기본 순서(최신순). 헤더를 누르면 오름차순 → 내림차순 → 기본으로 돈다
   let sort = $state<SortField | null>(null)
   let sortDesc = $state(false)
@@ -32,13 +43,21 @@
 
   const res = $derived(app.history)
 
+  /** 드롭다운에 띄울 연도. 보관된 내역의 범위에 올해와 지금 고른 해를 always 포함한다 */
+  const years = $derived.by(() => {
+    const ys = [TODAY.getFullYear(), year]
+    for (const d of [res?.first, res?.last]) if (d) ys.push(Number(d.slice(0, 4)))
+    const lo = Math.min(...ys), hi = Math.max(...ys)
+    return Array.from({ length: hi - lo + 1 }, (_, i) => hi - i)
+  })
+
   // 조건이 바뀌면 첫 페이지부터 다시
-  const key = $derived(`${q}|${start}|${end}|${sort}|${desc}|${size}`)
+  const key = $derived(`${q}|${period.start}|${period.end}|${sort}|${desc}|${size}`)
   let lastKey = ''
   $effect(() => {
-    const now = key
-    if (now !== lastKey) { lastKey = now; page = 1 }
-    history({ page, size, q, start, end, sort: sort ?? 'date', desc })
+    const k = key
+    if (k !== lastKey) { lastKey = k; page = 1 }
+    history({ page, size, q, start: period.start, end: period.end, sort: sort ?? 'date', desc })
   })
 
   function search() { q = term.trim() }
@@ -46,7 +65,7 @@
   async function save() {
     exporting = true
     try {
-      const r = await exportHistory({ q, start, end, sort: sort ?? 'date', desc })
+      const r = await exportHistory({ q, start: period.start, end: period.end, sort: sort ?? 'date', desc })
       if (r.canceled) notify(true, '내보내기를 취소했어요')
       else if (r.error) notify(false, `저장하지 못했어요 · ${r.error}`)
       else notify(true, `${r.name} 저장 완료 · ${(r.count ?? 0).toLocaleString('ko-KR')}건`)
@@ -57,7 +76,12 @@
     }
   }
 
-  function reset() { term = ''; q = ''; start = ''; end = ''; sort = null; sortDesc = false }
+  function reset() {
+    term = ''; q = ''
+    mode = 'month'; year = TODAY.getFullYear(); month = TODAY.getMonth() + 1
+    start = ''; end = ''
+    sort = null; sortDesc = false
+  }
 </script>
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showHistory = false)}>
@@ -86,9 +110,22 @@
         </button>
       </div>
       <div class="range">
-        <input type="date" bind:value={start} aria-label="시작 날짜" />
-        <span>~</span>
-        <input type="date" bind:value={end} aria-label="끝 날짜" />
+        <div class="seg" role="group" aria-label="기간 고르는 방식">
+          <button class:on={mode === 'month'} aria-pressed={mode === 'month'} onclick={() => (mode = 'month')}>월별</button>
+          <button class:on={mode === 'range'} aria-pressed={mode === 'range'} onclick={() => (mode = 'range')}>기간 지정</button>
+        </div>
+        {#if mode === 'month'}
+          <select bind:value={year} aria-label="연도">
+            {#each years as y (y)}<option value={y}>{y}년</option>{/each}
+          </select>
+          <select bind:value={month} aria-label="월">
+            {#each Array.from({ length: 12 }, (_, i) => i + 1) as m (m)}<option value={m}>{m}월</option>{/each}
+          </select>
+        {:else}
+          <input type="date" bind:value={start} aria-label="시작 날짜" />
+          <span>~</span>
+          <input type="date" bind:value={end} aria-label="끝 날짜" />
+        {/if}
       </div>
       <select bind:value={size} aria-label="한 페이지 개수">
         {#each [25, 50, 100, 200] as n (n)}<option value={n}>{n}개씩</option>{/each}
@@ -183,6 +220,10 @@
   .search .clear { font-size: 16px; line-height: 1; padding: 0 4px; }
   .search .clear:hover { color: var(--color-tx); }
   .range { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-tx3); }
+  .seg { display: flex; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; background: var(--color-bg2); }
+  .seg button { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 8px 11px; border: 0; background: none; color: var(--color-tx3); }
+  .seg button:hover { color: var(--color-tx2); }
+  .seg button.on { background: color-mix(in oklab, var(--color-lav) 18%, var(--color-bg2)); color: var(--color-tx); }
   input[type=date], select {
     font: inherit; font-size: 12.5px; color: var(--color-tx); color-scheme: dark;
     background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 10px; padding: 8px 10px; outline: none;

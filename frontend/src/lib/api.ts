@@ -1,10 +1,13 @@
-import type { Bare, ExportResult, HistoryPage, HistoryQuery, PlanInput, PlanResult, Progress, Sim, State } from './types'
+import type { Bare, ExportResult, HistoryPage, HistoryQuery, PcRoomResult, PlanInput, PlanResult, Progress, Sim, State } from './types'
 
 export interface PyApi {
   get_state(): Promise<State | Bare>
   refresh(): Promise<State | Bare>
   simulate(extra: number): Promise<Sim>
   plan(target: string, date: string, fixed: Record<string, number>, skipThisWeek: boolean): Promise<PlanResult>
+  pcroom_restore(needs: number[], nextIndex: number, remaining: number, keepNeed: number | null): Promise<PcRoomResult>
+  pcroom_save(weeks: Record<string, number>): Promise<State | Bare>
+  pcroom_clear(): Promise<State | Bare>
   get_ui(): Promise<{ medal?: boolean }>
   save_ui(data: { medal: boolean }): Promise<void>
   get_plan(): Promise<Partial<PlanInput>>

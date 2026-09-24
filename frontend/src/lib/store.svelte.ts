@@ -13,6 +13,7 @@ export const app = $state({
   sim: null as Sim | null,
   extra: 0,
   target: 'red' as TierKey,
+  targetPicked: false, // 목표 등급을 사용자가 직접 골랐는지 (고르기 전까지는 현재 등급을 따라간다)
   overlay: 'boot' as Overlay,
   syncing: false,
   progress: null as Progress | null,
@@ -20,6 +21,7 @@ export const app = $state({
   loggedOut: false,   // 넥슨 로그인이 풀린 상태
   error: null as string | null, // 데이터는 있는데 동기화에 실패했을 때
   showHistory: false,
+  showPcRoom: false,
   medal: false,   // MVP 등급 카드 가운데: false=합계, true=메달
   previewTier: null as TierKey | null,   // 개발자용: 다른 등급으로 바꿔서 보기
   history: null as HistoryPage | null,
@@ -30,10 +32,9 @@ let py: PyApi
 
 function apply(s: State, initial: boolean) {
   app.data = s
-  if (initial) {
-    // 기본 목표: 지금 등급 유지. 등급이 없으면 브론즈
-    app.target = s.current ?? 'bronze'
-  }
+  // 기본 목표는 '지금 등급 유지'. 직접 고르기 전까지는 동기화로 등급이 바뀌면 같이 따라간다
+  // (첫 화면은 동기화 전 캐시라 등급이 낮게 나올 수 있어서, 거기서 굳으면 안 된다)
+  if (initial || !app.targetPicked) app.target = s.current ?? 'bronze'
   if (app.extra === 0) app.sim = s.sim
   else requestSim(app.extra)
   if (initial) initPlan(py, s)
@@ -96,6 +97,25 @@ export async function history(qry: HistoryQuery) {
 
 export function exportHistory(qry: Omit<HistoryQuery, 'page' | 'size'>) {
   return py.export_history(qry.q, qry.start, qry.end, qry.sort, qry.desc)
+}
+
+/** 목표 등급을 직접 고른다. 이 뒤로는 동기화해도 바뀌지 않는다. */
+export function setTarget(k: TierKey) {
+  app.target = k
+  app.targetPicked = true
+}
+
+/** 인게임 툴팁 숫자로 주차별 PC방 반영액을 뽑아본다 (저장 전 검수용) */
+export function pcroomRestore(needs: number[], nextIndex: number, remaining: number, keepNeed: number | null) {
+  return py.pcroom_restore(needs, nextIndex, remaining, keepNeed)
+}
+
+export async function pcroomSave(weeks: Record<string, number>) {
+  handle(await py.pcroom_save(weeks))
+}
+
+export async function pcroomClear() {
+  handle(await py.pcroom_clear())
 }
 
 export function toggleMedal() {

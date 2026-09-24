@@ -15,6 +15,10 @@ from . import paths
 log = logging.getLogger(__name__)
 
 HOME = "https://maplestory.nexon.com/Home/Main"
+MAPLE_HOST = "maplestory.nexon.com"
+# 넥슨 통합 캐시 사용내역. 이 페이지 안에서만 public.api.nexon.com 호출이 허용된다 (CORS)
+USAGE = "https://payment.nexon.com/usage/?pagecode=2"
+USAGE_HOST = "payment.nexon.com"
 LOGIN = "https://nxlogin.nexon.com/common/login.aspx?redirect=" + quote(HOME, safe="")
 DATE_RE = re.compile(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})")
 
@@ -48,6 +52,7 @@ class Scraper:
         self._login_mode = False
         self._quitting = False
         self._js = paths.SCRAPE_JS.read_text(encoding="utf-8")
+        self._usage_js = paths.USAGE_JS.read_text(encoding="utf-8")
 
     def create(self) -> None:
         self._window = webview.create_window(
@@ -64,7 +69,8 @@ class Scraper:
 
     # ---- 수집 ----
     def fetch_month(self, year: int, month: int) -> list[dict]:
-        res = self._run(self._js.replace("__YEAR__", str(year)).replace("__MONTH__", str(month)))
+        res = self._run(self._js.replace("__YEAR__", str(year)).replace("__MONTH__", str(month)),
+                        host=MAPLE_HOST)
         if not isinstance(res, dict):
             raise ScrapeError("넥슨 페이지에서 알 수 없는 응답이 왔어요.")
         if res.get("needsLogin"):
@@ -80,6 +86,52 @@ class Scraper:
             rows.append({"date": f"{y:04d}-{mo:02d}-{d:02d}", "item": r["item"], "price": int(r["price"] or 0)})
         return rows
 
+    def fetch_usage_month(self, year: int, month: int) -> list[dict]:
+        """넥슨 통합 사용내역에서 한 달치 원본 행을 가져온다 (게임 구분·상태값 그대로)."""
+        res = self._run(self._usage_js.replace("__YEAR__", str(year)).replace("__MONTH__", str(month)),
+                        host=USAGE_HOST)
+        if not isinstance(res, dict):
+            raise ScrapeError("넥슨 결제 페이지에서 알 수 없는 응답이 왔어요.")
+        if res.get("needsLogin"):
+            log.warning("사용내역 %d-%02d: 로그인 필요 (status=%s) / 창 상태: %s",
+                        year, month, res.get("status"), self.page_hint())
+            raise NeedsLogin()
+        if res.get("error"):
+            log.error("사용내역 %d-%02d 실패: error=%s status=%s detail=%s",
+                      year, month, res.get("error"), res.get("status"), res.get("detail"))
+            log.error("그때 창 상태: %s", self.page_hint())
+            raise ScrapeError(f"넥슨 사용내역을 읽지 못했어요. ({res.get('error')} {res.get('status') or ''})".strip())
+        rows = res.get("rows", [])
+        log.info("사용내역 %d-%02d: 원본 %d건", year, month, len(rows))
+        return rows
+
+    def goto(self, url: str, host: str) -> None:
+        """숨김 창을 다른 오리진으로 옮긴다. 이미 그 호스트면 아무것도 하지 않는다."""
+        w = self._window
+        if not w.events.loaded.wait(30):
+            raise ScrapeError("넥슨 페이지가 열리지 않아요. 인터넷 연결을 확인해 주세요.")
+        if (urlparse(w.get_current_url() or "").hostname or "") == host:
+            return
+        log.info("숨김 창 이동: %s -> %s", urlparse(w.get_current_url() or "").hostname, host)
+        w.events.loaded.clear()
+        w.load_url(url)
+        if not w.events.loaded.wait(30):
+            raise ScrapeError("넥슨 페이지가 열리지 않아요. 인터넷 연결을 확인해 주세요.")
+        landed = urlparse(w.get_current_url() or "").hostname or ""
+        if landed != host:
+            # 로그인 페이지 등 다른 곳으로 밀려났다
+            log.warning("%s로 가려 했는데 %s에 도착했어요 — 로그인이 필요해 보입니다", host, landed)
+            raise NeedsLogin()
+
+    PAGE_HINT_JS = r"""Promise.resolve((function () {
+  var t = (document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
+  return { url: location.href, title: document.title, text: t.slice(0, 400) };
+})())"""
+
+    def page_hint(self) -> dict | None:
+        """지금 창에 뭐가 떠 있는지. 수집이 실패했을 때 원인 파악용으로 로그에 남긴다."""
+        return self._eval(self.PAGE_HINT_JS)
+
     def _eval(self, script: str, timeout: float = 5):
         """결과를 기다리되, 실패하면 None을 돌려준다."""
         done = threading.Event()
@@ -90,13 +142,12 @@ class Scraper:
             return None
         return box.get("v") if done.wait(timeout) else None
 
-    def _run(self, script: str, timeout: float = 60):
+    def _run(self, script: str, timeout: float = 60, host: str = MAPLE_HOST):
         w = self._window
         if not w.events.loaded.wait(30):
             raise ScrapeError("넥슨 페이지가 열리지 않아요. 인터넷 연결을 확인해 주세요.")
-        host = urlparse(w.get_current_url() or "").hostname or ""
-        if host != "maplestory.nexon.com":
-            # 로그인 창에 머물러 있으면 같은 도메인 fetch가 불가능
+        if (urlparse(w.get_current_url() or "").hostname or "") != host:
+            # 로그인 창에 머물러 있으면 같은 오리진 요청이 불가능
             raise NeedsLogin()
         done = threading.Event()
         box = {}

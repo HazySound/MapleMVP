@@ -14,6 +14,8 @@ Pop-Location
     --icon "$root\app\icon.ico" `
     --add-data "$root\frontend\dist;frontend\dist" `
     --add-data "$root\app\scrape.js;app" `
+    --add-data "$root\app\usage.js;app" `
+    --add-data "$root\app\ocr_templates.npz;app" `
     --add-data "$root\app\icon.ico;app" `
     --workpath build --specpath build `
     run.py

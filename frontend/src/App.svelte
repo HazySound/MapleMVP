@@ -6,6 +6,7 @@
   import DecayChart from './lib/components/DecayChart.svelte'
   import GradeCard from './lib/components/GradeCard.svelte'
   import HistoryModal from './lib/components/HistoryModal.svelte'
+  import PcRoomModal from './lib/components/PcRoomModal.svelte'
   import Ladder from './lib/components/Ladder.svelte'
   import Overlay from './lib/components/Overlay.svelte'
   import Payments from './lib/components/Payments.svelte'
@@ -19,7 +20,7 @@
   import WeeklyBars from './lib/components/WeeklyBars.svelte'
   import { REDUCED } from './lib/format'
   import { planner } from './lib/plan.svelte'
-  import { app, boot, refresh, setExtra } from './lib/store.svelte'
+  import { app, boot, refresh, setExtra, setTarget } from './lib/store.svelte'
 
   onMount(() => { boot() })
 
@@ -28,7 +29,7 @@
     if (!app.data || app.view !== 'dash') return
     if (e.key === 'Escape') { setExtra(0, true); return }
     if ((e.target as HTMLElement).matches('input')) return
-    if (/^[1-6]$/.test(e.key)) app.target = app.data.tiers[Number(e.key) - 1].key
+    if (/^[1-6]$/.test(e.key)) setTarget(app.data.tiers[Number(e.key) - 1].key)
   }
 
   /** 대시보드가 처음 나타날 때 카드들이 차례로 올라온다 */
@@ -71,6 +72,7 @@
   </main>
   <Overlay />
   {#if app.data && app.showHistory}<HistoryModal />{/if}
+  {#if app.data && app.showPcRoom}<PcRoomModal />{/if}
 </div>
 <ResizeHandles />
 

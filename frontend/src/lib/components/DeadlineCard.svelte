@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { app, refresh, setExtra } from '../store.svelte'
+  import { app, refresh, setExtra, setTarget } from '../store.svelte'
   import { TIER_COLOR, addDays, countup, md, spotlight, tierName, won } from '../format'
 
   const d = $derived(app.data!)
@@ -36,6 +36,8 @@
   // ---- 목표 ----
   const target = $derived(d.tiers.find(t => t.key === app.target)!)
   const needBase = $derived(d.need[app.target])
+  // 목표 등급을 지금 이미 달성했는지 (다음 목요일에 지킬 수 있는지와는 별개)
+  const targetDone = $derived(Math.max(0, d.needNow[app.target] - sim.extra) === 0)
   const needLeft = $derived(Math.max(0, needBase - sim.extra))
   // 목표 등급은 다음 목요일 기준이라, 가장 오래된 주가 빠진 합계로 진행률을 그린다
   const nextBase = $derived(sim.forecast[0].sum - sim.extra)
@@ -76,13 +78,15 @@
   </div>
 
   <div class="targets">
-    <h3 class="card-title">목표 등급 <span class="sub">다음 주 목요일 기준 · 숫자키 1–6</span></h3>
+    <h3 class="card-title">목표 등급 <span class="sub">달성 여부는 지금 · 금액은 다음 주 목요일 기준 · 숫자키 1–6</span></h3>
     <div class="chips" role="group" aria-label="목표 등급 선택">
       {#each d.tiers as t (t.key)}
-        {@const n = Math.max(0, d.need[t.key] - sim.extra)}
-        <button class="chip" class:done={n === 0} aria-pressed={app.target === t.key} style="--c:{TIER_COLOR[t.key]}" onclick={() => (app.target = t.key)}>
+        {@const now = Math.max(0, d.needNow[t.key] - sim.extra)}
+        {@const next = Math.max(0, d.need[t.key] - sim.extra)}
+        <button class="chip" class:done={now === 0} aria-pressed={app.target === t.key} style="--c:{TIER_COLOR[t.key]}" onclick={() => setTarget(t.key)}>
           <span class="nm"><i></i>{t.name}{#if t.key === cur}<em>유지</em>{/if}</span>
-          <small class="mono">{n === 0 ? '달성' : '+' + won(n)}</small>
+          <small class="mono">{now === 0 ? '달성' : '+' + won(next)}</small>
+          {#if now === 0 && next > 0}<small class="keep mono">유지 +{won(next)}</small>{/if}
         </button>
       {/each}
     </div>
@@ -91,7 +95,9 @@
       <div>
         <div class="dl">
           {#if sim.extra}
-            {target.name}까지 남은 금액 · 시뮬레이션 {won(sim.extra)}원 반영
+            {target.name}{targetDone ? ' 유지에' : '까지'} 남은 금액 · 시뮬레이션 {won(sim.extra)}원 반영
+          {:else if targetDone && needBase > 0}
+            {target.name} 유지를 위해서는 이번 주에 추가 결제 필요
           {:else}
             {target.name}까지 이번 주 추가 결제 필요
           {/if}
@@ -149,6 +155,9 @@
   .chip small { font-size: 11px; color: var(--color-tx3); }
   .chip[aria-pressed="true"] small { color: var(--c); }
   .chip.done small { color: var(--color-good); }
+  /* 지금은 달성했지만 다음 목요일에 떨어지는 등급 */
+  .chip small.keep { color: var(--color-peach); }
+  .chip[aria-pressed="true"] small.keep { color: var(--color-peach); }
 
   .need { margin-top: 14px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .dl { font-size: 12.5px; color: var(--color-tx3); }

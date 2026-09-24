@@ -8,6 +8,7 @@ import hashlib
 import logging
 import socket
 import sys
+from logging.handlers import RotatingFileHandler
 
 import webview
 
@@ -15,6 +16,30 @@ from . import cache, paths
 from .api import MIN_SIZE, Api
 
 DEV_URL = "http://localhost:5173"
+
+
+def _setup_logging(dev: bool) -> None:
+    r"""창만 띄우는 exe에서도 무슨 일이 있었는지 볼 수 있게 파일에 남긴다.
+
+    파일: %LOCALAPPDATA%\MapleMVP\log.txt (512KB씩 2개까지 보관)
+    """
+    fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.WARNING)      # pywebview 등 외부 라이브러리는 조용하게
+    logging.getLogger("app").setLevel(logging.INFO)   # 우리 모듈만 자세히
+
+    try:
+        fh = RotatingFileHandler(paths.LOG, maxBytes=512_000, backupCount=2, encoding="utf-8")
+        fh.setFormatter(fmt)
+        fh.setLevel(logging.INFO)
+        root.addHandler(fh)
+    except OSError as e:
+        print(f"로그 파일을 열지 못했어요: {e}", file=sys.stderr)
+
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    sh.setLevel(logging.INFO if dev else logging.WARNING)
+    root.addHandler(sh)
 
 
 def _http_port() -> int | None:
@@ -43,7 +68,8 @@ def _http_port() -> int | None:
 def main() -> None:
     demo = "--demo" in sys.argv
     dev = "--dev" in sys.argv
-    logging.basicConfig(level=logging.INFO if dev else logging.WARNING)
+    _setup_logging(dev)
+    logging.getLogger("app.main").info("MapleMVP 시작 (demo=%s, dev=%s)", demo, dev)
 
     settings = cache.load(paths.SETTINGS)
     geo = settings.get("window", {})

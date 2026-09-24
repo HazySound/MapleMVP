@@ -1,7 +1,39 @@
 export type TierKey = 'bronze' | 'silver' | 'gold' | 'diamond' | 'red' | 'black'
 
 export interface Tier { key: TierKey; name: string; th: number }
-export interface Week { start: string; end: string; amount: number }
+export interface Week {
+  start: string; end: string
+  amount: number  // 그 주 MVP 반영 금액 (결제 + PC방)
+  spent: number   // 수집한 결제액
+  pc: number      // PC방 보정분
+}
+
+/** PC방 보정 현황. 주 시작일을 키로 저장해서 주가 지나면 알아서 밀려난다 */
+export interface PcRoom {
+  weeks: Record<string, number>
+  missing: string[]  // 13주 창 안에서 아직 모르는 주
+  total: number
+}
+
+/** 검수 표의 한 줄 */
+export interface PcRoomRow {
+  start: string; end: string
+  nexon: number    // 툴팁에서 역산한 금액
+  spent: number    // 수집한 결제액
+  amount: number   // PC방으로 볼 금액
+  minutes: number
+  note: string     // 확실히 잘못된 값
+  warn: string     // 확인해 볼 값
+}
+
+export interface PcRoomResult {
+  ok: boolean
+  issues: string[]
+  rows: PcRoomRow[]
+  total?: number
+  tierTh?: number
+  pcTotal?: number
+}
 export interface Row { date: string; item: string; price: number }
 export interface Refresh { sum: number; tier: TierKey | null; carry: number }
 
@@ -34,6 +66,7 @@ export interface State {
   needNow: Record<TierKey, number> // 지금 당장 올리는 기준
   recent: Row[]
   sim: Sim
+  pcroom: PcRoom
 }
 
 /** 데이터가 하나도 없을 때의 응답 */
