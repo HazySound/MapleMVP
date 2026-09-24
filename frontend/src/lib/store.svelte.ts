@@ -2,7 +2,9 @@ import gsap from 'gsap'
 import { hasData, pyReady, type PyApi } from './api'
 import { REDUCED } from './format'
 import { initPlan, requestPlan } from './plan.svelte'
-import type { Bare, HistoryPage, HistoryQuery, Progress, Sim, State, TierKey } from './types'
+import { buildBase, buildState, simulate as simCalc } from './core/engine'
+import type { Base } from './core/engine'
+import type { Bare, HistoryPage, HistoryQuery, Progress, Raw, Sim, State, TierKey } from './types'
 
 /** 화면 위를 덮는 상태. null이면 대시보드만 보인다. */
 export type Overlay = null | 'boot' | 'first-sync' | 'login' | 'first-error'
@@ -23,6 +25,8 @@ export const app = $state({
   showHistory: false,
   showPcRoom: false,
   maximized: false,
+  simBusy: false,    // 시뮬레이션 금액이 움직이는 중
+  simTarget: 0,      // 움직여 가는 목표 금액 (0이면 원래대로 돌아가는 중)
   medal: false,   // MVP 등급 카드 가운데: false=합계, true=메달
   previewTier: null as TierKey | null,   // 개발자용: 다른 등급으로 바꿔서 보기
   history: null as HistoryPage | null,
@@ -30,8 +34,18 @@ export const app = $state({
 })
 
 let py: PyApi
+let base: Base | null = null
+export const getBase = () => base
 
-function apply(s: State, initial: boolean) {
+/** 원본(파이썬) + TS 코어 계산 = 화면 상태 */
+function compute(raw: Raw): State {
+  base = buildBase(raw.rows, raw.pcroom)
+  const { rows, pcroom, ...rest } = raw
+  return { ...rest, ...buildState(base) }
+}
+
+function apply(raw: Raw, initial: boolean) {
+  const s = compute(raw)
   app.data = s
   // 기본 목표는 '지금 등급 유지'. 직접 고르기 전까지는 동기화로 등급이 바뀌면 같이 따라간다
   // (첫 화면은 동기화 전 캐시라 등급이 낮게 나올 수 있어서, 거기서 굳으면 안 된다)
@@ -42,7 +56,7 @@ function apply(s: State, initial: boolean) {
   else requestPlan()
 }
 
-function handle(s: State | Bare) {
+function handle(s: Raw | Bare) {
   const first = !app.data
   if (hasData(s)) { apply(s, first); app.loggedOut = s.loggedOut }
   app.error = null
@@ -106,14 +120,9 @@ export function setTarget(k: TierKey) {
   app.targetPicked = true
 }
 
-/** 캡처에서 툴팁 숫자를 읽는다. dataUrl이 비면 클립보드에서 가져온다 */
-export function pcroomRead(dataUrl = '') {
-  return py.pcroom_read(dataUrl)
-}
-
-/** 인게임 툴팁 숫자로 주차별 PC방 반영액을 뽑아본다 (저장 전 검수용) */
-export function pcroomRestore(needs: number[], nextIndex: number, remaining: number, keepNeed: number | null) {
-  return py.pcroom_restore(needs, nextIndex, remaining, keepNeed)
+/** 캡처에서 숫자 후보를 뽑아 온다. 어느 것이 맞는지는 core/scan이 고른다 */
+export function pcroomScan(dataUrl = '', scale = 0) {
+  return py.pcroom_scan(dataUrl, scale)
 }
 
 export async function pcroomSave(weeks: Record<string, number>) {
@@ -152,31 +161,27 @@ export const win = {
   resize: (edge: string) => py?.start_resize(edge),
 }
 
-// ---- 시뮬레이션: 요청이 밀리면 마지막 값만 다시 보낸다 ----
-let inflight = false
-async function requestSim(v: number) {
-  if (inflight) return
-  inflight = true
-  try {
-    app.sim = await py.simulate(v)
-  } finally {
-    inflight = false
-  }
-  if (app.sim && app.sim.extra !== app.extra) requestSim(app.extra)
+// 시뮬레이션은 브라우저 안에서 바로 계산한다 (예전에는 파이썬까지 다녀왔다)
+function requestSim(v: number) {
+  if (base) app.sim = simCalc(base, v)
 }
 
 export function setExtra(v: number, animate = false) {
   app.previewTier = null   // 실제 데이터를 건드리면 미리보기는 끈다
   v = Math.max(0, Math.min(MAX_EXTRA, Math.round(v / 1000) * 1000))
+  app.simTarget = v
   if (!animate || REDUCED) {
+    app.simBusy = false
     app.extra = v
     requestSim(v)
     return
   }
+  app.simBusy = true
   const o = { v: app.extra }
   gsap.to(o, {
     v, duration: 0.6, ease: 'power3.out', overwrite: true,
     onUpdate: () => { app.extra = Math.round(o.v / 1000) * 1000; requestSim(app.extra) },
+    onComplete: () => { app.simBusy = false },
   })
 }
 

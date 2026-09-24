@@ -13,9 +13,8 @@ from datetime import date, datetime, timedelta
 
 import webview
 
-from . import cache, demo, ocr, paths, pcroom
-from .mvp import (KST, TIERS, WINDOW, forecast, need_for, need_now, plan, replay,
-                  tier_index, tier_now, today_kst, week_start, weekly_amounts)
+from . import cache, demo, ocr, paths
+from .mvp import KST, WINDOW, today_kst, week_start
 from .rows import merge_months, normalize_usage
 from .scraper import (HOME, MAPLE_HOST, USAGE, USAGE_HOST, NeedsLogin, Scraper,
                       ScrapeError)
@@ -61,10 +60,6 @@ def _find_window(pid: int, title: str) -> int:
 
     user32.EnumWindows(proc(check), 0)
     return found.value or 0
-
-
-def _key(t):
-    return t.key if t else None
 
 
 def _months(first: date, last: date) -> list[tuple[int, int]]:
@@ -117,93 +112,6 @@ def _write_xlsx(path: str, rows: list[dict]) -> None:
     wb.save(path)
 
 
-class Base:
-    """한 번의 동기화 결과에서 시뮬레이션에 필요한 값."""
-
-    def __init__(self, rows: list[dict], now: datetime, saved: dict[str, int] | None = None):
-        self.today = today_kst(now)
-        self.this_week = week_start(self.today)
-        span = HISTORY_WEEKS + WINDOW + 1
-        purchases = weekly_amounts(rows, self.this_week, span)
-        first = self.this_week - timedelta(weeks=span - 1)
-        starts = [(first + timedelta(weeks=i)).isoformat() for i in range(span)]
-        # PC방 반영액은 구매내역에 안 잡혀서, 사용자가 확인해 준 값을 여기서 더한다
-        self.saved = saved or {}
-        amounts = pcroom.apply(purchases, starts, self.saved)
-        # 이번 주가 시작될 때 정해진 등급과 이월 잔액
-        self.week_start_tier, self.carry = replay(amounts)
-        self.starts = starts[-WINDOW:]
-        self.purchases = purchases[-WINDOW:]     # 수집한 구매액만
-        self.last13 = amounts[-WINDOW:]          # 보정까지 더한 금액 (1주차 ~ 이번 주)
-        self.current = tier_now(self.last13, self.carry)
-        self.rows = rows
-
-    def simulate(self, extra: int) -> dict:
-        f = forecast(self.last13, self.carry, extra)
-        ci = tier_index(tier_now(self.last13[:-1] + [self.last13[-1] + extra], self.carry))
-        keep = 0
-        for r in f:
-            if ci >= 0 and tier_index(r.tier) >= ci:
-                keep += 1
-            else:
-                break
-        w = self.last13[:-1] + [self.last13[-1] + extra]
-        return {
-            "extra": extra,
-            "total": sum(w),
-            "current": _key(tier_now(w, self.carry)),   # 이번 주에 extra를 더 썼을 때의 지금 등급
-            "next": _key(f[0].tier),
-            "carryAfter": f[0].carry,
-            "carryUsed": f[0].carry_used,
-            "carryAdded": f[0].carry_added,
-            "keepWeeks": keep,
-            "forecast": [{"sum": r.sum, "tier": _key(r.tier), "carry": r.carry} for r in f],
-        }
-
-    def plan(self, target: str, date_iso: str, fixed: dict[str, int], skip_this_week: bool) -> dict:
-        t = (week_start(date.fromisoformat(date_iso)) - self.this_week).days // 7
-        if t < 0:
-            return {"error": "목표 날짜는 오늘 이후여야 해요."}
-        tier = next(x for x in TIERS if x.key == target)
-        offsets = {(date.fromisoformat(k) - self.this_week).days // 7: int(v) for k, v in fixed.items()}
-        p = plan(self.last13, tier, t, offsets, skip_this_week)
-        for w in p["timeline"]:
-            start = self.this_week + timedelta(weeks=w["offset"])
-            w["start"], w["end"] = start.isoformat(), (start + timedelta(days=6)).isoformat()
-            w["tier"] = _key(w["tier"])
-        p["spentThisWeek"] = self.last13[-1]
-        return p
-
-    def state(self) -> dict:
-        first = self.this_week - timedelta(weeks=WINDOW - 1)
-        weeks = [
-            {"start": (first + timedelta(weeks=i)).isoformat(),
-             "end": (first + timedelta(weeks=i, days=6)).isoformat(),
-             "amount": a, "spent": p, "pc": a - p}
-            for i, (a, p) in enumerate(zip(self.last13, self.purchases))
-        ]
-        recent = sorted(self.rows, key=lambda r: r["date"], reverse=True)[:12]
-        deadline = datetime.combine(self.this_week + timedelta(days=7), datetime.min.time(), KST)
-        return {
-            "thisWeek": self.this_week.isoformat(),
-            "deadline": deadline.isoformat(),
-            "tiers": [{"key": t.key, "name": t.name, "th": t.th} for t in TIERS],
-            "weeks": weeks,
-            "current": _key(self.current),
-            "weekStart": _key(self.week_start_tier),
-            "carry": self.carry,
-            "need": {t.key: need_for(t, self.last13, self.carry) for t in TIERS},
-            "needNow": {t.key: need_now(t, self.last13, self.carry) for t in TIERS},
-            "recent": recent,
-            "sim": self.simulate(0),
-            "pcroom": {
-                "weeks": {s: self.saved[s] for s in self.starts if s in self.saved},
-                "missing": pcroom.missing(self.starts, self.saved),
-                "total": sum(a - p for a, p in zip(self.last13, self.purchases)),
-            },
-        }
-
-
 class Api:
     def __init__(self, demo_mode: bool):
         self._demo = demo_mode
@@ -211,12 +119,10 @@ class Api:
         self._scraper = None if demo_mode else Scraper(self._logged_in)
         self._lock = threading.Lock()
         self._cache = {} if demo_mode else cache.load(paths.CACHE)
-        self._base: Base | None = None
         self._maximized = False
         self._main_hwnd = 0
         self._resizing = False
         self._usage_error: str | None = None
-        self._ocr: dict | None = None        # 캡처에서 읽어 둔 값 (두 장에 나눠 찍을 때 이어 붙인다)
         # 로그인한 적이 있는지. 기록이 없으면(예전 버전에서 넘어왔으면) 로그인 창 저장소로 판단한다
         seen = cache.load(paths.SETTINGS).get("loggedIn")
         self._fresh = not demo_mode and not (any(paths.WEBVIEW.glob("*")) if seen is None else seen)
@@ -234,10 +140,13 @@ class Api:
         return {k: int(v) for k, v in cache.load(paths.PCROOM).get("weeks", {}).items()}
 
     def _build(self, status: str, message: str | None = None) -> dict:
-        self._base = Base(self._rows(), datetime.now(KST), self._pcroom_weeks())
+        """화면에 넘길 원본. 13주 계산과 등급 판정은 전부 화면(TS) 쪽에서 한다."""
         synced = self._cache.get("syncedAt") if not self._demo else datetime.now(KST).isoformat()
+        floor = (week_start(today_kst()) - timedelta(weeks=HISTORY_WEEKS + WINDOW + 1)).isoformat()
+        rows = [r for r in self._rows() if r["date"] >= floor]
         return {"status": status, "message": message, "syncedAt": synced, "demo": self._demo,
-                "loggedOut": self._logged_out, "usageError": self._usage_error, **self._base.state()}
+                "loggedOut": self._logged_out, "usageError": self._usage_error,
+                "rows": rows, "pcroom": self._pcroom_weeks()}
 
     def _push(self, fn: str, payload) -> None:
         if self._main:
@@ -277,46 +186,13 @@ class Api:
         if self._scraper:
             self._scraper.park()
 
-    def simulate(self, extra) -> dict:
-        return self._base.simulate(max(0, int(extra))) if self._base else {}
-
-    def plan(self, target: str, date_iso: str, fixed: dict, skip_this_week: bool = False) -> dict:
-        return self._base.plan(target, date_iso, fixed, bool(skip_this_week)) if self._base else {}
-
     # ---- PC방 반영액 보정 ----
-    def pcroom_restore(self, needs: list, next_index: int, remaining: int, keep_need=None) -> dict:
-        """인게임 툴팁 숫자로 주차별 PC방 반영액을 뽑아 검수용 표를 만든다.
-
-        needs:      '현재 등급 유지까지' 12개 (1주 뒤 → 12주 뒤)
-        next_index: 상단에 적힌 등급의 자리 ('레드 등급까지'면 레드)
-        remaining:  그 등급까지 남은 금액
-        """
-        b = self._base
-        if not b:
-            return {"ok": False, "issues": ["아직 데이터를 불러오지 못했어요."], "rows": []}
-        ths = [t.th for t in TIERS]
-        if not 0 <= int(next_index) < len(ths):
-            return {"ok": False, "issues": ["등급을 고르지 않았어요."], "rows": []}
-        tier_th, total = pcroom.anchor(ths, int(next_index), int(remaining))
-        r = pcroom.restore([int(n) for n in needs], tier_th, total,
-                           None if keep_need in (None, "") else int(keep_need))
-        if not r.ok:
-            return {"ok": False, "issues": r.issues, "rows": [], "total": total}
-
-        gaps = pcroom.compare(r.weeks, b.purchases, b.starts)
-        rows = [{"start": g.start, "end": (date.fromisoformat(g.start) + timedelta(days=6)).isoformat(),
-                 "nexon": g.nexon, "spent": g.collected, "amount": g.amount,
-                 "minutes": g.minutes, "note": g.note, "warn": g.warn} for g in gaps]
-        return {"ok": all(g.ok for g in gaps), "issues": [g.note for g in gaps if g.note],
-                "rows": rows, "total": total, "tierTh": tier_th,
-                "pcTotal": sum(g.amount for g in gaps)}
-
     def pcroom_save(self, weeks: dict) -> dict:
         """검수를 마친 보정값을 저장한다. 주 시작일이 키라서 주가 지나면 알아서 밀려난다."""
         saved = self._pcroom_weeks()
         saved.update({str(k): max(0, int(v)) for k, v in (weeks or {}).items()})
         floor = (week_start(today_kst()) - timedelta(weeks=HISTORY_WEEKS + WINDOW)).isoformat()
-        saved = pcroom.prune(saved, floor)
+        saved = {k: v for k, v in saved.items() if k >= floor}   # 13주 창을 한참 벗어난 것은 버린다
         cache.save(paths.PCROOM, {"weeks": saved})
         log.info("PC방 보정 저장: %d주, 합계 %s원", len(saved), f"{sum(saved.values()):,}")
         return self._build("ok")
@@ -340,52 +216,22 @@ class Api:
             got = Image.open(got[0]) if got else None
         return got if isinstance(got, Image.Image) else None
 
-    def pcroom_read(self, data_url: str = "") -> dict:
-        """인게임 캡처에서 툴팁 12줄과 13주 합계를 읽는다.
-
-        마우스를 치우면 툴팁이 사라지므로, 패널이 가려졌을 때는 두 장에 나눠 찍게 된다.
-        먼저 읽은 값을 기억해 두었다가 두 번째 장에서 합계만 채운다.
-        """
-        b = self._base
-        if not b:
-            return {"ok": False, "message": "아직 데이터를 불러오지 못했어요."}
+    def pcroom_scan(self, data_url: str = "", scale: float = 0.0) -> dict:
+        """캡처에서 숫자 후보를 뽑아 준다. 어느 것이 맞는지는 화면이 규칙으로 고른다."""
         img = self._image(data_url)
         if img is None:
             return {"ok": False, "message": "이미지가 없어요. 게임 화면에서 PrintScreen을 눌러 주세요."}
-
-        ths = [t.th for t in TIERS]
-        s = ocr.read_screen(img, b.purchases, ths)
-        if s:
-            self._ocr = {"needs": s.needs, "tierTh": s.tier_th, "scale": s.scale}
-            total = s.total
-        elif self._ocr:
-            total = ocr.solve_total(img, self._ocr["needs"], self._ocr["tierTh"],
-                                    b.purchases, ths, self._ocr["scale"])
-        else:
-            return {"ok": False, "message": "MVP 등급 툴팁을 찾지 못했어요. "
-                                            "등급 게이지에 마우스를 올린 채로 찍어 주세요."}
-
-        needs, tier_th = self._ocr["needs"], self._ocr["tierTh"]
-        i = ths.index(tier_th) + 1 if tier_th in ths else len(ths) - 1
-        i = min(i, len(ths) - 1)
-        out = {"ok": True, "needs": needs, "tierIndex": i, "partial": total is None}
-        if total is None:
-            out["message"] = ("툴팁 12줄은 읽었어요. 상단 '○○ 등급까지'가 가려져 있어서 "
-                              "가장 오래된 주만 알 수 없어요. 마우스를 치우고 한 장 더 찍어 주세요.")
-        else:
-            out["remaining"] = ths[i] - total
-            out["total"] = total
-            out["message"] = f"읽었어요. 지금 13주 합계 {total:,}원"
-        log.info("캡처 인식: %s (합계 %s) — %s %s", "부분" if total is None else "완료",
-                 total, img.size, img.mode)
-        if total is None:
-            # 왜 못 읽었는지 나중에 볼 수 있게 남긴다
+        r = ocr.scan(img, float(scale or 0))
+        ok = bool(r["readings"] or r["amounts"])
+        log.info("캡처 인식: 툴팁 후보 %d, 숫자 후보 %d, 배율 %.2f — %s %s",
+                 len(r["readings"]), len(r["amounts"]), r["scale"], img.size, img.mode)
+        if not ok:
             try:
-                img.save(paths.DATA / "last_capture.png")
-                log.info("못 읽은 캡처를 남겼어요: %s", paths.DATA / "last_capture.png")
+                img.save(paths.DATA / "last_capture.png")   # 왜 못 읽었는지 볼 수 있게
             except (OSError, ValueError) as e:
                 log.warning("캡처를 남기지 못했어요: %s", e)
-        return out
+        return {"ok": ok, **r,
+                "message": "" if ok else "MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요."}
 
     def pcroom_clear(self) -> dict:
         cache.save(paths.PCROOM, {"weeks": {}})

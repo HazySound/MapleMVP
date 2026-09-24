@@ -1,14 +1,11 @@
-import type { Bare, ExportResult, HistoryPage, HistoryQuery, PcRoomResult, PcRoomScan, PlanInput, PlanResult, Progress, Sim, State } from './types'
+import type { Bare, ExportResult, HistoryPage, HistoryQuery, PcRoomScan, PlanInput, Progress, Raw } from './types'
 
 export interface PyApi {
-  get_state(): Promise<State | Bare>
-  refresh(): Promise<State | Bare>
-  simulate(extra: number): Promise<Sim>
-  plan(target: string, date: string, fixed: Record<string, number>, skipThisWeek: boolean): Promise<PlanResult>
-  pcroom_restore(needs: number[], nextIndex: number, remaining: number, keepNeed: number | null): Promise<PcRoomResult>
-  pcroom_read(dataUrl: string): Promise<PcRoomScan>
-  pcroom_save(weeks: Record<string, number>): Promise<State | Bare>
-  pcroom_clear(): Promise<State | Bare>
+  get_state(): Promise<Raw | Bare>
+  refresh(): Promise<Raw | Bare>
+  pcroom_scan(dataUrl: string, scale: number): Promise<PcRoomScan>
+  pcroom_save(weeks: Record<string, number>): Promise<Raw | Bare>
+  pcroom_clear(): Promise<Raw | Bare>
   get_ui(): Promise<{ medal?: boolean }>
   save_ui(data: { medal: boolean }): Promise<void>
   get_plan(): Promise<Partial<PlanInput>>
@@ -39,4 +36,4 @@ export function pyReady(): Promise<PyApi> {
   })
 }
 
-export const hasData = (s: State | Bare): s is State => 'weeks' in s
+export const hasData = (s: Raw | Bare): s is Raw => 'rows' in s

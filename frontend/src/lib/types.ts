@@ -1,20 +1,14 @@
-export type TierKey = 'bronze' | 'silver' | 'gold' | 'diamond' | 'red' | 'black'
+import type { buildState, makePlan, simulate } from './core/engine'
+import type { Row as CoreRow, TierKey as CoreTierKey } from './core/mvp'
+
+export type TierKey = CoreTierKey
+export type Row = CoreRow
+export type Sim = ReturnType<typeof simulate>
+export type Computed = ReturnType<typeof buildState>
+export type PlanResult = Exclude<ReturnType<typeof makePlan>, { error: string }> & { error?: string }
+export type PlanWeek = PlanResult['timeline'][number]
 
 export interface Tier { key: TierKey; name: string; th: number }
-export interface Week {
-  start: string; end: string
-  amount: number  // 그 주 MVP 반영 금액 (결제 + PC방)
-  spent: number   // 수집한 결제액
-  pc: number      // PC방 보정분
-}
-
-/** PC방 보정 현황. 주 시작일을 키로 저장해서 주가 지나면 알아서 밀려난다 */
-export interface PcRoom {
-  weeks: Record<string, number>
-  missing: string[]  // 13주 창 안에서 아직 모르는 주
-  total: number
-}
-
 /** 검수 표의 한 줄 */
 export interface PcRoomRow {
   start: string; end: string
@@ -26,15 +20,13 @@ export interface PcRoomRow {
   warn: string     // 확인해 볼 값
 }
 
-/** 캡처에서 읽어 낸 결과. partial이면 상단 패널이 가려져 합계를 못 읽은 것 */
+/** 파이썬 인식기가 뽑아 준 숫자 후보. 어느 것이 맞는지는 core/scan이 고른다 */
 export interface PcRoomScan {
   ok: boolean
-  message: string
-  needs?: number[]
-  tierIndex?: number
-  remaining?: number
-  total?: number
-  partial?: boolean
+  message?: string
+  readings: number[][]
+  amounts: number[]
+  scale: number
 }
 
 export interface PcRoomResult {
@@ -45,40 +37,23 @@ export interface PcRoomResult {
   tierTh?: number
   pcTotal?: number
 }
-export interface Row { date: string; item: string; price: number }
-export interface Refresh { sum: number; tier: TierKey | null; carry: number }
 
-export interface Sim {
-  extra: number
-  total: number
-  current: TierKey | null // 시뮬레이션 금액까지 반영한 현재 등급
-  next: TierKey | null
-  carryAfter: number
-  carryUsed: number
-  carryAdded: number
-  keepWeeks: number
-  forecast: Refresh[] // 다음 목요일부터 14번의 갱신
-}
-
-export interface State {
+/** 파이썬이 내려 주는 것: 원본 결제내역과 저장해 둔 PC방 보정값뿐이다 */
+export interface Raw {
   status: 'cached' | 'ok' | 'needs_login' | 'error'
   loggedOut: boolean
   message: string | null
   syncedAt: string | null
   demo: boolean
-  thisWeek: string
-  deadline: string
-  tiers: Tier[]
-  weeks: Week[] // 13주: 가장 오래된 주 ~ 이번 주
-  current: TierKey | null // 지금 등급 (이번 주 결제까지 반영)
-  weekStart: TierKey | null // 이번 주가 시작될 때 정해진 등급
-  carry: number
-  need: Record<TierKey, number>    // 다음 목요일 기준
-  needNow: Record<TierKey, number> // 지금 당장 올리는 기준
-  recent: Row[]
-  sim: Sim
-  pcroom: PcRoom
+  usageError?: string | null
+  rows: Row[]
+  pcroom: Record<string, number>
 }
+
+/** 화면이 쓰는 상태 = 원본 + TS 코어가 계산한 값 */
+export type State = Omit<Raw, 'rows' | 'pcroom'> & Computed
+export type Week = Computed['weeks'][number]
+export type PcRoom = Computed['pcroom']
 
 /** 데이터가 하나도 없을 때의 응답 */
 export interface Bare { status: 'empty' | 'needs_login' | 'error'; message?: string; demo: boolean }
@@ -106,32 +81,3 @@ export interface HistoryPage {
 /** 목표 계획 입력. fixed는 주 시작일(목) → 직접 정한 결제 금액 */
 export interface PlanInput { target: TierKey; date: string; fixed: Record<string, number>; skipThisWeek: boolean }
 
-export interface PlanWeek {
-  offset: number // 0 = 이번 주
-  start: string
-  end: string
-  amount: number // 계획 결제 (고정 또는 자동 분배)
-  fixed: boolean
-  counts: boolean // 결제를 나눠 넣을 수 있는 주인지
-  skipped: boolean // 이번 주 추가 결제 없음으로 둔 주
-  sum: number // 그 주의 13주 합계
-  tier: TierKey | null
-  drop: number // 그 주 목요일에 13주 밖으로 빠지는 금액
-}
-
-export interface PlanResult {
-  error?: string
-  base: number // 목표 주 13주 안에 남는 기존 결제
-  required: number
-  equalPer: number
-  weeksCount: number
-  fixedSum: number
-  autoPer: number
-  autoCount: number
-  shortfall: number
-  surplus: number
-  planned: number
-  reached: number | null
-  spentThisWeek: number
-  timeline: PlanWeek[]
-}

@@ -1,4 +1,6 @@
 import type { PyApi } from './api'
+import { makePlan } from './core/engine'
+import { getBase } from './store.svelte'
 import { addDays } from './format'
 import type { PlanInput, PlanResult, State, TierKey } from './types'
 
@@ -22,22 +24,13 @@ export async function initPlan(api: PyApi, data: State) {
   requestPlan()
 }
 
-// ---- 계산 요청: 입력이 빠르게 바뀌면 마지막 입력만 다시 보낸다 ----
-let inflight = false
-let sentKey = ''
-export async function requestPlan() {
+// 계획도 브라우저 안에서 바로 계산한다
+export function requestPlan() {
   const p = planner.input
   if (!p || !py) return
-  const key = JSON.stringify(p)
-  if (inflight) return
-  inflight = true
-  sentKey = key
-  try {
-    planner.result = await py.plan(p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek)
-  } finally {
-    inflight = false
-  }
-  if (JSON.stringify(planner.input) !== sentKey) requestPlan()
+  const b = getBase()
+  if (!b) return
+  planner.result = makePlan(b, p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek) as PlanResult
 }
 
 function changed() {

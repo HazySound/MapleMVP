@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { app, pcroomClear, pcroomRead, pcroomRestore, pcroomSave } from '../store.svelte'
-  import type { PcRoomResult, PcRoomScan, Tier } from '../types'
+  import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
+  import { anchor, compare, restore } from '../core/pcroom'
+  import { type Solved, panelFields, solveScan } from '../core/scan'
+  import type { PcRoomResult, Tier } from '../types'
   import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
@@ -50,20 +52,28 @@
   const pcTotal = $derived(rows.reduce((s, r) => s + amountOf(r.start, r.amount), 0))
   const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined))
 
-  async function calc() {
-    busy = true
+  /** 넣은 숫자로 주차별 PC방 반영액을 뽑는다. 규칙은 core/pcroom에 있다. */
+  function calc() {
     error = ''
-    try {
-      const r = await pcroomRestore(needTexts.map(num), nextIndex, num(remainText),
-        keepText.trim() ? num(keepText) : null)
-      result = r
-      edited = {}
-      if (!r.rows.length) { error = r.issues.join(' '); openInput = true }
-    } catch (e) {
-      error = String(e)
+    edited = {}
+    const b = getBase()
+    if (!b) return
+    const [tierTh, total] = anchor(d.tiers.map(t => t.th), nextIndex, num(remainText))
+    const r = restore(needTexts.map(num), tierTh, total, keepText.trim() ? num(keepText) : null)
+    if (!r.ok) {
+      result = null
+      error = r.issues.join(' ')
       openInput = true
-    } finally {
-      busy = false
+      return
+    }
+    const gaps = compare(r.weeks, b.purchases, b.starts)
+    result = {
+      ok: gaps.every(g => g.ok),
+      issues: gaps.filter(g => g.note).map(g => g.note),
+      rows: gaps.map(g => ({ start: g.start, end: addDays(g.start, 6), nexon: g.nexon,
+                             spent: g.collected, amount: g.amount, minutes: g.minutes,
+                             note: g.note, warn: g.warn })),
+      total, tierTh, pcTotal: gaps.reduce((s, g) => s + g.amount, 0),
     }
   }
 
@@ -93,8 +103,11 @@
   const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`)
 
   // ---- 캡처에서 읽기 ----
-  let scan = $state<PcRoomScan | null>(null)
+  let scanMsg = $state('')
+  let scanBad = $state(false)
+  let scanPartial = $state(false)
   let scanning = $state(false)
+  let prev: Solved | null = null   // 먼저 읽어 둔 값 (두 장에 나눠 찍을 때 이어 붙인다)
   // 읽어온 값은 확인용이라 기본은 접어 둔다. 중요한 건 아래 보정 결과다
   let openInput = $state(false)
   const doneCount = $derived(needTexts.filter(t => t.trim() !== '').length)
@@ -102,19 +115,36 @@
     doneCount === 0 ? '아직 비어 있어요 · 펼치면 직접 넣을 수 있어요'
       : `${curTier?.name ?? '등급 미정'} · ${remainText || '?'} 캐시 · ${doneCount}/12줄`)
 
-  function apply(r: PcRoomScan) {
-    scan = r
-    if (!r.ok) return
-    if (r.needs) needTexts = r.needs.map(v => v.toLocaleString('ko-KR'))
-    if (r.tierIndex != null) nextIndex = r.tierIndex
-    if (r.remaining != null) remainText = r.remaining.toLocaleString('ko-KR')
-    if (!r.partial) calc()
-  }
-
   async function grab(dataUrl = '') {
     scanning = true
+    scanBad = scanPartial = false
     try {
-      apply(await pcroomRead(dataUrl))
+      const b = getBase()
+      const raw = await pcroomScan(dataUrl, prev?.scale ?? 0)
+      if (!b || !raw.ok) {
+        scanBad = true
+        scanMsg = raw.message || '이미지를 읽지 못했어요.'
+        return
+      }
+      const s = solveScan(raw, b.purchases, prev)
+      if (!s) {
+        scanBad = true
+        scanMsg = 'MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요.'
+        return
+      }
+      prev = s
+      needTexts = s.needs.map(v => v.toLocaleString('ko-KR'))
+      const f = panelFields(s)
+      nextIndex = f.tierIndex
+      if (f.remaining != null) remainText = f.remaining.toLocaleString('ko-KR')
+      if (s.total == null) {
+        scanPartial = true
+        scanMsg = "툴팁 12줄은 읽었어요. 상단 '○○ 등급까지'가 가려져 있어서 가장 오래된 주만 "
+          + '알 수 없어요. 마우스를 치우고 한 장 더 찍어 주세요.'
+      } else {
+        scanMsg = `읽었어요. 지금 13주 합계 ${s.total.toLocaleString('ko-KR')}원`
+        calc()
+      }
     } finally {
       scanning = false
     }
@@ -176,8 +206,8 @@
       </section>
       {#if scanning}
         <p class="scanmsg busy"><span class="spin small" aria-hidden="true"></span>캡처를 읽고 있어요…</p>
-      {:else if scan}
-        <p class="scanmsg" class:bad={!scan.ok} class:warn={scan.partial}>{scan.message}</p>
+      {:else if scanMsg}
+        <p class="scanmsg" class:bad={scanBad} class:warn={scanPartial}>{scanMsg}</p>
       {/if}
 
       <button class="fold" aria-expanded={openInput} onclick={() => (openInput = !openInput)}>

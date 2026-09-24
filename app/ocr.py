@@ -295,117 +295,33 @@ def read_amounts(g: np.ndarray, table: Table, glyphs: dict, th: int, blur) -> li
     return out if len(out) == ROWS else None
 
 
-@dataclass(frozen=True)
-class Reading:
-    needs: list[int]
-    tries: int          # 시도한 조합 수
-    agreed: int         # 검증을 통과한 조합 수
-    conflict: bool      # 통과한 결과가 서로 달랐는지
+def scan(img: Image.Image, scale: float = 0.0) -> dict:
+    """캡처에서 숫자 후보를 뽑는다. 어느 것이 맞는지는 판단하지 않는다.
 
+    임계값과 블러를 바꿔 가며 읽으면 결과가 여러 가지로 나오는데, 그중 무엇이
+    맞는지는 규칙(수집한 결제액과 맞는가, 100의 배수인가 …)을 아는 쪽이 골라야 한다.
+    그 규칙은 화면(TS)에 한 벌만 두었으므로 여기서는 후보만 넘긴다.
 
-def read_tooltip(img: Image.Image, accept) -> Reading | None:
-    """툴팁 금액 12개를 읽는다. accept(values) -> bool 로 결과를 검증한다."""
+    scale: 툴팁이 없는 두 번째 장을 읽을 때, 첫 장에서 알아낸 UI 배율.
+    반환: {readings: 툴팁 12줄 후보들, amounts: 화면에서 읽은 숫자들, scale}
+    """
     tpl = _templates()
-    if not tpl or not tpl["glyphs"]:
-        return None
+    if not tpl or not tpl.get("glyphs"):
+        return {"readings": [], "amounts": [], "scale": scale, "error": "templates"}
+    glyphs = tpl["glyphs"]
     g = gray(img)
+
     for table in find_tables(g):
-        winners: list[tuple[int, ...]] = []
-        tries = 0
+        seen: list[list[int]] = []
         for th in THRESHOLDS:
             for blur in BLURS:
-                tries += 1
-                vals = read_amounts(g, table, tpl["glyphs"], th, blur)
-                if vals and accept(vals):
-                    winners.append(tuple(vals))
-        if winners:
-            best = max(set(winners), key=winners.count)
-            return Reading(list(best), tries, len(winners), len(set(winners)) > 1)
-    return None
+                vals = read_amounts(g, table, glyphs, th, blur)
+                if vals and vals not in seen:
+                    seen.append(vals)
+        if seen:
+            return {"readings": seen, "scale": table.scale,
+                    "amounts": find_amounts(g, glyphs, table.scale, table.rows)}
 
-
-@dataclass(frozen=True)
-class Screen:
-    needs: list[int]        # 툴팁 12줄
-    tier_th: int            # 지금 등급 기준 금액
-    total: int | None       # 지금 13주 합계 (상단 패널이 가려지면 None)
-    scale: float            # 캡처의 UI 배율 (두 번째 장을 읽을 때 쓴다)
-    tries: int
-    agreed: int
-
-
-def read_screen(img: Image.Image, collected: list[int], ths: list[int]) -> Screen | None:
-    """캡처 한 장에서 툴팁 12줄과 지금 13주 합계를 읽는다.
-
-    collected: 우리가 수집한 주별 결제액 13개 (검증에 쓴다)
-    ths:       등급별 기준 금액 (낮은 등급 → 높은 등급)
-
-    상단 패널이 툴팁에 가려도 툴팁만으로 12주는 정확히 나온다.
-    그때 total은 None이고, 가장 오래된 주 하나만 알 수 없는 상태가 된다.
-    """
-    from .pcroom import MAX_WEEK_MINUTES, compare, minutes_of, restore
-
-    def tier_fits(th: int, last_need: int) -> bool:
-        gap = th - last_need - collected[-1]
-        return gap >= 0 and gap % 100 == 0 and minutes_of(gap) <= MAX_WEEK_MINUTES
-
-    def accept(v: list[int]) -> bool:
-        if any(v[i] > v[i + 1] for i in range(len(v) - 1)):
-            return False
-        mid = [v[k] - v[k - 1] for k in range(1, len(v))]
-        if any(m < c or (m - c) % 100 for m, c in zip(mid, collected[1:-1])):
-            return False
-        return any(tier_fits(th, v[-1]) for th in ths)
-
-    r = read_tooltip(img, accept)
-    if not r:
-        return None
-
-    tiers = [th for th in ths if tier_fits(th, r.needs[-1])]
-    tier_th = tiers[0] if len(tiers) == 1 else (tiers[0] if tiers else 0)
-    if not tier_th:
-        return None
-
-    g = gray(img)
-    tables = find_tables(g)
-    skip = tables[0].rows if tables else []
-    scale = tables[0].scale if tables else 1.0
-    glyphs = _templates().get("glyphs", {})
-    found = set()
-    for i, th in enumerate(ths):
-        if i == 0:
-            continue
-        for v in find_amounts(g, glyphs, scale, skip):
-            total = th - v
-            w = restore(r.needs, ths[i - 1], total)
-            if w.ok and all(x.ok for x in compare(w.weeks, collected, [""] * len(collected))):
-                found.add((ths[i - 1], total))
-    if len(found) == 1:
-        th, total = found.pop()
-        return Screen(r.needs, th, total, scale, r.tries, r.agreed)
-    return Screen(r.needs, tier_th, None, scale, r.tries, r.agreed)
-
-
-def solve_total(img: Image.Image, needs: list[int], tier_th: int, collected: list[int],
-                ths: list[int], scale: float = 1.0) -> int | None:
-    """툴팁 없이 상단 패널만 있는 캡처에서 지금 13주 합계를 구한다.
-
-    마우스를 치우면 툴팁이 사라지므로, 패널이 가려졌을 때 찍는 두 번째 장이 이렇게 생겼다.
-    앞서 읽어 둔 툴팁 값(needs)과 맞춰 보며 후보를 가린다.
-    """
-    from .pcroom import compare, restore
-
-    g = gray(img)
-    glyphs = _templates().get("glyphs", {})
-    if not glyphs:
-        return None
-    found = set()
-    for v in find_amounts(g, glyphs, scale):
-        for th in ths:
-            total = th - v
-            if total <= 0:
-                continue
-            w = restore(needs, tier_th, total)
-            if w.ok and all(x.ok for x in compare(w.weeks, collected, [""] * len(collected))):
-                found.add(total)
-    return found.pop() if len(found) == 1 else None
+    # 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
+    return {"readings": [], "scale": scale or 1.0,
+            "amounts": find_amounts(g, glyphs, scale or 1.0)}
