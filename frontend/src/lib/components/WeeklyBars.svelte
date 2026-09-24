@@ -106,12 +106,7 @@
 </script>
 
 <article class="card" use:spotlight>
-  <h3 class="card-title">
-    주차별 결제 <span class="sub">이번 주 포함 13주 · 막대에 올리면 상세</span>
-    <button class="more" class:on={!!d.pcroom.total} onclick={() => (app.showPcRoom = true)}>
-      {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
-    </button>
-  </h3>
+  <h3 class="card-title">주차별 결제 <span class="sub">이번 주 포함 13주 · 막대에 올리면 상세</span></h3>
   <div class="chart" bind:this={wrap} use:onResize={draw}>
     <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
     <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 236}px">
@@ -133,13 +128,6 @@
 </article>
 
 <style>
-  .more {
-    margin-left: auto; appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
-    padding: 4px 9px; border-radius: 8px; border: 1px solid var(--color-line);
-    background: var(--color-bg2); color: var(--color-tx3);
-  }
-  .more:hover { color: var(--color-tx); border-color: var(--color-lav); }
-  .more.on { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
 
   .chart { position: relative; margin-top: 12px; }
   canvas { display: block; width: 100%; height: 260px; }

@@ -26,6 +26,17 @@ export interface PcRoomRow {
   warn: string     // 확인해 볼 값
 }
 
+/** 캡처에서 읽어 낸 결과. partial이면 상단 패널이 가려져 합계를 못 읽은 것 */
+export interface PcRoomScan {
+  ok: boolean
+  message: string
+  needs?: number[]
+  tierIndex?: number
+  remaining?: number
+  total?: number
+  partial?: boolean
+}
+
 export interface PcRoomResult {
   ok: boolean
   issues: string[]

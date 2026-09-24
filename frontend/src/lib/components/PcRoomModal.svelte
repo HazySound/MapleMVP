@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { app, pcroomClear, pcroomRestore, pcroomSave } from '../store.svelte'
-  import type { PcRoomResult, Tier } from '../types'
+  import { onMount } from 'svelte'
+  import { app, onCapture, pcroomClear, pcroomRead, pcroomRestore, pcroomSave, pcroomWatch } from '../store.svelte'
+  import type { PcRoomResult, PcRoomScan, Tier } from '../types'
   import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
@@ -90,6 +91,47 @@
   }
 
   const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`)
+
+  // ---- 캡처에서 읽기 ----
+  let scan = $state<PcRoomScan | null>(null)
+  let scanning = $state(false)
+
+  function apply(r: PcRoomScan) {
+    scan = r
+    if (!r.ok) return
+    if (r.needs) needTexts = r.needs.map(v => v.toLocaleString('ko-KR'))
+    if (r.tierIndex != null) nextIndex = r.tierIndex
+    if (r.remaining != null) remainText = r.remaining.toLocaleString('ko-KR')
+    if (!r.partial) calc()
+  }
+
+  async function grab(dataUrl = '') {
+    scanning = true
+    try {
+      apply(await pcroomRead(dataUrl))
+    } finally {
+      scanning = false
+    }
+  }
+
+  function fromFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return
+    const fr = new FileReader()
+    fr.onload = () => grab(String(fr.result))
+    fr.readAsDataURL(file)
+  }
+
+  function onPaste(e: ClipboardEvent) {
+    const item = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))
+    if (item) { e.preventDefault(); fromFile(item.getAsFile()) }
+  }
+
+  // 화면이 열려 있는 동안 클립보드를 지켜본다. PrintScreen만 누르면 읽힌다
+  onMount(() => {
+    pcroomWatch(true)
+    const off = onCapture(apply)
+    return () => { pcroomWatch(false); off() }
+  })
 </script>
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showPcRoom = false)}>
@@ -113,8 +155,28 @@
     <div class="body">
       <p class="why">
         프리미엄 PC방 접속은 6분마다 100캐시씩 MVP 금액에 반영되는데 구매내역에는 잡히지 않아요.
-        인게임에서 <b>등급 게이지에 마우스를 올리면</b> 나오는 표를 아래와 같은 모양으로 옮겨 적어 주세요.
+        인게임에서 <b>등급 게이지에 마우스를 올리면</b> 나오는 표를 캡처해 주시면 읽어 드려요.
+        직접 옮겨 적어도 되고, 잘못 읽은 값은 아래에서 고칠 수 있어요.
       </p>
+
+      <section class="cap" class:busy={scanning} aria-label="캡처로 불러오기"
+        ondragover={e => e.preventDefault()}
+        ondrop={e => { e.preventDefault(); fromFile(e.dataTransfer?.files?.[0]) }}>
+        <div class="capmain">
+          <b>게임에서 <kbd>PrintScreen</kbd></b>
+          <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍으면 자동으로 읽어요. 이미지를 끌어다 놔도 돼요.</span>
+        </div>
+        <button class="chip" disabled={scanning} onclick={() => grab()}>
+          {scanning ? '읽는 중…' : '지금 클립보드에서 읽기'}
+        </button>
+        <label class="chip file">
+          파일 선택
+          <input type="file" accept="image/*" onchange={e => fromFile(e.currentTarget.files?.[0])} />
+        </label>
+      </section>
+      {#if scan}
+        <p class="scanmsg" class:bad={!scan.ok} class:warn={scan.partial}>{scan.message}</p>
+      {/if}
 
       <!-- 인게임 상단 패널과 같은 모양 -->
       <section class="panel">
@@ -213,7 +275,7 @@
   </div>
 </div>
 
-<svelte:window onkeydown={e => e.key === 'Escape' && (app.showPcRoom = false)} />
+<svelte:window onkeydown={e => e.key === 'Escape' && (app.showPcRoom = false)} onpaste={onPaste} />
 
 <style>
   .back {
@@ -238,6 +300,26 @@
   .body { overflow-y: auto; padding: 0 20px 20px; }
   .why { font-size: 12.5px; line-height: 1.65; color: var(--color-tx2); background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 12px; padding: 11px 13px; margin: 0 0 14px; }
   .why b { color: var(--color-tx); }
+
+  .cap {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+    padding: 11px 13px; border-radius: 12px; background: var(--color-bg2);
+    border: 1px dashed color-mix(in oklab, var(--color-lav) 45%, var(--color-line));
+    transition: border-color .2s, opacity .2s;
+  }
+  .cap.busy { opacity: .6; }
+  .capmain { flex: 1 1 320px; min-width: 0; display: grid; gap: 2px; }
+  .capmain b { font-size: 13px; color: var(--color-tx); }
+  .capmain span { font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
+  kbd {
+    font: inherit; font-family: var(--font-mono); font-size: 11.5px; padding: 1px 6px;
+    border-radius: 6px; border: 1px solid var(--color-line2); background: var(--color-panel2);
+  }
+  .file { position: relative; overflow: hidden; }
+  .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .scanmsg { margin: -6px 2px 12px; font-size: 12px; color: var(--color-good); line-height: 1.55; }
+  .scanmsg.warn { color: var(--color-peach); }
+  .scanmsg.bad { color: var(--color-bad); }
 
   /* 인게임 상단 패널 */
   .panel { border: 1px solid var(--color-line2); border-radius: 12px; overflow: hidden; background: var(--color-bg2); }

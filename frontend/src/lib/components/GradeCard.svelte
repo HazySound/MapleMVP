@@ -139,7 +139,10 @@
     MVP 등급
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
-    <span class="sub">목요일 00:00 갱신</span>
+    <button class="pc" class:on={!!d.pcroom.total} onclick={() => (app.showPcRoom = true)}
+      title="프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요">
+      {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
+    </button>
   </h3>
 
   {#if preview}
@@ -206,6 +209,13 @@
   }
   .center:hover .lbl { color: var(--color-tx2); }
   .lbl { font-size: 12px; color: var(--color-tx3); transition: color .2s; }
+  .pc {
+    margin-left: auto; appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
+    padding: 4px 10px; border-radius: 8px; border: 1px solid var(--color-line);
+    background: var(--color-bg2); color: var(--color-tx3);
+  }
+  .pc:hover { color: var(--color-tx); border-color: var(--color-lav); }
+  .pc.on { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
   .tog {
     appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
     padding: 3px 9px; border-radius: 7px;

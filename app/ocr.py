@@ -193,6 +193,13 @@ def line_glyphs(g: np.ndarray, y0: int, y1: int, x0: int, x1: int, scale: float,
                 th: int = 220, blur: float | None = None) -> list[np.ndarray]:
     """한 줄에서 글자 조각을 잘라 크기를 맞춘다. 세로 비율을 지켜 ','와 '1'을 구분한다."""
     band = g[max(0, y0):y1, x0:x1]
+    # 창모드처럼 UI가 작게 그려진 캡처는 글자가 7px쯤이라, 임계값을 조금만 움직여도
+    # 붙거나 끊어진다. 템플릿을 뜬 크기로 되돌려 놓고 읽는다.
+    if scale < 0.95 and band.size:
+        band = np.asarray(Image.fromarray(np.clip(band, 0, 255).astype(np.uint8))
+                          .resize((max(1, int(round(band.shape[1] / scale))),
+                                   max(1, int(round(band.shape[0] / scale)))), Image.LANCZOS)).astype(float)
+        scale = 1.0
     if blur:
         band = np.asarray(Image.fromarray(np.clip(band, 0, 255).astype(np.uint8))
                           .filter(ImageFilter.GaussianBlur(blur))).astype(float)
@@ -219,6 +226,9 @@ def line_glyphs(g: np.ndarray, y0: int, y1: int, x0: int, x1: int, scale: float,
     return out
 
 
+CLUSTER_THRESHOLDS = (200, 220, 235)
+
+
 def digit_clusters(g: np.ndarray, scale: float, skip: list[tuple[int, int]] | None = None,
                    win: int = 360, step: int = 60):
     """화면에서 '숫자 여러 개가 붙어 있는 덩어리'를 모두 찾는다.
@@ -229,27 +239,28 @@ def digit_clusters(g: np.ndarray, scale: float, skip: list[tuple[int, int]] | No
     """
     H, W = g.shape
     sc = lambda v: max(1, int(round(v * scale)))
-    bright = (g > 220).astype(np.int32)
-    cum = np.concatenate([np.zeros((H, 1), np.int32), bright.cumsum(axis=1)], axis=1)
     out, seen = [], set()
-    for wx in range(0, max(1, W - win + 1), step):
-        wx1 = min(W, wx + win)
-        for a, b in runs((cum[:, wx1] - cum[:, wx]) >= 3, sc(3), sc(8)):
-            if not sc(10) <= b - a <= sc(30):
-                continue
-            if skip and any(a < s1 and s0 < b for s0, s1 in skip):
-                continue
-            # 덩어리 경계는 창에 잘리면 안 되니 이 띠 전체 폭에서 잡는다
-            cols = (g[a:b] > 220).any(axis=0)
-            for lo, hi in runs(cols, sc(24), sc(18)):
-                if hi <= wx or lo >= wx1:
+    for th in CLUSTER_THRESHOLDS:
+        bright = (g > th).astype(np.int32)
+        cum = np.concatenate([np.zeros((H, 1), np.int32), bright.cumsum(axis=1)], axis=1)
+        for wx in range(0, max(1, W - win + 1), step):
+            wx1 = min(W, wx + win)
+            for a, b in runs((cum[:, wx1] - cum[:, wx]) >= 3, sc(3), sc(8)):
+                if not sc(10) <= b - a <= sc(30):
                     continue
-                lo, hi = max(0, lo - sc(6)), min(W, hi + sc(7))
-                n = len(_digit_segs(g, a - sc(4), b + sc(6), lo, hi, scale))
-                key = (a // 6, lo // 10)
-                if 3 <= n <= 9 and key not in seen:
-                    seen.add(key)
-                    out.append((a - sc(4), b + sc(6), lo, hi, n))
+                if skip and any(a < s1 and s0 < b for s0, s1 in skip):
+                    continue
+                # 덩어리 경계는 창에 잘리면 안 되니 이 띠 전체 폭에서 잡는다
+                cols = (g[a:b] > th).any(axis=0)
+                for lo, hi in runs(cols, sc(24), sc(18)):
+                    if hi <= wx or lo >= wx1:
+                        continue
+                    lo, hi = max(0, lo - sc(6)), min(W, hi + sc(7))
+                    n = len(_digit_segs(g, a - sc(4), b + sc(6), lo, hi, scale, th))
+                    key = (a // 6, lo // 10, th)
+                    if 3 <= n <= 9 and key not in seen:
+                        seen.add(key)
+                        out.append((a - sc(4), b + sc(6), lo, hi, n))
     return out
 
 
@@ -318,6 +329,7 @@ class Screen:
     needs: list[int]        # 툴팁 12줄
     tier_th: int            # 지금 등급 기준 금액
     total: int | None       # 지금 13주 합계 (상단 패널이 가려지면 None)
+    scale: float            # 캡처의 UI 배율 (두 번째 장을 읽을 때 쓴다)
     tries: int
     agreed: int
 
@@ -370,5 +382,30 @@ def read_screen(img: Image.Image, collected: list[int], ths: list[int]) -> Scree
                 found.add((ths[i - 1], total))
     if len(found) == 1:
         th, total = found.pop()
-        return Screen(r.needs, th, total, r.tries, r.agreed)
-    return Screen(r.needs, tier_th, None, r.tries, r.agreed)
+        return Screen(r.needs, th, total, scale, r.tries, r.agreed)
+    return Screen(r.needs, tier_th, None, scale, r.tries, r.agreed)
+
+
+def solve_total(img: Image.Image, needs: list[int], tier_th: int, collected: list[int],
+                ths: list[int], scale: float = 1.0) -> int | None:
+    """툴팁 없이 상단 패널만 있는 캡처에서 지금 13주 합계를 구한다.
+
+    마우스를 치우면 툴팁이 사라지므로, 패널이 가려졌을 때 찍는 두 번째 장이 이렇게 생겼다.
+    앞서 읽어 둔 툴팁 값(needs)과 맞춰 보며 후보를 가린다.
+    """
+    from .pcroom import compare, restore
+
+    g = gray(img)
+    glyphs = _templates().get("glyphs", {})
+    if not glyphs:
+        return None
+    found = set()
+    for v in find_amounts(g, glyphs, scale):
+        for th in ths:
+            total = th - v
+            if total <= 0:
+                continue
+            w = restore(needs, tier_th, total)
+            if w.ok and all(x.ok for x in compare(w.weeks, collected, [""] * len(collected))):
+                found.add(total)
+    return found.pop() if len(found) == 1 else None

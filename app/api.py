@@ -1,7 +1,9 @@
 """JS에 노출되는 API와 화면 상태 조립."""
 from __future__ import annotations
 
+import base64
 import ctypes
+import io
 import json
 import logging
 import os
@@ -11,7 +13,7 @@ from datetime import date, datetime, timedelta
 
 import webview
 
-from . import cache, demo, paths, pcroom
+from . import cache, demo, ocr, paths, pcroom
 from .mvp import (KST, TIERS, WINDOW, forecast, need_for, need_now, plan, replay,
                   tier_index, tier_now, today_kst, week_start, weekly_amounts)
 from .rows import merge_months, normalize_usage
@@ -214,6 +216,8 @@ class Api:
         self._main_hwnd = 0
         self._resizing = False
         self._usage_error: str | None = None
+        self._ocr: dict | None = None        # 캡처에서 읽어 둔 값 (두 장에 나눠 찍을 때 이어 붙인다)
+        self._watching = False
         # 로그인한 적이 있는지. 기록이 없으면(예전 버전에서 넘어왔으면) 로그인 창 저장소로 판단한다
         seen = cache.load(paths.SETTINGS).get("loggedIn")
         self._fresh = not demo_mode and not (any(paths.WEBVIEW.glob("*")) if seen is None else seen)
@@ -317,6 +321,96 @@ class Api:
         cache.save(paths.PCROOM, {"weeks": saved})
         log.info("PC방 보정 저장: %d주, 합계 %s원", len(saved), f"{sum(saved.values()):,}")
         return self._build("ok")
+
+    # ---- 캡처에서 읽기 ----
+    def _image(self, data_url: str):
+        """data_url이 있으면 그걸, 없으면 클립보드 이미지를 연다."""
+        from PIL import Image, ImageGrab
+        if data_url:
+            try:
+                return Image.open(io.BytesIO(base64.b64decode(data_url.partition(",")[2])))
+            except Exception as e:
+                log.warning("붙여넣은 이미지를 열지 못했어요: %s", e)
+                return None
+        try:
+            got = ImageGrab.grabclipboard()
+        except Exception as e:
+            log.warning("클립보드를 읽지 못했어요: %s", e)
+            return None
+        if isinstance(got, list):
+            got = Image.open(got[0]) if got else None
+        return got if isinstance(got, Image.Image) else None
+
+    def pcroom_read(self, data_url: str = "") -> dict:
+        """인게임 캡처에서 툴팁 12줄과 13주 합계를 읽는다.
+
+        마우스를 치우면 툴팁이 사라지므로, 패널이 가려졌을 때는 두 장에 나눠 찍게 된다.
+        먼저 읽은 값을 기억해 두었다가 두 번째 장에서 합계만 채운다.
+        """
+        b = self._base
+        if not b:
+            return {"ok": False, "message": "아직 데이터를 불러오지 못했어요."}
+        img = self._image(data_url)
+        if img is None:
+            return {"ok": False, "message": "이미지가 없어요. 게임 화면에서 PrintScreen을 눌러 주세요."}
+
+        ths = [t.th for t in TIERS]
+        s = ocr.read_screen(img, b.purchases, ths)
+        if s:
+            self._ocr = {"needs": s.needs, "tierTh": s.tier_th, "scale": s.scale}
+            total = s.total
+        elif self._ocr:
+            total = ocr.solve_total(img, self._ocr["needs"], self._ocr["tierTh"],
+                                    b.purchases, ths, self._ocr["scale"])
+        else:
+            return {"ok": False, "message": "MVP 등급 툴팁을 찾지 못했어요. "
+                                            "등급 게이지에 마우스를 올린 채로 찍어 주세요."}
+
+        needs, tier_th = self._ocr["needs"], self._ocr["tierTh"]
+        i = ths.index(tier_th) + 1 if tier_th in ths else len(ths) - 1
+        i = min(i, len(ths) - 1)
+        out = {"ok": True, "needs": needs, "tierIndex": i, "partial": total is None}
+        if total is None:
+            out["message"] = ("툴팁 12줄은 읽었어요. 상단 '○○ 등급까지'가 가려져 있어서 "
+                              "가장 오래된 주만 알 수 없어요. 마우스를 치우고 한 장 더 찍어 주세요.")
+        else:
+            out["remaining"] = ths[i] - total
+            out["total"] = total
+            out["message"] = f"읽었어요. 지금 13주 합계 {total:,}원"
+        log.info("캡처 인식: %s (합계 %s) — %s %s", "부분" if total is None else "완료",
+                 total, img.size, img.mode)
+        if total is None:
+            # 왜 못 읽었는지 나중에 볼 수 있게 남긴다
+            try:
+                img.save(paths.DATA / "last_capture.png")
+                log.info("못 읽은 캡처를 남겼어요: %s", paths.DATA / "last_capture.png")
+            except (OSError, ValueError) as e:
+                log.warning("캡처를 남기지 못했어요: %s", e)
+        return out
+
+    def pcroom_watch(self, on: bool) -> None:
+        """보정 화면이 열려 있는 동안 클립보드를 지켜본다. PrintScreen만 누르면 읽어 준다."""
+        if not on or self._watching or self._demo:
+            self._watching = bool(on) and self._watching
+            return
+        self._watching = True
+        threading.Thread(target=self._watch_clipboard, daemon=True).start()
+
+    def _watch_clipboard(self) -> None:
+        last = None
+        while self._watching:
+            time.sleep(0.6)
+            img = self._image("")
+            if img is None:
+                continue
+            key = (img.size, img.tobytes()[:4096])
+            if key == last:
+                continue
+            last = key
+            try:
+                self._push("onCapture", self.pcroom_read(""))
+            except Exception:
+                log.exception("클립보드 캡처 인식 실패")
 
     def pcroom_clear(self) -> dict:
         cache.save(paths.PCROOM, {"weeks": {}})
