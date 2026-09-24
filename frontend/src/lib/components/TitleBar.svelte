@@ -54,7 +54,17 @@
 
   <div class="winctl">
     <button onclick={win.minimize} aria-label="최소화"><svg viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.3"/></svg></button>
-    <button onclick={win.maximize} aria-label="최대화"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    <button onclick={win.maximize} aria-label={app.maximized ? '이전 크기로' : '최대화'}>
+      {#if app.maximized}
+        <!-- 겹친 사각형: 이전 크기로 되돌리기 -->
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.8" y="3.8" width="6.4" height="6.4" rx="1.3"/>
+          <path d="M4.2 3.6V2.9A1.1 1.1 0 0 1 5.3 1.8h4.0a1.1 1.1 0 0 1 1.1 1.1v4.0a1.1 1.1 0 0 1-1.1 1.1h-0.7"/>
+        </svg>
+      {:else}
+        <svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      {/if}
+    </button>
     <button class="x" onclick={win.close} aria-label="닫기"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
   </div>
 </header>

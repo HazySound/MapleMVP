@@ -217,7 +217,6 @@ class Api:
         self._resizing = False
         self._usage_error: str | None = None
         self._ocr: dict | None = None        # 캡처에서 읽어 둔 값 (두 장에 나눠 찍을 때 이어 붙인다)
-        self._watching = False
         # 로그인한 적이 있는지. 기록이 없으면(예전 버전에서 넘어왔으면) 로그인 창 저장소로 판단한다
         seen = cache.load(paths.SETTINGS).get("loggedIn")
         self._fresh = not demo_mode and not (any(paths.WEBVIEW.glob("*")) if seen is None else seen)
@@ -388,30 +387,6 @@ class Api:
                 log.warning("캡처를 남기지 못했어요: %s", e)
         return out
 
-    def pcroom_watch(self, on: bool) -> None:
-        """보정 화면이 열려 있는 동안 클립보드를 지켜본다. PrintScreen만 누르면 읽어 준다."""
-        if not on or self._watching or self._demo:
-            self._watching = bool(on) and self._watching
-            return
-        self._watching = True
-        threading.Thread(target=self._watch_clipboard, daemon=True).start()
-
-    def _watch_clipboard(self) -> None:
-        last = None
-        while self._watching:
-            time.sleep(0.6)
-            img = self._image("")
-            if img is None:
-                continue
-            key = (img.size, img.tobytes()[:4096])
-            if key == last:
-                continue
-            last = key
-            try:
-                self._push("onCapture", self.pcroom_read(""))
-            except Exception:
-                log.exception("클립보드 캡처 인식 실패")
-
     def pcroom_clear(self) -> dict:
         cache.save(paths.PCROOM, {"weeks": {}})
         return self._build("ok")
@@ -489,13 +464,18 @@ class Api:
     def minimize(self) -> None:
         self._main.minimize()
 
-    def toggle_maximize(self) -> None:
+    def toggle_maximize(self) -> bool:
+        """최대화/복원을 토글하고 바뀐 상태를 돌려준다 (창 단추 아이콘을 바꿔야 해서)."""
         # pywebview에 최대화 상태 조회가 없어서 직접 기억한다
         if self._maximized:
             self._main.restore()
         else:
             self._main.maximize()
         self._maximized = not self._maximized
+        return self._maximized
+
+    def is_maximized(self) -> bool:
+        return self._maximized
 
     def close(self) -> None:
         self._main.destroy()

@@ -7,7 +7,6 @@ export interface PyApi {
   plan(target: string, date: string, fixed: Record<string, number>, skipThisWeek: boolean): Promise<PlanResult>
   pcroom_restore(needs: number[], nextIndex: number, remaining: number, keepNeed: number | null): Promise<PcRoomResult>
   pcroom_read(dataUrl: string): Promise<PcRoomScan>
-  pcroom_watch(on: boolean): Promise<void>
   pcroom_save(weeks: Record<string, number>): Promise<State | Bare>
   pcroom_clear(): Promise<State | Bare>
   get_ui(): Promise<{ medal?: boolean }>
@@ -19,7 +18,8 @@ export interface PyApi {
   open_login(): Promise<void>
   hide_login(): Promise<void>
   minimize(): Promise<void>
-  toggle_maximize(): Promise<void>
+  toggle_maximize(): Promise<boolean>
+  is_maximized(): Promise<boolean>
   close(): Promise<void>
   start_resize(edge: string): Promise<void>
 }
@@ -28,7 +28,7 @@ declare global {
   interface Window {
     pywebview?: { api: PyApi }
     // Python → JS 푸시
-    __mvp?: { onProgress(p: Progress): void; onLoggedIn(): void; onCapture?(r: PcRoomScan): void }
+    __mvp?: { onProgress(p: Progress): void; onLoggedIn(): void }
   }
 }
 

@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
-  import { app, onCapture, pcroomClear, pcroomRead, pcroomRestore, pcroomSave, pcroomWatch } from '../store.svelte'
+  import { app, pcroomClear, pcroomRead, pcroomRestore, pcroomSave } from '../store.svelte'
   import type { PcRoomResult, PcRoomScan, Tier } from '../types'
   import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
 
@@ -59,9 +58,10 @@
         keepText.trim() ? num(keepText) : null)
       result = r
       edited = {}
-      if (!r.rows.length) error = r.issues.join(' ')
+      if (!r.rows.length) { error = r.issues.join(' '); openInput = true }
     } catch (e) {
       error = String(e)
+      openInput = true
     } finally {
       busy = false
     }
@@ -95,6 +95,12 @@
   // ---- 캡처에서 읽기 ----
   let scan = $state<PcRoomScan | null>(null)
   let scanning = $state(false)
+  // 읽어온 값은 확인용이라 기본은 접어 둔다. 중요한 건 아래 보정 결과다
+  let openInput = $state(false)
+  const doneCount = $derived(needTexts.filter(t => t.trim() !== '').length)
+  const summary = $derived(
+    doneCount === 0 ? '아직 비어 있어요 · 펼치면 직접 넣을 수 있어요'
+      : `${curTier?.name ?? '등급 미정'} · ${remainText || '?'} 캐시 · ${doneCount}/12줄`)
 
   function apply(r: PcRoomScan) {
     scan = r
@@ -126,12 +132,6 @@
     if (item) { e.preventDefault(); fromFile(item.getAsFile()) }
   }
 
-  // 화면이 열려 있는 동안 클립보드를 지켜본다. PrintScreen만 누르면 읽힌다
-  onMount(() => {
-    pcroomWatch(true)
-    const off = onCapture(apply)
-    return () => { pcroomWatch(false); off() }
-  })
 </script>
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showPcRoom = false)}>
@@ -154,30 +154,39 @@
 
     <div class="body">
       <p class="why">
-        프리미엄 PC방 접속은 6분마다 100캐시씩 MVP 금액에 반영되는데 구매내역에는 잡히지 않아요.
-        인게임에서 <b>등급 게이지에 마우스를 올리면</b> 나오는 표를 캡처해 주시면 읽어 드려요.
-        직접 옮겨 적어도 되고, 잘못 읽은 값은 아래에서 고칠 수 있어요.
+        프리미엄 PC방 접속분은 6분마다 100캐시씩 MVP 금액에 반영되는데 구매내역에는 잡히지 않아요.
+        인게임에서 <b>등급 게이지에 마우스를 올린 채</b> 캡처하면 읽어 드려요.
       </p>
 
-      <section class="cap" class:busy={scanning} aria-label="캡처로 불러오기"
+      <section class="cap" aria-label="캡처로 불러오기"
         ondragover={e => e.preventDefault()}
         ondrop={e => { e.preventDefault(); fromFile(e.dataTransfer?.files?.[0]) }}>
         <div class="capmain">
-          <b>게임에서 <kbd>PrintScreen</kbd></b>
-          <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍으면 자동으로 읽어요. 이미지를 끌어다 놔도 돼요.</span>
+          <b>게임에서 <kbd>PrintScreen</kbd>을 누른 뒤</b>
+          <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍어 주세요. 이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.</span>
         </div>
-        <button class="chip" disabled={scanning} onclick={() => grab()}>
-          {scanning ? '읽는 중…' : '지금 클립보드에서 읽기'}
+        <button class="btn primary" disabled={scanning} onclick={() => grab()}>
+          {#if scanning}<span class="spin" aria-hidden="true"></span>{/if}
+          {scanning ? '읽는 중…' : '클립보드에서 읽기'}
         </button>
-        <label class="chip file">
+        <label class="chip file" class:off={scanning}>
           파일 선택
-          <input type="file" accept="image/*" onchange={e => fromFile(e.currentTarget.files?.[0])} />
+          <input type="file" accept="image/*" disabled={scanning} onchange={e => fromFile(e.currentTarget.files?.[0])} />
         </label>
       </section>
-      {#if scan}
+      {#if scanning}
+        <p class="scanmsg busy"><span class="spin small" aria-hidden="true"></span>캡처를 읽고 있어요…</p>
+      {:else if scan}
         <p class="scanmsg" class:bad={!scan.ok} class:warn={scan.partial}>{scan.message}</p>
       {/if}
 
+      <button class="fold" aria-expanded={openInput} onclick={() => (openInput = !openInput)}>
+        <svg class="arw" class:open={openInput} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        <b>읽어온 값 확인·수정</b>
+        <small>{summary}</small>
+      </button>
+
+      {#if openInput}
       <!-- 인게임 상단 패널과 같은 모양 -->
       <section class="panel">
         <div class="prow">
@@ -232,11 +241,13 @@
 
       <div class="acts">
         <button class="btn primary" disabled={!filled || busy} onclick={calc}>주차별로 계산하기</button>
-        {#if Object.keys(d.pcroom.weeks).length}
-          <button class="chip" disabled={busy} onclick={clear}>저장된 보정값 지우기</button>
-        {/if}
       </div>
+      {/if}
       {#if error}<p class="err">{error}</p>{/if}
+
+      {#if !rows.length && Object.keys(d.pcroom.weeks).length}
+        <div class="acts"><button class="chip" disabled={busy} onclick={clear}>저장된 보정값 지우기</button></div>
+      {/if}
 
       {#if rows.length}
         <section class="result">
@@ -266,7 +277,12 @@
             <div class="sum">PC방 보정 합계 <b class="mono">{won(pcTotal)}</b>원
               <small>· 13주 합계가 {won(result?.total ?? 0)}원이 돼요</small>
             </div>
-            <button class="btn primary" disabled={busy || blocked} onclick={save}>저장하고 반영</button>
+            <div class="foot-btns">
+              {#if Object.keys(d.pcroom.weeks).length}
+                <button class="chip" disabled={busy} onclick={clear}>저장된 보정값 지우기</button>
+              {/if}
+              <button class="btn primary" disabled={busy || blocked} onclick={save}>저장하고 반영</button>
+            </div>
           </div>
           {#if blocked}<p class="err">빨간 줄의 금액을 확인하고 고쳐야 저장할 수 있어요.</p>{/if}
         </section>
@@ -307,7 +323,15 @@
     border: 1px dashed color-mix(in oklab, var(--color-lav) 45%, var(--color-line));
     transition: border-color .2s, opacity .2s;
   }
-  .cap.busy { opacity: .6; }
+  .spin {
+    display: inline-block; width: 12px; height: 12px; margin-right: 2px; border-radius: 50%;
+    border: 2px solid color-mix(in oklab, currentColor 30%, transparent); border-top-color: currentColor;
+    animation: spin .8s linear infinite; vertical-align: -1px;
+  }
+  .spin.small { width: 11px; height: 11px; border-width: 1.8px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .file.off { opacity: .45; pointer-events: none; }
+  .scanmsg.busy { color: var(--color-tx2); display: flex; align-items: center; }
   .capmain { flex: 1 1 320px; min-width: 0; display: grid; gap: 2px; }
   .capmain b { font-size: 13px; color: var(--color-tx); }
   .capmain span { font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
@@ -361,6 +385,17 @@
   .chip:hover:not(:disabled) { color: var(--color-tx); border-color: var(--color-line2); }
   .err { font-size: 12.5px; color: var(--color-bad); margin: 10px 0 0; }
   .label { font-size: 12px; color: var(--color-tx3); margin: 18px 0 7px; }
+  .fold {
+    width: 100%; appearance: none; cursor: pointer; font: inherit; text-align: left;
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 12px;
+    border-radius: 11px; border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx2);
+  }
+  .fold:hover { border-color: var(--color-line2); color: var(--color-tx); }
+  .fold b { font-size: 12.5px; font-weight: 600; flex: none; }
+  .fold small { margin-left: auto; font-size: 11.5px; color: var(--color-tx3); text-align: right; }
+  .arw { width: 14px; height: 14px; flex: none; color: var(--color-tx3); transition: transform .2s; }
+  .arw.open { transform: rotate(90deg); }
+  .foot-btns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
   .grid { border: 1px solid var(--color-line); border-radius: 12px; overflow: hidden; }
   .r2 { display: grid; grid-template-columns: minmax(96px, 1.3fr) 1fr 1fr 124px 86px; gap: 8px; align-items: center; padding: 5px 11px; border-top: 1px solid var(--color-line); font-size: 12.5px; }

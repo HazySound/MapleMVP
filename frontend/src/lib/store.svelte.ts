@@ -2,17 +2,10 @@ import gsap from 'gsap'
 import { hasData, pyReady, type PyApi } from './api'
 import { REDUCED } from './format'
 import { initPlan, requestPlan } from './plan.svelte'
-import type { Bare, HistoryPage, HistoryQuery, PcRoomScan, Progress, Sim, State, TierKey } from './types'
+import type { Bare, HistoryPage, HistoryQuery, Progress, Sim, State, TierKey } from './types'
 
 /** 화면 위를 덮는 상태. null이면 대시보드만 보인다. */
 export type Overlay = null | 'boot' | 'first-sync' | 'login' | 'first-error'
-
-/** 클립보드에서 캡처가 읽혔을 때 알림을 받을 곳 (보정 화면이 등록한다) */
-const captured = new Set<(r: PcRoomScan) => void>()
-export function onCapture(fn: (r: PcRoomScan) => void) {
-  captured.add(fn)
-  return () => captured.delete(fn)
-}
 
 export const app = $state({
   view: 'dash' as 'dash' | 'plan',
@@ -29,6 +22,7 @@ export const app = $state({
   error: null as string | null, // 데이터는 있는데 동기화에 실패했을 때
   showHistory: false,
   showPcRoom: false,
+  maximized: false,
   medal: false,   // MVP 등급 카드 가운데: false=합계, true=메달
   previewTier: null as TierKey | null,   // 개발자용: 다른 등급으로 바꿔서 보기
   history: null as HistoryPage | null,
@@ -67,7 +61,6 @@ export async function boot() {
   py = await pyReady()
   window.__mvp = {
     onProgress: p => { app.progress = p },
-    onCapture: (r: PcRoomScan) => captured.forEach(fn => fn(r)),
     onLoggedIn: () => {
       app.loginOpened = false
       if (!app.data) app.overlay = 'first-sync'   // 로그인 안내를 내리고 수집 화면으로 넘어간다
@@ -113,11 +106,6 @@ export function setTarget(k: TierKey) {
   app.targetPicked = true
 }
 
-/** 보정 화면이 열려 있는 동안 클립보드를 지켜본다 (PrintScreen만 눌러도 읽히게) */
-export function pcroomWatch(on: boolean) {
-  py?.pcroom_watch(on)
-}
-
 /** 캡처에서 툴팁 숫자를 읽는다. dataUrl이 비면 클립보드에서 가져온다 */
 export function pcroomRead(dataUrl = '') {
   return py.pcroom_read(dataUrl)
@@ -159,7 +147,7 @@ export function showLogin() {
 
 export const win = {
   minimize: () => py?.minimize(),
-  maximize: () => py?.toggle_maximize(),
+  maximize: async () => { app.maximized = await py.toggle_maximize() },
   close: () => py?.close(),
   resize: (edge: string) => py?.start_resize(edge),
 }
