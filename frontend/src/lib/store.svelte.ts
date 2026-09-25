@@ -93,6 +93,9 @@ export async function boot() {
     },
   }
   if (app.web) {
+    // 서버에 물어보는 동안 로그인 단추가 떴다가 이름으로 바뀌는 것을 막는다.
+    // 쿠키는 30일짜리라 대개 그대로 로그인 상태다. 아니면 곧 아래에서 치운다
+    app.user = cachedUser()
     await listenWeb()
     void signedIn()
   }
@@ -162,7 +165,11 @@ export async function reloadWeb() {
 async function signedIn() {
   const acc = await import('./web/account')
   const u = await acc.me()
-  if (!u) return
+  rememberUser(u)
+  if (!u) {
+    app.user = null   // 30일이 지났거나 다른 데서 로그아웃했다
+    return
+  }
   app.user = u
   app.savedAt = lastSaved()
   const v = await acc.pull()
@@ -180,6 +187,34 @@ async function signedIn() {
  * 새로 고치면 메모리에 있던 것은 날아가는데, 그 직후 signedIn이 다시 올리기 전까지
  * 잠깐 '아직 못 올림'으로 보인다. 그 깜빡임을 없애려고 브라우저에 적어 둔다.
  */
+/**
+ * 마지막으로 확인된 사람.
+ *
+ * 로그인 여부는 쿠키가 쥐고 있는데, 그건 브라우저가 우리에게 안 보여 준다.
+ * 서버에 한 번 물어야 알 수 있고 그동안 화면은 '로그아웃'처럼 보인다.
+ * 지난번에 누구였는지 적어 두고 먼저 그려서, 그 깜빡임을 없앤다.
+ *
+ * 여기 적힌 것으로 무엇을 열어 주지는 않는다. 이름표일 뿐이고,
+ * 실제 내려받기는 쿠키를 들고 서버에 다시 묻는다.
+ */
+const USER = 'maplemvp.user'
+type Me = { id: string; nick: string; tag: number }
+function cachedUser(): Me | null {
+  try {
+    const raw = localStorage.getItem(USER)
+    const u = raw ? (JSON.parse(raw) as Me) : null
+    return u?.id ? u : null
+  } catch {
+    return null
+  }
+}
+function rememberUser(u: Me | null) {
+  try {
+    if (u) localStorage.setItem(USER, JSON.stringify(u))
+    else localStorage.removeItem(USER)
+  } catch { /* 막혀 있으면 이번 세션만 기억한다 */ }
+}
+
 const SAVED_AT = 'maplemvp.savedAt'
 const lastSaved = () => {
   try { return Number(localStorage.getItem(SAVED_AT)) || 0 } catch { return 0 }
@@ -205,7 +240,10 @@ export async function pushUp(): Promise<void> {
 export async function setNick(nick: string): Promise<string> {
   const acc = await import('./web/account')
   const r = await acc.rename(nick)
-  if (r.user) app.user = r.user
+  if (r.user) {
+    app.user = r.user
+    rememberUser(r.user)
+  }
   return r.why ?? ''
 }
 
@@ -219,6 +257,7 @@ export async function signOut(alsoHere = false): Promise<void> {
   const acc = await import('./web/account')
   await acc.logout()
   app.user = null
+  rememberUser(null)
   app.savedAt = 0
   stamp(0)
   if (alsoHere) await clearWeb()
@@ -242,6 +281,7 @@ export async function leaveAccount(): Promise<{ ok: boolean; unlinked: boolean }
   const acc = await import('./web/account')
   const r = await acc.leave()
   app.user = null
+  rememberUser(null)
   app.savedAt = 0
   stamp(0)
   await clearWeb()

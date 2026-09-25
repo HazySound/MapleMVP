@@ -32,10 +32,20 @@
 </script>
 
 <header class="bar">
-  <div class="logo" aria-hidden="true">
-    <svg viewBox="0 0 32 32"><path d="M8 23V9l8 8 8-8v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </div>
-  <div class="ttl">MapleMVP</div>
+  {#snippet brand()}
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><path d="M8 23V9l8 8 8-8v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+    <span class="ttl">MapleMVP</span>
+  {/snippet}
+
+  <!-- 웹에서는 여느 사이트처럼 첫 화면으로 돌아가는 길이다.
+       exe에는 돌아갈 '홈'이 따로 없어서 그냥 이름표로 둔다 -->
+  {#if app.web}
+    <a class="brand" href="/" aria-label="MapleMVP 첫 화면">{@render brand()}</a>
+  {:else}
+    <div class="brand">{@render brand()}</div>
+  {/if}
   {#if app.data?.demo}<span class="tag">예시 데이터</span>{/if}
 
   {#if app.data}
@@ -119,6 +129,13 @@
     background: color-mix(in oklab, var(--color-bg) 70%, transparent);
     backdrop-filter: blur(14px);
   }
+  .brand {
+    flex: none; display: flex; align-items: center; gap: 12px;
+    color: inherit; text-decoration: none;
+    margin: -4px -8px; padding: 4px 8px; border-radius: 10px;
+  }
+  a.brand:hover { background: var(--color-panel); }
+  a.brand:focus-visible { outline: 2px solid var(--color-lav); outline-offset: 1px; }
   .logo {
     width: 26px; height: 26px; border-radius: 8px; flex: none;
     display: grid; place-items: center; color: var(--color-on-accent);
