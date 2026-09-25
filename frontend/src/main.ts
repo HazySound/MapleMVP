@@ -1,13 +1,8 @@
 import { mount } from 'svelte'
-import '@fontsource/orbit/400.css'
-import '@fontsource/ibm-plex-sans-kr/400.css'
-import '@fontsource/ibm-plex-sans-kr/500.css'
-import '@fontsource/ibm-plex-sans-kr/600.css'
-import '@fontsource/ibm-plex-sans-kr/700.css'
-import '@fontsource/jetbrains-mono/400.css'
-import '@fontsource/jetbrains-mono/600.css'
-import '@fontsource/jetbrains-mono/700.css'
 import './app.css'
 import App from './App.svelte'
 
 mount(App, { target: document.getElementById('app')! })
+
+// 글꼴은 화면을 막지 않게 뒤로 미룬다. 까닭은 fonts.ts에 적어 두었다
+void import('./fonts')

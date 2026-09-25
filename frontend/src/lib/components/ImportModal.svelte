@@ -29,4 +29,7 @@
   }
   .x:hover { color: var(--color-tx); border-color: var(--color-line2); }
   .x svg { width: 15px; height: 15px; }
+  /* 제목줄 오른쪽 끝에는 '얼마나 받아 뒀는지'가 붙는다. 닫기 단추가 그 위를
+     덮어 글자가 잘려 나갔다. 단추만큼 자리를 비워 둔다 */
+  .sheet :global(.card-title) { padding-right: 42px; }
 </style>
