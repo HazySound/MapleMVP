@@ -8,6 +8,7 @@
   import HistoryModal from './lib/components/HistoryModal.svelte'
   import ImportModal from './lib/components/ImportModal.svelte'
   import LoginModal from './lib/components/LoginModal.svelte'
+  import NameModal from './lib/components/NameModal.svelte'
   import PcRoomModal from './lib/components/PcRoomModal.svelte'
   import Ladder from './lib/components/Ladder.svelte'
   import Overlay from './lib/components/Overlay.svelte'
@@ -78,6 +79,8 @@
   {#if app.data && app.web && app.showImport}<ImportModal />{/if}
   <!-- 모달은 화면 전체를 덮어야 한다. 타이틀바 안에 두면 거기에 갇힌다 -->
   {#if app.web && app.showSignIn}<LoginModal onClose={() => (app.showSignIn = false)} />{/if}
+  <!-- 이름이 비어 있다는 것은 이 계정으로 처음 왔다는 뜻이다 -->
+  {#if app.web && app.user && !app.user.nick}<NameModal />{/if}
 </div>
 <ResizeHandles />
 

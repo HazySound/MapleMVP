@@ -22,7 +22,8 @@
   }
 
   async function saveName() {
-    await run('nick', () => setNick(draft))
+    if (!draft.trim()) return   // 빈 이름은 '아직 안 정함'이라 되돌릴 수 없다
+    await run('nick', () => setNick(draft.trim()))
     naming = false
   }
 
@@ -68,7 +69,7 @@
             <input id="nick" maxlength="12" placeholder="이름 없음" bind:value={draft}
               onkeydown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') naming = false }} />
             <div class="row">
-              <button class="go" disabled={!!busy} onclick={saveName}>{busy === 'nick' ? '저장 중…' : '저장'}</button>
+              <button class="go" disabled={!!busy || !draft.trim()} onclick={saveName}>{busy === 'nick' ? '저장 중…' : '저장'}</button>
               <button disabled={!!busy} onclick={() => (naming = false)}>취소</button>
             </div>
           </div>
