@@ -21,6 +21,8 @@ export interface User {
 export interface Vault {
   rows: Row[]
   pcroom: Record<string, number>
+  /** 보정값을 고친 시각(주차별). 기기가 어긋났을 때 나중에 고친 쪽을 고르는 데 쓴다 */
+  pcroomAt: Record<string, number>
   syncedAt: string | null
 }
 
@@ -83,6 +85,22 @@ export async function push(v: Vault): Promise<boolean> {
     return r.ok
   } catch {
     return false
+  }
+}
+
+/**
+ * 탈퇴. 계정에 있는 것을 모두 지우고 카카오 연결도 끊는다.
+ *
+ * 카카오 쪽 연결 해제는 우리 손을 떠난 일이라 실패할 수 있다. 그래도 우리가 들고
+ * 있던 것은 이미 지운 뒤다. 남은 것이 있는지를 돌려줘서 화면에서 알리게 한다.
+ */
+export async function leave(): Promise<{ ok: boolean; unlinked: boolean }> {
+  try {
+    const r = await fetch('/api/leave', { method: 'POST', credentials: 'same-origin' })
+    const body = (await r.json().catch(() => ({}))) as { unlinked?: boolean }
+    return { ok: r.ok, unlinked: !!body.unlinked }
+  } catch {
+    return { ok: false, unlinked: false }
   }
 }
 

@@ -28,6 +28,7 @@ export const app = $state({
   showSignIn: false,   // 로그인 안내 창 (웹)
   user: null as { id: string; nick: string; tag: number } | null,   // 카카오로 로그인한 사람 (웹)
   syncingUp: false,  // 계정에 올리는 중
+  savedAt: 0,        // 계정에 마지막으로 올린 시각 (0이면 아직 못 올렸다)
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
   importError: '',   // 북마클릿이 알려 온 실패 사유
   importPoke: 0,     // 북마클릿이 이 화면을 부른 횟수. 다음에 누를 곳을 짚어 준다
@@ -163,14 +164,27 @@ async function signedIn() {
   const u = await acc.me()
   if (!u) return
   app.user = u
+  app.savedAt = lastSaved()
   const v = await acc.pull()
   if (!v) return
   const { mergeVault } = await import('./web/api')
-  mergeVault(v.rows, v.pcroom, v.syncedAt)
+  mergeVault(v.rows, v)
   await reloadWeb()
   // 이 브라우저에만 있던 것이 있으면 계정에도 올려 둔다
   void pushUp()
 }
+
+/**
+ * 계정에 마지막으로 올린 시각.
+ *
+ * 새로 고치면 메모리에 있던 것은 날아가는데, 그 직후 signedIn이 다시 올리기 전까지
+ * 잠깐 '아직 못 올림'으로 보인다. 그 깜빡임을 없애려고 브라우저에 적어 둔다.
+ */
+const SAVED_AT = 'maplemvp.savedAt'
+const lastSaved = () => {
+  try { return Number(localStorage.getItem(SAVED_AT)) || 0 } catch { return 0 }
+}
+const stamp = (t: number) => { try { localStorage.setItem(SAVED_AT, String(t)) } catch { /* 막혀 있다 */ } }
 
 /** 지금 가진 것을 계정에 올린다. 로그인 전이면 아무 일도 없다 */
 export async function pushUp(): Promise<void> {
@@ -178,7 +192,10 @@ export async function pushUp(): Promise<void> {
   app.syncingUp = true
   try {
     const [acc, api] = [await import('./web/account'), await import('./web/api')]
-    await acc.push(api.snapshot())
+    if (await acc.push(api.snapshot())) {
+      app.savedAt = Date.now()
+      stamp(app.savedAt)
+    }
   } finally {
     app.syncingUp = false
   }
@@ -192,26 +209,43 @@ export async function setNick(nick: string): Promise<string> {
   return r.why ?? ''
 }
 
-export async function signOut(): Promise<void> {
+/**
+ * 로그아웃.
+ *
+ * 이 기기에 받아 둔 것은 기본으로 남긴다. 내 PC에서 잠깐 나갔다 들어오는 것이
+ * 흔한 일이고, 그때마다 다시 받게 하면 느리다. 남의 PC였으면 같이 지운다.
+ */
+export async function signOut(alsoHere = false): Promise<void> {
   const acc = await import('./web/account')
   await acc.logout()
   app.user = null
+  app.savedAt = 0
+  stamp(0)
+  if (alsoHere) await clearWeb()
 }
 
 /** 계정에 저장된 것만 지운다. 이 브라우저 것은 그대로 둔다 */
 export async function wipeAccount(): Promise<void> {
   const acc = await import('./web/account')
   await acc.wipe()
+  app.savedAt = 0
+  stamp(0)
 }
 
-/** 계정에 둔 것을 다시 내려받아 합친다 */
-export async function pullDown(): Promise<void> {
+/**
+ * 탈퇴. 계정에 있는 것을 모두 지우고 이 기기에 남은 것도 함께 치운다.
+ *
+ * 둘 중 하나만 지우면 탈퇴한 것처럼 보이지 않는다. 계정만 지우면 화면에는
+ * 그대로 남아 있고, 기기만 지우면 서버에 남는다.
+ */
+export async function leaveAccount(): Promise<{ ok: boolean; unlinked: boolean }> {
   const acc = await import('./web/account')
-  const v = await acc.pull()
-  if (!v) return
-  const { mergeVault } = await import('./web/api')
-  mergeVault(v.rows, v.pcroom, v.syncedAt)
-  await reloadWeb()
+  const r = await acc.leave()
+  app.user = null
+  app.savedAt = 0
+  stamp(0)
+  await clearWeb()
+  return r
 }
 
 /**

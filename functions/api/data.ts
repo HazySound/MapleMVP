@@ -16,13 +16,16 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   await ensure(ctx.env.DB)
 
   const row = await ctx.env.DB
-    .prepare('SELECT rows, pcroom, synced_at FROM vault WHERE uid = ?')
-    .bind(me.uid).first<{ rows: string; pcroom: string; synced_at: string | null }>()
-  if (!row) return json({ rows: [], pcroom: {}, syncedAt: null })
+    .prepare('SELECT rows, pcroom, pcroom_at, synced_at FROM vault WHERE uid = ?')
+    .bind(me.uid)
+    .first<{ rows: string; pcroom: string; pcroom_at: string | null; synced_at: string | null }>()
+  if (!row) return json({ rows: [], pcroom: {}, pcroomAt: {}, syncedAt: null })
 
   return json({
     rows: JSON.parse(row.rows),
     pcroom: JSON.parse(row.pcroom),
+    // 이 열이 생기기 전에 올린 것은 비어 있다. 그때는 시각을 모르는 값으로 친다
+    pcroomAt: row.pcroom_at ? JSON.parse(row.pcroom_at) : {},
     syncedAt: row.synced_at,
   })
 }
@@ -34,7 +37,7 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
   const body = await ctx.request.text()
   if (body.length > LIMIT) return json({ error: '내용이 너무 커요' }, 413)
 
-  let data: { rows?: unknown; pcroom?: unknown; syncedAt?: unknown }
+  let data: { rows?: unknown; pcroom?: unknown; pcroomAt?: unknown; syncedAt?: unknown }
   try {
     data = JSON.parse(body)
   } catch {
@@ -44,10 +47,12 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
 
   await ensure(ctx.env.DB)
   await ctx.env.DB
-    .prepare('INSERT INTO vault (uid, rows, pcroom, synced_at, saved_at) VALUES (?, ?, ?, ?, ?) '
+    .prepare('INSERT INTO vault (uid, rows, pcroom, pcroom_at, synced_at, saved_at) '
+      + 'VALUES (?, ?, ?, ?, ?, ?) '
       + 'ON CONFLICT(uid) DO UPDATE SET rows = excluded.rows, pcroom = excluded.pcroom, '
-      + 'synced_at = excluded.synced_at, saved_at = excluded.saved_at')
+      + 'pcroom_at = excluded.pcroom_at, synced_at = excluded.synced_at, saved_at = excluded.saved_at')
     .bind(me.uid, JSON.stringify(data.rows), JSON.stringify(data.pcroom ?? {}),
+          JSON.stringify(data.pcroomAt ?? {}),
           typeof data.syncedAt === 'string' ? data.syncedAt : null, Date.now())
     .run()
 

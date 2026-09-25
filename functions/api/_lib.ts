@@ -9,6 +9,8 @@ export interface Env {
   DB: D1Database
   KAKAO_REST_KEY: string
   KAKAO_CLIENT_SECRET?: string
+  /** 탈퇴할 때 카카오 연결까지 끊는 데 쓴다. 없으면 우리 쪽 것만 지운다 */
+  KAKAO_ADMIN_KEY?: string
   SESSION_SECRET: string
 }
 
@@ -94,6 +96,8 @@ export async function ensure(db: D1Database) {
     'pcroom TEXT NOT NULL, ' +
     'synced_at TEXT, ' +
     'saved_at INTEGER NOT NULL)')
+  // 보정값을 주차별로 언제 고쳤는지. 기기가 둘일 때 나중에 고친 쪽을 남기려면 필요하다
+  try { await db.exec('ALTER TABLE vault ADD COLUMN pcroom_at TEXT') } catch { /* 이미 있다 */ }
   // 이름은 카카오에서 받지 않는다. 이용자가 직접 정한 것을 여기 둔다.
   // tag는 같은 이름을 쓰는 사람들 사이에서 몇 번째인지다. 지금은 화면에 안 쓰지만,
   // 이름이 남에게 보이게 될 때 '느긋한 핑크빈 #2'로 구분하려면 그때 매길 수가 없다.

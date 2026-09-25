@@ -13,6 +13,9 @@ import type { ExportResult, HistoryPage, PcRoomScan, PlanInput, Raw, Row } from 
 const KEY = {
   rows: 'maplemvp.rows',
   pcroom: 'maplemvp.pcroom',
+  // 보정값을 고친 시각(주차별). 기기가 둘일 때 나중에 고친 쪽이 이기게 하려면
+  // 값만으로는 알 수 없다. 값은 그대로 두고 시각만 옆에 따로 적어 둔다.
+  pcroomAt: 'maplemvp.pcroomAt',
   ui: 'maplemvp.ui',
   plan: 'maplemvp.plan',
 }
@@ -54,13 +57,39 @@ export function saveRows(rows: Row[]): void {
   save('maplemvp.syncedAt', new Date().toISOString())
 }
 
-/** 계정에서 받아 온 것을 이 브라우저에 합친다. 중복은 saveRows가 거른다 */
-export function mergeVault(rows: Row[], pcroom: Record<string, number>, syncedAt: string | null): void {
+/**
+ * 계정에서 받아 온 것을 이 브라우저에 합친다.
+ *
+ * 구매내역은 넥슨 결제번호가 붙어 있어 그냥 합치면 된다(중복은 saveRows가 거른다).
+ * 어느 기기에서 로그인하든 결과가 합집합이라, 먼저 모은 쪽의 것이 사라질 일이 없다.
+ *
+ * 보정값은 다르다. '몇째 주 얼마'라서 같은 주를 양쪽이 다르게 들고 있을 수 있다.
+ * 그때는 나중에 고친 쪽을 남긴다. 시각을 모르는 옛 값은 0으로 쳐서, 시각이 적힌
+ * 쪽이 있으면 그쪽이 이긴다.
+ */
+export function mergeVault(rows: Row[], v: VaultIn): void {
   if (rows.length) saveRows(rows)
-  // 보정값은 주 시작일이 열쇠라 그대로 합치면 된다. 이 브라우저 것이 더 최신일 수 있어 뒤에 둔다
-  save(KEY.pcroom, { ...pcroom, ...load<Record<string, number>>(KEY.pcroom, {}) })
-  const mine = load<string | null>('maplemvp.syncedAt', null)
-  if (syncedAt && (!mine || syncedAt > mine)) save('maplemvp.syncedAt', syncedAt)
+
+  const mine = load<Record<string, number>>(KEY.pcroom, {})
+  const mineAt = load<Record<string, number>>(KEY.pcroomAt, {})
+  const theirsAt = v.pcroomAt ?? {}
+  for (const [week, amount] of Object.entries(v.pcroom ?? {})) {
+    const when = theirsAt[week] ?? 0
+    if (week in mine && when <= (mineAt[week] ?? 0)) continue
+    mine[week] = amount
+    mineAt[week] = when
+  }
+  save(KEY.pcroom, mine)
+  save(KEY.pcroomAt, mineAt)
+
+  const seen = load<string | null>('maplemvp.syncedAt', null)
+  if (v.syncedAt && (!seen || v.syncedAt > seen)) save('maplemvp.syncedAt', v.syncedAt)
+}
+
+interface VaultIn {
+  pcroom: Record<string, number>
+  pcroomAt?: Record<string, number>
+  syncedAt: string | null
 }
 
 /** 지금 이 브라우저가 들고 있는 것 전부. 계정에 올릴 때 쓴다 */
@@ -68,6 +97,7 @@ export function snapshot() {
   return {
     rows: load<Row[]>(KEY.rows, []),
     pcroom: load<Record<string, number>>(KEY.pcroom, {}),
+    pcroomAt: load<Record<string, number>>(KEY.pcroomAt, {}),
     syncedAt: load<string | null>('maplemvp.syncedAt', null),
   }
 }
@@ -136,14 +166,23 @@ export const webApi: PyApi = {
   },
 
   async pcroom_save(weeks) {
-    const saved = { ...load<Record<string, number>>(KEY.pcroom, {}), ...weeks }
-    save(KEY.pcroom, saved)
+    save(KEY.pcroom, { ...load<Record<string, number>>(KEY.pcroom, {}), ...weeks })
+    // 고친 주에만 지금 시각을 찍는다. 다른 기기와 어긋났을 때 이쪽이 이긴다
+    const now = Date.now()
+    const at = load<Record<string, number>>(KEY.pcroomAt, {})
+    for (const week of Object.keys(weeks)) at[week] = now
+    save(KEY.pcroomAt, at)
     save('maplemvp.syncedAt', new Date().toISOString())
     return raw()
   },
 
   async pcroom_clear() {
+    // 지운 것도 '지금 정한 것'이다. 시각을 남겨야 옛 값이 다시 내려와 되살아나지 않는다
+    const now = Date.now()
+    const at: Record<string, number> = {}
+    for (const week of Object.keys(load<Record<string, number>>(KEY.pcroom, {}))) at[week] = now
     save(KEY.pcroom, {})
+    save(KEY.pcroomAt, at)
     return raw()
   },
 
