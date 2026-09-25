@@ -268,7 +268,7 @@
   .hl.ok { border: 2px dashed var(--color-good); }
   .hl.pick { border: 2px solid var(--color-lav); }
 
-  @media (max-width: 624px) {
+  @media (max-width: 672px) {
     figure { width: 100% !important; }
   }
 </style>

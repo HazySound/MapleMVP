@@ -319,7 +319,7 @@
       </span>
       <button class="help" onclick={() => (showHelp = true)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.9 2.9 0 1 1 3.6 3.1c-.6.2-.8.7-.8 1.3v.4"/><path d="M12 17.2h.01"/></svg>
-        사용법
+        <span>사용법</span>
       </button>
       <button class="x" onclick={() => (app.showPcRoom = false)} aria-label="닫기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -698,4 +698,28 @@
   .sum { font-size: 13px; color: var(--color-tx2); }
   .sum b { font-size: 16px; color: var(--color-tx); }
   .sum small { color: var(--color-tx3); font-size: 12px; }
+  /*
+   * 좁은 화면.
+   *
+   * 표는 열이 넷·다섯이라 줄이면 글자가 겹친다. 폭을 지키고 가로로 민다
+   * (구매내역 표·차트와 같은 방식). 나머지는 여백과 글자를 한 단 줄인다.
+   * (중단점은 app.css에 적어 둔 좁은 화면 기준값 672)
+   */
+  @media (max-width: 672px) {
+    .back { padding: 10px; }
+    header { gap: 8px; padding: 14px 14px 10px; }
+    h2 { font-size: 17px; }
+    .meta { display: none; }
+    .help { padding: 7px 9px; }
+    .help span { display: none; }
+    .body { padding: 0 14px 16px; }
+    .why { padding: 10px 11px; font-size: 12px; }
+
+    .tt, .grid { overflow-x: auto; }
+    .tr { min-width: 430px; }
+    .r2 { min-width: 452px; }
+    /* 설명 줄의 이름칸이 넓어 값이 밖으로 밀렸다 */
+    .prow .k { min-width: 0; }
+    .cap, .live { padding: 10px 11px; }
+  }
 </style>

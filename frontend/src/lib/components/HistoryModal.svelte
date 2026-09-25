@@ -140,25 +140,30 @@
           <button class:on={mode === 'month'} aria-pressed={mode === 'month'} onclick={() => (mode = 'month')}>월별</button>
           <button class:on={mode === 'range'} aria-pressed={mode === 'range'} onclick={() => (mode = 'range')}>기간 지정</button>
         </div>
-        {#if mode === 'month'}
-          <select bind:value={year} aria-label="연도">
-            {#each years as y (y)}<option value={y}>{y}년</option>{/each}
-          </select>
-          <select bind:value={month} aria-label="월">
-            {#each months as m (m)}<option value={m}>{m}월</option>{/each}
-          </select>
-        {:else if mode === 'range'}
-          <!-- max를 걸어 오지 않은 날은 달력에서 아예 못 고르게 한다 -->
-          <input type="date" bind:value={start} max={end || TODAY_STR} aria-label="시작 날짜" />
-          <span>~</span>
-          <input type="date" bind:value={end} min={start} max={TODAY_STR} aria-label="끝 날짜" />
-        {/if}
+        <!-- 비어 있어도 자리는 지킨다. 까닭은 아래 .opts 규칙에 적어 두었다 -->
+        <div class="opts">
+          {#if mode === 'month'}
+            <select bind:value={year} aria-label="연도">
+              {#each years as y (y)}<option value={y}>{y}년</option>{/each}
+            </select>
+            <select bind:value={month} aria-label="월">
+              {#each months as m (m)}<option value={m}>{m}월</option>{/each}
+            </select>
+          {:else if mode === 'range'}
+            <!-- max를 걸어 오지 않은 날은 달력에서 아예 못 고르게 한다 -->
+            <input type="date" bind:value={start} max={end || TODAY_STR} aria-label="시작 날짜" />
+            <span>~</span>
+            <input type="date" bind:value={end} min={start} max={TODAY_STR} aria-label="끝 날짜" />
+          {/if}
+        </div>
       </div>
       <div class="grow"></div>
-      <select bind:value={size} aria-label="한 페이지 개수">
-        {#each [25, 50, 100, 200] as n (n)}<option value={n}>{n}개씩</option>{/each}
-      </select>
-      <button class="chip" onclick={reset}>조건 초기화</button>
+      <div class="tail">
+        <select bind:value={size} aria-label="한 페이지 개수">
+          {#each [25, 50, 100, 200] as n (n)}<option value={n}>{n}개씩</option>{/each}
+        </select>
+        <button class="chip" onclick={reset}>조건 초기화</button>
+      </div>
     </div>
 
     {#if res}
@@ -235,19 +240,48 @@
   .x:hover { color: var(--color-tx); border-color: var(--color-line2); }
   .x { flex: none; }
   .x svg { width: 15px; height: 15px; }
-  /* 좁은 화면에서는 글씨를 접고 아이콘만 남긴다. 자리는 그대로 지킨다.
-     (중단점은 --ui-scale 1.05를 미리 곱한 값. 원래 600) */
-  @media (max-width: 630px) {
+  /*
+   * 좁은 화면. 한 줄에 억지로 우겨넣지 않고 줄마다 하나씩 맡긴다.
+   *
+   *   [ 검색                    ]
+   *   [ 전체 | 월별 | 기간 지정 ]
+   *   [ 날짜 ]  ~  [ 날짜 ]
+   *   [ 50개씩 ] [ 조건 초기화 ]
+   *
+   * 토글이 줄 맨 앞에 서므로 방식을 바꿔도 자리가 흔들리지 않는다.
+   * (중단점은 app.css에 적어 둔 좁은 화면 기준값 672)
+   */
+  @media (max-width: 672px) {
     header { gap: 8px; padding: 14px 14px 10px; }
     .meta { display: none; }
     .out { padding: 8px 10px; }
     .out :global(svg) { margin: 0; }
     .out .lbl { display: none; }
-    .tools { padding: 0 14px 10px; }
-    /* 220px를 붙박으면 토글이 옆에 못 붙는다. 한 줄을 다 주고 토글을 아랫줄
-       맨 앞에 세운다. 그래도 자리는 고정이다 */
+
+    .tools { padding: 0 14px 10px; gap: 7px; }
     .search { width: 100%; }
-    .grow { flex-basis: 100%; }
+    .range { flex: 1 1 100%; }
+    /* 토글은 줄을 통째로 쓰고 셋으로 고르게 나눈다 */
+    .seg { width: 100%; }
+    .seg button { flex: 1 1 0; min-width: 0; padding: 9px 4px; }
+    /* 바뀌는 칸도 제 줄을 갖는다. 둘이 자리를 반씩 나눠 가지므로 안 잘린다 */
+    .opts { flex: 1 1 100%; min-width: 0; }
+    .opts:empty { display: none; }
+    .opts select, .opts input[type=date] { flex: 1 1 0; width: 100%; max-width: none; }
+    .grow { display: none; }
+    .tail { flex: 1 1 100%; }
+    .tail select { flex: none; }
+    .tail .chip { flex: 1 1 0; }
+
+    /* 표: 날짜 칸을 좁히고 금액은 내용만큼만 */
+    .rows { padding: 0 14px; }
+    .row { grid-template-columns: 74px minmax(0, 1fr) auto; gap: 8px; font-size: 12.5px; }
+    .count { padding: 0 14px 8px; font-size: 12px; }
+    /* 쪽 넘기기는 다섯 개가 한 줄에 안 들어간다. 양 끝을 접고 가운데만 남긴다 */
+    footer { padding: 10px 14px; gap: 6px; }
+    footer .chip:first-child, footer .chip:last-child { display: none; }
+    footer .chip { flex: 1 1 0; }
+    .pages { min-width: 0; flex: 1 1 0; }
   }
 
   .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 20px 12px; }
@@ -266,7 +300,25 @@
   .search .go svg { width: 15px; height: 15px; }
   .search .clear { font-size: 16px; line-height: 1; padding: 0 4px; }
   .search .clear:hover { color: var(--color-tx); }
-  .range { display: flex; flex: none; align-items: center; gap: 6px; font-size: 12px; color: var(--color-tx3); }
+  .range { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--color-tx3); }
+  /*
+   * 뒤따르는 칸은 남은 자리에 맞춰 줄어든다.
+   *
+   * 중단점으로만 막으면 그 사이 폭(창을 반만 줄인 노트북, 세로로 든 패드)에서
+   * 둘째 날짜 칸이 밖으로 밀려 잘린다. 어느 폭에서든 줄어들게 두고, 대신
+   * 넉넉할 때 혼자 늘어나지 않게 위를 막는다.
+   */
+  /*
+   * 비어 있어도 가장 넓은 '기간 지정'만큼 자리를 잡아 둔다.
+   *
+   * 방식마다 폭이 달라지면 도구줄이 줄바꿈되는 시점도 달라진다. 그러면 어떤
+   * 폭에서는 '전체'일 때 토글이 첫 줄에 있다가 '기간 지정'으로 바꾸면 아랫줄로
+   * 내려간다. 폭을 붙박아 두면 줄바꿈이 어느 방식에서나 똑같이 일어난다.
+   */
+  .opts { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 316px; }
+  .opts input[type=date] { flex: 0 1 auto; min-width: 0; max-width: 150px; }
+  .opts select { flex: 0 1 auto; min-width: 0; }
+  .tail { display: flex; flex: none; align-items: center; gap: 8px; }
   .seg { display: flex; flex: none; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; background: var(--color-bg2); }
   .seg button { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 8px 11px; border: 0; background: none; color: var(--color-tx3); }
   .seg button:hover { color: var(--color-tx2); }
@@ -274,6 +326,9 @@
   input[type=date], select {
     font: inherit; font-size: 12.5px; color: var(--color-tx); color-scheme: inherit;
     background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 10px; padding: 8px 10px; outline: none;
+    /* 날짜 칸은 브라우저가 정한 기본 폭이 꽤 넓다. 그대로 두면 좁은 화면에서
+       둘째 칸이 밖으로 밀려 잘린다. 줄어들 수 있게 열어 둔다 */
+    min-width: 0;
   }
   input[type=date]:focus, select:focus, .search:focus-within { border-color: var(--color-lav); }
   .chip { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx2); }
