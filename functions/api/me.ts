@@ -7,6 +7,7 @@
  */
 import { type Ctx, ensure, json, nickOf, who } from './_lib'
 import { whyBad } from './_nick'
+import { LIMIT, tick, tooMany, whoSent } from './_rate'
 
 /** 이름 길이. 화면(web/nick.ts)과 같아야 한다.
     '한가하게 차를 마시는 아테나 파이틴'이 19자라 그보다 넉넉해야 한다 */
@@ -15,6 +16,8 @@ const MAX = 20
 export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)
   if (!me) return json(null)
+  const wait = tick(`r:${whoSent(ctx.request, me.uid)}`, LIMIT.read.n, LIMIT.read.ms)
+  if (wait) return tooMany(wait)
   await ensure(ctx.env.DB)
   const m = await nickOf(ctx.env.DB, me.uid)
   return json({ id: me.uid, nick: m.nick, tag: m.tag })
@@ -23,6 +26,8 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 export async function onRequestPut(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)
   if (!me) return json({ error: '로그인이 필요해요' }, 401)
+  const wait = tick(`w:${whoSent(ctx.request, me.uid)}`, LIMIT.write.n, LIMIT.write.ms)
+  if (wait) return tooMany(wait)
 
   let nick = ''
   try {

@@ -6,13 +6,16 @@
  * 여기서는 받은 것을 그대로 둔다.
  */
 import { type Ctx, ensure, json, who } from './_lib'
+import { LIMIT, tick, tooMany, whoSent } from './_rate'
 
 /** 너무 큰 것은 받지 않는다. 24개월치라도 이보다 한참 작다 */
-const LIMIT = 2_000_000
+const MAX_BODY = 2_000_000
 
 export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)
   if (!me) return json({ error: '로그인이 필요해요' }, 401)
+  const wait = tick(`r:${whoSent(ctx.request, me.uid)}`, LIMIT.read.n, LIMIT.read.ms)
+  if (wait) return tooMany(wait)
   await ensure(ctx.env.DB)
 
   const row = await ctx.env.DB
@@ -33,9 +36,12 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 export async function onRequestPut(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)
   if (!me) return json({ error: '로그인이 필요해요' }, 401)
+  // 읽기 전에 센다. 본문을 받아 놓고 버리면 그만큼 일을 한 뒤에 막는 셈이다
+  const wait = tick(`w:${whoSent(ctx.request, me.uid)}`, LIMIT.write.n, LIMIT.write.ms)
+  if (wait) return tooMany(wait)
 
   const body = await ctx.request.text()
-  if (body.length > LIMIT) return json({ error: '내용이 너무 커요' }, 413)
+  if (body.length > MAX_BODY) return json({ error: '내용이 너무 커요' }, 413)
 
   let data: { rows?: unknown; pcroom?: unknown; pcroomAt?: unknown; syncedAt?: unknown }
   try {
@@ -63,6 +69,8 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
 export async function onRequestDelete(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)
   if (!me) return json({ error: '로그인이 필요해요' }, 401)
+  const wait = tick(`w:${whoSent(ctx.request, me.uid)}`, LIMIT.write.n, LIMIT.write.ms)
+  if (wait) return tooMany(wait)
   await ensure(ctx.env.DB)
   await ctx.env.DB.prepare('DELETE FROM vault WHERE uid = ?').bind(me.uid).run()
   return json({ ok: true })

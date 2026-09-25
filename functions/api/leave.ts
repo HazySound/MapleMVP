@@ -9,6 +9,7 @@
  * 그래도 이 사람의 구매내역과 이름은 사라지고, 다시 로그인하면 새 사람으로 시작한다.
  */
 import { type Ctx, SESSION, erase, json, setCookie, who } from './_lib'
+import { LIMIT, tick, tooMany, whoSent } from './_rate'
 
 async function unlink(env: Ctx['env'], uid: string): Promise<boolean> {
   if (!env.KAKAO_ADMIN_KEY) return false
@@ -37,6 +38,9 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
     r.headers.set('set-cookie', setCookie(SESSION, '', 0))
     return r
   }
+
+  const wait = tick(`w:${whoSent(ctx.request, me.uid)}`, LIMIT.write.n, LIMIT.write.ms)
+  if (wait) return tooMany(wait)
 
   await erase(ctx.env.DB, me.uid)
 

@@ -5,8 +5,13 @@
  * state는 위조를 막는 표식이다. 우리가 보낸 사람이 돌아온 것인지 확인할 때 쓴다.
  */
 import { type Ctx, setCookie } from '../_lib'
+import { LIMIT, tick, tooMany, whoSent } from '../_rate'
 
 export async function onRequestGet(ctx: Ctx): Promise<Response> {
+  // 카카오로 보내기 전이라 아직 누구인지 모른다. 어디서 왔는지로 센다
+  const wait = tick(`l:${whoSent(ctx.request)}`, LIMIT.login.n, LIMIT.login.ms)
+  if (wait) return tooMany(wait)
+
   const here = new URL(ctx.request.url)
   const back = `${here.origin}/api/auth/kakao`
   const state = crypto.randomUUID()
