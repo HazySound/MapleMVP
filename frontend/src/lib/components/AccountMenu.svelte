@@ -6,10 +6,11 @@
    * 앱은 로그인 없이도 그대로 돌아가므로, 여기서 막는 것은 아무것도 없다.
    */
   import { app, clearWeb, pullDown, pushUp, setNick, signOut, wipeAccount } from '../store.svelte'
-  import { login } from '../web/account'
+  import LoginModal from './LoginModal.svelte'
   import { tip } from '../tip'
 
   let open = $state(false)
+  let inviting = $state(false)   // 로그인 안내 창
   let busy = $state('')
   let asking = $state(false)
   let naming = $state(false)
@@ -45,13 +46,14 @@
 <svelte:window onkeydown={e => e.key === 'Escape' && (open = false)} />
 
 {#if !app.user}
-  <button class="who" onclick={login}
+  <button class="who" onclick={() => (inviting = true)}
     use:tip={'카카오로 로그인하면 휴대폰에서도 볼 수 있어요\n로그인 전에는 아무것도 서버로 보내지 않아요'}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="8.4" r="3.8"/><path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/>
     </svg>
     로그인
   </button>
+  {#if inviting}<LoginModal onClose={() => (inviting = false)} />{/if}
 {:else}
   <div class="wrap">
     <button class="who on" onclick={() => (open = !open)} aria-expanded={open}>
