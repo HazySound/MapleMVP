@@ -16,7 +16,8 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   go.searchParams.set('redirect_uri', back)
   go.searchParams.set('response_type', 'code')
   go.searchParams.set('state', state)
-  go.searchParams.set('scope', 'profile_nickname')
+  // 받을 항목은 카카오 콘솔의 동의항목이 정한다. 여기서 따로 달라고 하면
+  // 콘솔에 안 켜둔 것을 요청했을 때 로그인이 통째로 막힌다(KOE205)
 
   return new Response(null, {
     status: 302,
