@@ -14,6 +14,8 @@ import type { Row } from '../types'
 export interface User {
   id: string
   nick: string
+  /** 같은 이름을 쓰는 사람들 사이에서 몇 번째인지. 아직 화면에는 안 쓴다 */
+  tag: number
 }
 
 export interface Vault {
@@ -34,8 +36,8 @@ export async function me(): Promise<User | null> {
   }
 }
 
-/** 이름을 정한다. 빈 값이면 이름 없는 상태로 돌아간다 */
-export async function rename(nick: string): Promise<User | null> {
+/** 이름을 정한다. 막힌 이름이면 그 이유가 돌아온다 */
+export async function rename(nick: string): Promise<{ user?: User; why?: string }> {
   try {
     const r = await fetch('/api/me', {
       method: 'PUT',
@@ -43,9 +45,10 @@ export async function rename(nick: string): Promise<User | null> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ nick }),
     })
-    return r.ok ? ((await r.json()) as User) : null
+    const body = (await r.json()) as User & { error?: string }
+    return r.ok ? { user: body } : { why: body.error || '이름을 저장하지 못했어요' }
   } catch {
-    return null
+    return { why: '연결이 끊겼어요' }
   }
 }
 

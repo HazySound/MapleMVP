@@ -14,6 +14,7 @@
 
   let draft = $state(randomNick())
   let busy = $state(false)
+  let why = $state('')
 
   const ok = $derived(draft.trim().length > 0)
 
@@ -21,7 +22,7 @@
     if (!ok || busy) return
     busy = true
     try {
-      await setNick(draft.trim())
+      why = await setNick(draft.trim())
     } finally {
       busy = false
     }
@@ -39,8 +40,9 @@
       <!-- svelte-ignore a11y_autofocus -->
       <input maxlength="12" autofocus bind:value={draft}
         aria-label="이름" placeholder="이름"
+        oninput={() => (why = '')}
         onkeydown={e => e.key === 'Enter' && save()} />
-      <button class="dice" onclick={() => (draft = randomNick())} aria-label="다른 이름 뽑기" title="다른 이름 뽑기">
+      <button class="dice" onclick={() => { draft = randomNick(); why = '' }} aria-label="다른 이름 뽑기" title="다른 이름 뽑기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3.6" y="3.6" width="16.8" height="16.8" rx="3.4"/>
           <circle cx="8.6" cy="8.6" r="1.15" fill="currentColor" stroke="none"/>
@@ -51,7 +53,7 @@
         </svg>
       </button>
     </div>
-    <small class="hint">{draft.trim().length}/12자</small>
+    <small class="hint" class:bad={!!why}>{why || `${draft.trim().length}/12자`}</small>
 
     <button class="go" disabled={!ok || busy} onclick={save}>
       {busy ? '저장 중…' : '시작하기'}
@@ -89,6 +91,7 @@
   .dice:hover { color: var(--color-lav); border-color: var(--color-lav); }
   .dice svg { width: 19px; height: 19px; }
   .hint { font-size: 11px; color: var(--color-tx3); text-align: right; }
+  .hint.bad { color: var(--color-bad); text-align: left; }
 
   .go {
     appearance: none; cursor: pointer; font: inherit; font-size: 14.5px; font-weight: 700;

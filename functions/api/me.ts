@@ -2,9 +2,11 @@
  * 지금 누구인지, 그리고 이름 정하기.
  *
  * 이름은 카카오에서 받지 않는다. 이용자가 여기서 직접 정한다.
- * 받는 개인정보가 줄고, 카카오 쪽 동의항목도 건드릴 필요가 없다.
+ * 같은 이름을 여럿이 써도 되게 두되, 몇 번째인지를 함께 적어 둔다.
+ * 이름이 남에게 보이게 되는 날 '#2'로 구분하려면 그때는 순서를 알 길이 없다.
  */
 import { type Ctx, ensure, json, nickOf, who } from './_lib'
+import { whyBad } from './_nick'
 
 /** 이름 길이. 너무 길면 화면이 밀린다 */
 const MAX = 12
@@ -13,7 +15,8 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)
   if (!me) return json(null)
   await ensure(ctx.env.DB)
-  return json({ id: me.uid, nick: await nickOf(ctx.env.DB, me.uid) })
+  const m = await nickOf(ctx.env.DB, me.uid)
+  return json({ id: me.uid, nick: m.nick, tag: m.tag })
 }
 
 export async function onRequestPut(ctx: Ctx): Promise<Response> {
@@ -29,12 +32,24 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
   }
   // 눈에 안 보이는 문자로 빈 이름을 만들 수 있다
   nick = nick.replace(/[\u0000-\u001f\u007f​-‏⁠﻿]/g, '').trim().slice(0, MAX)
+  // 빈 이름은 '아직 안 정한 사람'이라는 표시로 쓴다. 되돌릴 수 있으면 그 뜻이 흐려진다
+  if (!nick) return json({ error: '이름을 적어 주세요' }, 400)
+
+  const bad = whyBad(nick)
+  if (bad) return json({ error: bad }, 400)
 
   await ensure(ctx.env.DB)
+  const now = await nickOf(ctx.env.DB, me.uid)
+  if (now.nick === nick) return json({ id: me.uid, nick, tag: now.tag })
+
+  // 번호는 한 문장 안에서 매긴다. 읽고 나서 쓰면 그 사이에 끼어들 수 있다
   await ctx.env.DB
-    .prepare('INSERT INTO member (uid, nick, joined_at) VALUES (?, ?, ?) '
-      + 'ON CONFLICT(uid) DO UPDATE SET nick = excluded.nick')
+    .prepare('INSERT INTO member (uid, nick, tag, joined_at) '
+      + 'VALUES (?1, ?2, (SELECT COALESCE(MAX(tag), 0) + 1 FROM member WHERE nick = ?2), ?3) '
+      + 'ON CONFLICT(uid) DO UPDATE SET nick = ?2, '
+      + 'tag = (SELECT COALESCE(MAX(tag), 0) + 1 FROM member WHERE nick = ?2)')
     .bind(me.uid, nick, Date.now()).run()
 
-  return json({ id: me.uid, nick })
+  const after = await nickOf(ctx.env.DB, me.uid)
+  return json({ id: me.uid, nick: after.nick, tag: after.tag })
 }

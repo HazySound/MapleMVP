@@ -94,18 +94,28 @@ export async function ensure(db: D1Database) {
     'pcroom TEXT NOT NULL, ' +
     'synced_at TEXT, ' +
     'saved_at INTEGER NOT NULL)')
-  // 이름은 카카오에서 받지 않는다. 이용자가 직접 정한 것을 여기 둔다
+  // 이름은 카카오에서 받지 않는다. 이용자가 직접 정한 것을 여기 둔다.
+  // tag는 같은 이름을 쓰는 사람들 사이에서 몇 번째인지다. 지금은 화면에 안 쓰지만,
+  // 이름이 남에게 보이게 될 때 '느긋한 핑크빈 #2'로 구분하려면 그때 매길 수가 없다.
   await db.exec(
     'CREATE TABLE IF NOT EXISTS member (' +
     'uid TEXT PRIMARY KEY, ' +
     "nick TEXT NOT NULL DEFAULT '', " +
+    'tag INTEGER NOT NULL DEFAULT 0, ' +
     'joined_at INTEGER NOT NULL)')
+  // 이미 만들어진 표에는 열이 없다. 있으면 실패하는데 그때는 그냥 둔다
+  try { await db.exec('ALTER TABLE member ADD COLUMN tag INTEGER NOT NULL DEFAULT 0') } catch { /* 이미 있다 */ }
+  // 아직 이름을 안 정한 사람은 모두 ('', 0)이라 그대로 걸면 두 번째 가입이 막힌다
+  try {
+    await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS member_name ON member (nick, tag) WHERE nick <> ''")
+  } catch { /* 이미 있다 */ }
 }
 
-/** 이용자가 정한 이름. 아직 안 정했으면 빈 문자열 */
-export async function nickOf(db: D1Database, uid: string): Promise<string> {
-  const row = await db.prepare('SELECT nick FROM member WHERE uid = ?').bind(uid).first<{ nick: string }>()
-  return row?.nick ?? ''
+/** 이용자가 정한 이름과 번호. 아직 안 정했으면 빈 이름 */
+export async function nickOf(db: D1Database, uid: string): Promise<{ nick: string; tag: number }> {
+  const row = await db.prepare('SELECT nick, tag FROM member WHERE uid = ?').bind(uid)
+    .first<{ nick: string; tag: number }>()
+  return { nick: row?.nick ?? '', tag: row?.tag ?? 0 }
 }
 
 export const json = (data: unknown, status = 200) =>

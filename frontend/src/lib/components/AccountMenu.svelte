@@ -13,18 +13,20 @@
   let asking = $state(false)
   let naming = $state(false)
   let draft = $state('')
+  let why = $state('')
 
   const shown = $derived(app.user?.nick || '이름 없음')
 
   function startName() {
     draft = app.user?.nick ?? ''
+    why = ''
     naming = true
   }
 
   async function saveName() {
     if (!draft.trim()) return   // 빈 이름은 '아직 안 정함'이라 되돌릴 수 없다
-    await run('nick', () => setNick(draft.trim()))
-    naming = false
+    await run('nick', async () => { why = await setNick(draft.trim()) })
+    if (!why) naming = false
   }
 
   async function run(what: string, job: () => Promise<void>) {
@@ -66,8 +68,10 @@
         {#if naming}
           <div class="name">
             <label for="nick">화면에 보일 이름</label>
-            <input id="nick" maxlength="12" placeholder="이름 없음" bind:value={draft}
+            <input id="nick" maxlength="12" placeholder="이름" bind:value={draft}
+              oninput={() => (why = '')}
               onkeydown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') naming = false }} />
+            {#if why}<small class="bad">{why}</small>{/if}
             <div class="row">
               <button class="go" disabled={!!busy || !draft.trim()} onclick={saveName}>{busy === 'nick' ? '저장 중…' : '저장'}</button>
               <button disabled={!!busy} onclick={() => (naming = false)}>취소</button>
@@ -158,6 +162,7 @@
     border: 1px solid var(--color-line2); background: var(--color-bg2); color: var(--color-tx);
   }
   .name input:focus { outline: none; border-color: var(--color-lav); }
+  .name .bad { font-size: 11px; line-height: 1.5; color: var(--color-bad); }
   .row button.go {
     color: var(--color-on-accent); background: var(--color-lav); border-color: var(--color-lav);
   }

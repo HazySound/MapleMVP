@@ -26,7 +26,7 @@ export const app = $state({
   showPcRoom: false,
   showImport: false,
   showSignIn: false,   // 로그인 안내 창 (웹)
-  user: null as { id: string; nick: string } | null,   // 카카오로 로그인한 사람 (웹)
+  user: null as { id: string; nick: string; tag: number } | null,   // 카카오로 로그인한 사람 (웹)
   syncingUp: false,  // 계정에 올리는 중
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
   importError: '',   // 북마클릿이 알려 온 실패 사유
@@ -184,11 +184,12 @@ export async function pushUp(): Promise<void> {
   }
 }
 
-/** 화면에 보일 이름을 정한다 */
-export async function setNick(nick: string): Promise<void> {
+/** 화면에 보일 이름을 정한다. 막혔으면 그 이유를 돌려준다 */
+export async function setNick(nick: string): Promise<string> {
   const acc = await import('./web/account')
-  const u = await acc.rename(nick)
-  if (u) app.user = u
+  const r = await acc.rename(nick)
+  if (r.user) app.user = r.user
+  return r.why ?? ''
 }
 
 export async function signOut(): Promise<void> {
