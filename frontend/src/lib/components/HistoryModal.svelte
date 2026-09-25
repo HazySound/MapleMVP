@@ -154,6 +154,7 @@
           <input type="date" bind:value={end} min={start} max={TODAY_STR} aria-label="끝 날짜" />
         {/if}
       </div>
+      <div class="grow"></div>
       <select bind:value={size} aria-label="한 페이지 개수">
         {#each [25, 50, 100, 200] as n (n)}<option value={n}>{n}개씩</option>{/each}
       </select>
@@ -242,10 +243,22 @@
     .out { padding: 8px 10px; }
     .out :global(svg) { margin: 0; }
     .out .lbl { display: none; }
+    .tools { padding: 0 14px 10px; }
+    /* 220px를 붙박으면 토글이 옆에 못 붙는다. 한 줄을 다 주고 토글을 아랫줄
+       맨 앞에 세운다. 그래도 자리는 고정이다 */
+    .search { width: 100%; }
+    .grow { flex-basis: 100%; }
   }
 
   .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 20px 12px; }
-  .search { display: flex; align-items: center; gap: 4px; flex: 1 1 220px; min-width: 200px; padding: 0 4px 0 12px; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-bg2); }
+  /*
+   * 검색칸이 남는 자리를 먹었다 뱉었다 했다. '전체'를 고르면 뒤따르는 칸이
+   * 사라지니 검색칸이 그만큼 늘어나면서 토글을 오른쪽으로 밀어 버렸다.
+   * 폭을 붙박아 두면 토글은 늘 같은 자리에 선다.
+   */
+  .search { display: flex; align-items: center; gap: 4px; flex: none; width: 220px; padding: 0 4px 0 12px; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-bg2); }
+  /* 남는 자리는 토글 뒤에서 늘어난다. 개수·초기화는 오른쪽 끝에 붙어 있게 된다 */
+  .grow { flex: 1 1 0; min-width: 0; }
   .search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--color-tx); font: inherit; font-size: 13px; padding: 9px 0; }
   .search .go, .search .clear { appearance: none; border: 0; background: none; cursor: pointer; color: var(--color-tx3); display: grid; place-items: center; }
   .search .go { width: 28px; height: 28px; border-radius: 8px; }
@@ -253,8 +266,8 @@
   .search .go svg { width: 15px; height: 15px; }
   .search .clear { font-size: 16px; line-height: 1; padding: 0 4px; }
   .search .clear:hover { color: var(--color-tx); }
-  .range { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-tx3); }
-  .seg { display: flex; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; background: var(--color-bg2); }
+  .range { display: flex; flex: none; align-items: center; gap: 6px; font-size: 12px; color: var(--color-tx3); }
+  .seg { display: flex; flex: none; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; background: var(--color-bg2); }
   .seg button { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 8px 11px; border: 0; background: none; color: var(--color-tx3); }
   .seg button:hover { color: var(--color-tx2); }
   .seg button.on { background: color-mix(in oklab, var(--color-lav) 18%, var(--color-bg2)); color: var(--color-tx); }
