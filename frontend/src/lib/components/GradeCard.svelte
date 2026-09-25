@@ -2,7 +2,7 @@
   import gsap from 'gsap'
   import { app, toggleMedal } from '../store.svelte'
   import { fit, onResize } from '../canvas'
-  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, countup, hexA, spotlight, tierIdx, won } from '../format'
+  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, spotlight, tierIdx, won } from '../format'
   import Badge from './Badge.svelte'
   import Medal from './Medal.svelte'
   import { tip } from '../tip'
@@ -144,6 +144,15 @@
   // 한 번 맞춰 놔도 주가 지나면 새 주가 비므로 다시 어긋난다.
   // 그래서 '아직 모르는 주'가 하나라도 있으면 계속 알린다 — 오랜만에 들어와도 눈에 띈다.
   const needPc = $derived(app.web && !!d.syncedAt && d.pcroom.missing.length > 0)
+
+  /*
+   * 보정은 PC에서만 된다.
+   *
+   * 인게임 화면을 캡처해서 붙여넣거나 화면공유로 읽어야 하는데, 휴대폰에는
+   * 메이플도 없고 화면공유도 안 된다. 눌러도 아무것도 못 하는 단추를 띄우면
+   * 뭘 잘못한 줄 안다. 맞춰 둔 금액만 보여 주고 고치는 길은 닫는다.
+   */
+  const canFix = $derived(!(app.web && TOUCH))
 </script>
 
 <article class="card grade" use:spotlight>
@@ -151,12 +160,19 @@
     MVP 등급
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
-    <button class="pc" class:on={!!d.pcroom.total} class:hl={needPc} onclick={() => (app.showPcRoom = true)}
-      use:tip={needPc
-        ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
-        : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
-      {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
-    </button>
+    {#if canFix}
+      <button class="pc" class:on={!!d.pcroom.total} class:hl={needPc} onclick={() => (app.showPcRoom = true)}
+        use:tip={needPc
+          ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
+          : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
+        {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
+      </button>
+    {:else if d.pcroom.total}
+      <span class="pc tag on"
+        use:tip={'PC에서 맞춰 둔 프리미엄 PC방 접속분이에요. 고치는 건 PC에서만 돼요'}>
+        PC방 +{won(d.pcroom.total)}원
+      </span>
+    {/if}
   </h3>
 
   {#if preview}
@@ -229,6 +245,9 @@
     background: var(--color-bg2); color: var(--color-tx3);
   }
   .pc:hover { color: var(--color-tx); border-color: var(--color-lav); }
+  /* 휴대폰에서는 읽는 것만 된다. 누를 것처럼 보이면 안 된다 */
+  .pc.tag { cursor: default; }
+  .pc.tag:hover { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
   .pc.on { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
   /* 크기는 그대로 두고 테두리 빛만 번지게 한다 */
   .pc.hl { color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 65%, transparent); animation: call 2.2s ease-out infinite; }

@@ -21,7 +21,7 @@
   import Simulator from './lib/components/Simulator.svelte'
   import TitleBar from './lib/components/TitleBar.svelte'
   import WeeklyBars from './lib/components/WeeklyBars.svelte'
-  import { REDUCED } from './lib/format'
+  import { REDUCED, TOUCH } from './lib/format'
   import { planner } from './lib/plan.svelte'
   import { app, boot, refresh, setExtra, setTarget } from './lib/store.svelte'
 
@@ -75,7 +75,8 @@
   </main>
   <Overlay />
   {#if app.data && app.showHistory}<HistoryModal />{/if}
-  {#if app.data && app.showPcRoom}<PcRoomModal />{/if}
+  <!-- 보정은 인게임 캡처나 화면공유가 있어야 한다. 휴대폰에서는 열 길이 없다 -->
+  {#if app.data && app.showPcRoom && !(app.web && TOUCH)}<PcRoomModal />{/if}
   {#if app.data && app.web && app.showImport}<ImportModal />{/if}
   <!-- 모달은 화면 전체를 덮어야 한다. 타이틀바 안에 두면 거기에 갇힌다 -->
   {#if app.web && app.showSignIn}<LoginModal onClose={() => (app.showSignIn = false)} />{/if}
