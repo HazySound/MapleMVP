@@ -8,8 +8,9 @@
 import { type Ctx, ensure, json, nickOf, who } from './_lib'
 import { whyBad } from './_nick'
 
-/** 이름 길이. 너무 길면 화면이 밀린다 */
-const MAX = 12
+/** 이름 길이. 화면(web/nick.ts)과 같아야 한다.
+    '한가하게 차를 마시는 아테나 파이틴'이 19자라 그보다 넉넉해야 한다 */
+const MAX = 20
 
 export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const me = await who(ctx)

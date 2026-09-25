@@ -10,6 +10,7 @@
    * 안 누르면 안 되는 줄 알게 된다. 대신 마지막으로 저장된 때를 적어 둔다.
    */
   import { app, clearWeb, leaveAccount, setNick, signOut, wipeAccount } from '../store.svelte'
+  import { MAX } from '../web/nick'
   import { tip } from '../tip'
 
   /** 지금 펼쳐진 것. 한 번에 하나만 연다 */
@@ -118,7 +119,7 @@
       {#if panel === 'name'}
         <div class="form">
           <label for="nick">닉네임</label>
-          <input id="nick" maxlength="12" placeholder="닉네임" bind:value={draft}
+          <input id="nick" maxlength={MAX} placeholder="닉네임" bind:value={draft}
             oninput={() => (why = '')}
             onkeydown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') panel = '' }} />
           {#if why}<small class="bad">{why}</small>{/if}
