@@ -138,15 +138,16 @@
   a.brand:focus-visible { outline: 2px solid var(--color-lav); outline-offset: 1px; }
   .logo {
     width: 26px; height: 26px; border-radius: 8px; flex: none;
-    display: grid; place-items: center; color: var(--color-on-accent);
-    background: linear-gradient(135deg, var(--color-lav), var(--color-rose));
+    display: grid; place-items: center; color: #1b1c21;
+    /* 로고는 표식이라 화면 밝기를 따라 바뀌면 안 된다. 변수를 거치지 않는다 */
+    background: linear-gradient(135deg, #b8a8ff, #ffa9c2);
   }
   .logo svg { width: 16px; height: 16px; }
   .ttl { font-family: var(--font-display); font-size: 14px; letter-spacing: .03em; }
   .tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--color-panel3); color: var(--color-tx3); }
   .drag { flex: 1; align-self: stretch; }
-  .tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; margin-left: 14px; padding: 3px; border-radius: 12px; background: var(--color-panel); border: 1px solid var(--color-line); }
-  .tabs button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--color-tx3); padding: 5px 16px; transition: color .25s; }
+  .tabs { position: relative; flex: none; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; margin-left: 14px; padding: 3px; border-radius: 12px; background: var(--color-panel); border: 1px solid var(--color-line); }
+  .tabs button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--color-tx3); padding: 5px 16px; white-space: nowrap; transition: color .25s; }
   .tabs button[aria-pressed="true"] { color: var(--color-tx); }
   .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
   .ind.right { transform: translateX(100%); }
@@ -211,5 +212,31 @@
   .winctl button:hover { background: var(--color-panel2); color: var(--color-tx); }
   .winctl button.x:hover { background: #d9536a; color: #fff; }
   .winctl svg { width: 12px; height: 12px; }
-  @media (max-width: 1032px) { .sync .txt, .tag { display: none; } .tabs { margin-left: 4px; } .tabs button { padding: 5px 12px; } }
+  /*
+   * 좁은 화면.
+   *
+   * 중단점은 --ui-scale(1.2)을 미리 곱해 둔 값이다. 미디어 쿼리는 창 너비만 보고
+   * 배율을 모르기 때문에, 그냥 두면 자리가 없는데도 발동하지 않는다.
+   * 원래 값: 860 / 560
+   */
+  @media (max-width: 1032px) {
+    .sync .txt, .tag { display: none; }
+    .tabs { margin-left: 4px; }
+    .tabs button { padding: 5px 12px; }
+    /* 글씨도 단추도 없으면 빈 칸만 남는다 (웹+손가락) */
+    .sync:not(:has(.ib, .stat)) { display: none; }
+  }
+  /* 휴대폰. 여기서는 한 줄에 다 들어가는 것이 먼저다 */
+  @media (max-width: 672px) {
+    .bar { gap: 8px; padding-left: 10px; }
+    /* 창 단추가 있던 자리를 비워 둘 여유가 없다 */
+    .bar:not(:has(.winctl)) { padding-right: 10px; }
+    .ttl { display: none; }            /* 이름표는 로고만 남긴다 */
+    .brand { margin: -4px; padding: 4px; }
+    .tabs { margin-left: 0; }
+    .tabs button { padding: 5px 9px; font-size: 12.5px; }
+    .sw { width: 42px; height: 24px; margin-left: 0; }
+    .knob { width: 18px; height: 18px; }
+    .sw[aria-checked="true"] .knob { transform: translateX(18px); }
+  }
 </style>

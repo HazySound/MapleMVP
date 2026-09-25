@@ -69,39 +69,54 @@
  */
 :root[data-theme="light"] {
   color-scheme: light;
-  --color-bg: #f1f3f8;
-  --color-bg2: #e9ecf3;
-  --color-panel: #ffffff;
-  --color-panel2: #f3f5fa;
-  --color-panel3: #e7eaf2;
-  --color-line: #e0e4ed;
-  --color-line2: #c8cedd;
+  /*
+   * 바탕을 순백으로 두지 않는다.
+   *
+   * 흰 바탕에 파스텔을 올리면 색이 바탕에 먹혀서 안 보인다. 그래서 전에는
+   * 강조색을 어둡게 내렸는데, 그러면 갈색·올리브로 내려앉아 탁해졌다.
+   * 바탕을 회색 쪽으로 한 단 낮추면 파스텔을 그대로 두고도 색이 산다.
+   * 카드(panel)는 바탕보다 밝게 둬서 떠 보이게 한다.
+   */
+  --color-bg: #e2e5ec;
+  --color-bg2: #d7dbe4;
+  --color-panel: #f2f4f8;
+  --color-panel2: #eaedf3;
+  --color-panel3: #e0e4ec;
+  --color-line: #ccd2de;
+  --color-line2: #b0b8c9;
   --color-tx: #1a1b21;
   --color-tx2: #494d5b;
-  --color-tx3: #767b8c;
+  --color-tx3: #6f7484;
+  /*
+   * 강조색은 글자로도 쓰이기 때문에 여기서는 진한 쪽을 쓴다. 어두운 바탕과
+   * 밝은 바탕 양쪽에서 읽히는 색 하나는 없다 — 한쪽에서 4.5:1을 넘으면
+   * 반대쪽에서 반드시 못 넘는다. 대신 갈색·올리브로 내려가지 않게, 어둡게가
+   * 아니라 진하게 간다.
+   */
   --color-lav: #6a4fd6;
-  --color-mint: #128a63;
-  --color-peach: #b35f14;
+  --color-mint: #0e9170;
+  --color-peach: #c96a10;
   --color-sky: #1f6cc4;
-  --color-rose: #c2426d;
-  --color-butter: #8a6a0f;
-  --color-good: #128a63;
+  --color-rose: #cd3f6f;
+  --color-butter: #9c7a06;
+  --color-good: #0e9170;
   --color-bad: #cf2f49;
   --color-on-accent: #ffffff;
   --color-scrim: #3a3f4d;
   /*
-   * 칠하는 색은 파스텔 그대로 두되 채도만 올린다. 어둡게 내리면 이웃한 색끼리
-   * 섞이면서 게이지가 탁해진다. 글자만 따로 진하게 쓴다.
+   * 칠하는 등급색은 어두운 화면과 똑같이 간다. 게이지와 뱃지는 글자가 아니라
+   * 면이라 대비를 덜 타고, 여기가 달라지면 두 화면이 아예 다른 앱처럼 보인다.
+   * 읽어야 하는 글자만 tk-로 따로 진하게 쓴다.
    */
-  --color-t-bronze: #f2a55c;
-  --color-t-silver: #aebbd0;
-  --color-t-gold: #f6c83a;
-  --color-t-diamond: #5ccfe8;
-  --color-t-red: #ff7d92;
-  --color-t-black: #a98cff;
-  --color-tk-bronze: #b0621a;
-  --color-tk-silver: #5c6880;
-  --color-tk-gold: #96700a;
+  --color-t-bronze: #e7b98f;
+  --color-t-silver: #cdd5e1;
+  --color-t-gold: #f3d47e;
+  --color-t-diamond: #9fe0f2;
+  --color-t-red: #ff9aa8;
+  --color-t-black: #c9b6ff;
+  --color-tk-bronze: #a55c16;
+  --color-tk-silver: #566278;
+  --color-tk-gold: #8c6806;
   --color-tk-diamond: #0a7b97;
   --color-tk-red: #d32c4b;
   --color-tk-black: #6743d4;
@@ -192,4 +207,17 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/*
+ * 휴대폰에서는 배율을 낮춘다.
+ *
+ * 1.2배는 노트북에서 글씨가 작아 보여서 건 것이다. 휴대폰은 애초에 가깝게 보고
+ * 브라우저가 알아서 키워 주기 때문에, 여기서 또 1.2배를 걸면 줄 하나에 들어가야
+ * 할 것들이 화면 밖으로 밀린다. 실제로 제목줄의 로그인 단추가 잘려 나갔다.
+ *
+ * 중단점은 창 너비 그대로다. 배율이 걸리는 .shell 바깥이라 곱할 것이 없다.
+ */
+@media (max-width: 672px) {
+  :root { --ui-scale: 1.05; }
 }
