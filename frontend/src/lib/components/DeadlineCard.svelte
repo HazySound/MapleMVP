@@ -209,4 +209,24 @@
   .prog { margin-top: 12px; height: 10px; border-radius: 99px; background: var(--color-bg2); border: 1px solid var(--color-line); overflow: hidden; position: relative; }
   .prog i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: linear-gradient(90deg, var(--color-lav), var(--c)); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
   .prog em { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, rgba(149, 226, 196, .8) 0 5px, rgba(149, 226, 196, .35) 5px 10px); transition: left .5s cubic-bezier(.2, .8, .2, 1), width .5s cubic-bezier(.2, .8, .2, 1); }
+  /*
+   * 좁은 화면.
+   *
+   * 등급 여섯을 한 줄에 넣으면 한 칸이 50px도 안 돼서 '브론즈'가 '브톤'이 되고
+   * 금액은 '+62…'로 잘린다. 셋씩 두 줄로 나누면 한 칸이 갑절이 되어 다 들어간다.
+   *
+   * 이 덩어리는 스타일시트 맨 끝에 둔다. 가운데 끼우면 뒤에 오는 기본 규칙이
+   * 그대로 덮어쓴다. (중단점은 app.css에 적어 둔 좁은 화면 기준값 672)
+   */
+  @media (max-width: 672px) {
+    .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    /*
+     * 안내 글과 단추를 나란히 두면 글이 '다이아 유지를 위…'로 잘린다.
+     * 위아래로 쌓고, 글은 잘리는 대신 다음 줄로 넘어가게 둔다.
+     */
+    .need { flex-direction: column; align-items: stretch; gap: 10px; }
+    .dl { white-space: normal; overflow: visible; text-overflow: clip; }
+    .btns { width: 100%; }
+    .btns .btn { flex: 1 1 0; justify-content: center; }
+  }
 </style>

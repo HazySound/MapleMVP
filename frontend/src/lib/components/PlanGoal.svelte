@@ -101,4 +101,14 @@
   .facts b { font-weight: 600; text-align: right; }
   .facts em { font-style: normal; font-weight: 400; font-size: 11.5px; color: var(--color-tx3); }
   .note { margin: 12px 0 0; font-size: 12px; color: var(--color-butter); }
+  /*
+   * 좁은 화면. 셋씩 두면 한 칸이 100px 남짓이라 '브론즈'와 '15만'이 맞붙는다.
+   * 둘씩 세 줄로 나눈다.
+   *
+   * 이 덩어리는 스타일시트 맨 끝에 둔다. 가운데 끼우면 뒤에 오는 기본 규칙이
+   * 그대로 덮어쓴다. (중단점은 app.css에 적어 둔 좁은 화면 기준값 672)
+   */
+  @media (max-width: 672px) {
+    .tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
 </style>
