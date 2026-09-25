@@ -54,6 +54,24 @@ export function saveRows(rows: Row[]): void {
   save('maplemvp.syncedAt', new Date().toISOString())
 }
 
+/** 계정에서 받아 온 것을 이 브라우저에 합친다. 중복은 saveRows가 거른다 */
+export function mergeVault(rows: Row[], pcroom: Record<string, number>, syncedAt: string | null): void {
+  if (rows.length) saveRows(rows)
+  // 보정값은 주 시작일이 열쇠라 그대로 합치면 된다. 이 브라우저 것이 더 최신일 수 있어 뒤에 둔다
+  save(KEY.pcroom, { ...pcroom, ...load<Record<string, number>>(KEY.pcroom, {}) })
+  const mine = load<string | null>('maplemvp.syncedAt', null)
+  if (syncedAt && (!mine || syncedAt > mine)) save('maplemvp.syncedAt', syncedAt)
+}
+
+/** 지금 이 브라우저가 들고 있는 것 전부. 계정에 올릴 때 쓴다 */
+export function snapshot() {
+  return {
+    rows: load<Row[]>(KEY.rows, []),
+    pcroom: load<Record<string, number>>(KEY.pcroom, {}),
+    syncedAt: load<string | null>('maplemvp.syncedAt', null),
+  }
+}
+
 export function clearRows(): void {
   save(KEY.rows, [])
 }

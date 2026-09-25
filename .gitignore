@@ -23,3 +23,6 @@ CLAUDE.md
 
 # 인식기 검증용 인게임 캡처 (개인 정보가 담겨 있어 올리지 않는다)
 frontend/test/captures/
+
+# 로컬에서만 쓰는 비밀값
+.dev.vars

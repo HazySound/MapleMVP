@@ -25,6 +25,8 @@ export const app = $state({
   showHistory: false,
   showPcRoom: false,
   showImport: false,
+  user: null as { id: string; nick: string } | null,   // 카카오로 로그인한 사람 (웹)
+  syncingUp: false,  // 계정에 올리는 중
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
   importError: '',   // 북마클릿이 알려 온 실패 사유
   importPoke: 0,     // 북마클릿이 이 화면을 부른 횟수. 다음에 누를 곳을 짚어 준다
@@ -88,7 +90,10 @@ export async function boot() {
       refresh()
     },
   }
-  if (app.web) await listenWeb()
+  if (app.web) {
+    await listenWeb()
+    void signedIn()
+  }
   py.get_ui().then(ui => {
     if (typeof ui?.medal === 'boolean') app.medal = ui.medal
     if (ui?.theme === 'light' || ui?.theme === 'dark') setTheme(ui.theme)
@@ -138,11 +143,66 @@ export function pcroomScan(dataUrl = '', scale = 0) {
 
 export async function pcroomSave(weeks: Record<string, number>) {
   handle(await py.pcroom_save(weeks))
+  if (app.web) void pushUp()
 }
 
 /** 북마클릿이 보내온 구매내역이 저장된 뒤 화면을 다시 만든다 */
 export async function reloadWeb() {
   handle(await py.get_state())
+}
+
+/**
+ * 로그인해 있으면 계정에 둔 것을 내려받아 합친다.
+ *
+ * 로그인은 있으면 좋은 것이지 없으면 안 되는 것이 아니다. 실패해도 이 브라우저에
+ * 저장된 것으로 앱은 그대로 돌아간다.
+ */
+async function signedIn() {
+  const acc = await import('./web/account')
+  const u = await acc.me()
+  if (!u) return
+  app.user = u
+  const v = await acc.pull()
+  if (!v) return
+  const { mergeVault } = await import('./web/api')
+  mergeVault(v.rows, v.pcroom, v.syncedAt)
+  await reloadWeb()
+  // 이 브라우저에만 있던 것이 있으면 계정에도 올려 둔다
+  void pushUp()
+}
+
+/** 지금 가진 것을 계정에 올린다. 로그인 전이면 아무 일도 없다 */
+export async function pushUp(): Promise<void> {
+  if (!app.user || app.syncingUp) return
+  app.syncingUp = true
+  try {
+    const [acc, api] = [await import('./web/account'), await import('./web/api')]
+    await acc.push(api.snapshot())
+  } finally {
+    app.syncingUp = false
+  }
+}
+
+export async function signOut(): Promise<void> {
+  const acc = await import('./web/account')
+  await acc.logout()
+  app.user = null
+}
+
+/** 계정에 저장된 것만 지운다. 이 브라우저 것은 그대로 둔다 */
+export async function wipeAccount(): Promise<void> {
+  const acc = await import('./web/account')
+  await acc.wipe()
+}
+
+/** 계정에 둔 것을 다시 내려받아 합친다 */
+export async function pullDown(): Promise<void> {
+  const acc = await import('./web/account')
+  const v = await acc.pull()
+  if (!v) return
+  const { mergeVault } = await import('./web/api')
+  mergeVault(v.rows, v.pcroom, v.syncedAt)
+  await reloadWeb()
 }
 
 /**
@@ -182,6 +242,7 @@ async function listenWeb() {
       app.importing = false
       app.progress = null
       await reloadWeb()
+      void pushUp()
       app.showImport = false   // 다 받았으니 바로 대시보드를 보여 준다
     },
     onError: message => {

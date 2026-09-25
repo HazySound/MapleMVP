@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import AccountMenu from './AccountMenu.svelte'
   import { app, refresh, showLogin, toggleTheme, win } from '../store.svelte'
   import { tip } from '../tip'
 
@@ -81,12 +82,7 @@
     </span>
   </button>
 
-  <button class="login" disabled use:tip={'휴대폰에서도 보기 · 준비 중이에요'}>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="8.4" r="3.8"/><path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/>
-    </svg>
-    로그인
-  </button>
+  {#if app.web}<AccountMenu />{/if}
 
   {#if !app.web}
   <div class="winctl">
@@ -182,14 +178,6 @@
   .sw[aria-checked="true"] .knob { transform: translateX(20px); background: var(--color-lav); color: var(--color-on-accent); }
   .knob svg { width: 12px; height: 12px; }
 
-  .login {
-    flex: none; appearance: none; cursor: pointer; font: inherit; font-size: 12.5px;
-    display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px;
-    border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-tx2);
-  }
-  .login:hover:not(:disabled) { color: var(--color-tx); border-color: var(--color-line2); }
-  .login:disabled { opacity: .5; cursor: default; }
-  .login svg { width: 14px; height: 14px; }
   /* 창 단추가 없는 웹에서도 그 자리는 비워 둔다 */
   .bar:not(:has(.winctl)) { padding-right: 46px; }
   .winctl { display: flex; align-self: stretch; margin-left: 6px; }
