@@ -160,7 +160,8 @@ async function listenWeb() {
   // 앱이 아직 안 떴을 때 북마클릿이 쓰는 길. 주소로 부르고 흔적은 지운다
   const fromHash = () => {
     if (location.hash !== '#import') return
-    history.replaceState(null, '', location.pathname + location.search)
+    // 이 파일에도 history라는 함수가 있다. 브라우저 쪽을 또렷이 가리킨다
+    window.history.replaceState(null, '', location.pathname + location.search)
     openImport()
   }
   window.addEventListener('hashchange', fromHash)

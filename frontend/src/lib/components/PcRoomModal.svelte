@@ -1,9 +1,10 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
   import { anchor, compare, restore } from '../core/pcroom'
-  import { type Solved, panelFields, solveScan } from '../core/scan'
-  import type { VoteState } from '../core/vote'
-  import { type ShareHandle, canShare, startShare } from '../web/share'
+  import { type Solved, acceptReading, panelFields, solveScan, whyReject } from '../core/scan'
+  import { STAGE, type ShareHandle, type ShareStatus, canShare, startShare } from '../web/share'
+  import { primeChime } from '../web/chime'
+  import { type Guide, canGuide, openGuide } from '../web/pip'
   import type { PcRoomResult, Tier } from '../types'
   import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
 
@@ -131,7 +132,15 @@
       const s = solveScan(raw, b.purchases, prev)
       if (!s) {
         scanBad = true
-        scanMsg = 'MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요.'
+        // 왜 실패했는지 말해 주지 않으면 매번 처음부터 원인을 찾게 된다
+        const ok = raw.readings.filter(v => acceptReading(v, b.purchases)).length
+        scanMsg = !raw.readings.length
+          ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `
+            + `(화면에서 숫자 ${raw.amounts.length}개만 봤어요)`
+          : ok
+            ? `표는 읽었는데 어느 값이 맞는지 가릴 수 없었어요. `
+              + `(후보 ${raw.readings.length}개 중 ${ok}개 통과, 숫자 ${raw.amounts.length}개)`
+            : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases)}`
         return
       }
       apply(s)
@@ -198,12 +207,23 @@
   // 캡처 한 장에 다 담으려면 툴팁이 상단 패널을 가리지 않게 커서를 맞춰야 한다.
   // 화면을 계속 받으면 마우스를 올렸다 치우는 것만으로 둘 다 모인다.
   let sharing = $state(false)
-  let shareState = $state<VoteState | null>(null)
+  let shareState = $state<ShareStatus | null>(null)
   let stream = $state<MediaStream | null>(null)
   let screen = $state<HTMLVideoElement | null>(null)
   let handle: ShareHandle | null = null
+  // 게임 위에 띄우는 안내 창. 열렸으면 화면을 못 봐도 지금 상황이 보인다
+  let guided = $state(false)
+  // 화면공유가 주된 길이다. 캡처는 그게 안 되는 자리를 위한 대비책
+  const live1st = $derived(app.web && canLive)
   // 모바일 브라우저에는 화면 공유가 없다
   const canLive = canShare() && !matchMedia('(pointer: coarse)').matches
+
+  /** 안내 창이 처음에 못 열렸을 때. 누른 직후여야 열린다 */
+  async function showGuide() {
+    const g: Guide | null = await openGuide(() => handle?.stop(), () => handle?.save())
+    guided = !!g
+    handle?.setGuide(g)
+  }
 
   $effect(() => {
     if (screen && stream) {
@@ -212,42 +232,43 @@
     }
   })
 
-  // 게임이 전체화면(독점) 모드면 캡처가 까맣게 들어온다.
-  // 몇 장을 봐도 글자 하나 안 잡히면 화면이 아니라 그쪽을 의심해야 한다.
-  const liveBlank = $derived(!!shareState && shareState.frames >= 10 && shareState.seen === 0)
-  const BLANK_MSG = '화면이 비어 들어와요. 게임이 전체화면 모드면 캡처가 막혀요. '
-    + '게임 설정에서 전체 창 모드로 바꾼 뒤 다시 해 주세요.'
-
   // 공유를 시작하면 브라우저 창을 떠나 게임으로 가야 해서, 지금 무엇을 할 차례인지
   // 한눈에 보여야 한다. 진행에 따라 저절로 다음 줄로 넘어간다.
-  const LIVE_STEPS = [
+  const tell = $derived(guided ? '게임 위 안내 창과 소리로' : '소리로')
+  const LIVE_STEPS = $derived([
     '공유 창에서 게임이 있는 화면을 고르세요',
-    '게임에서 MVP 창을 열고 등급 게이지에 마우스를 2초쯤 올려 두세요',
-    '마우스를 게이지에서 치우세요',
-  ]
+    `게임에서 MVP 패널을 열고 그 위에 마우스를 올려 두세요 (읽으면 ${tell} 알려 드려요)`,
+    `마우스를 패널 밖으로 치우세요 (다 읽으면 ${tell} 알려 드려요)`,
+  ])
   const liveStep = $derived(
-    !shareState?.frames ? 0 : !shareState.needs ? 1 : 2)
+    !shareState?.shots ? 0 : !shareState.needs ? 1 : 2)
 
+  // 화면에 적는 말과 알림으로 보내는 말이 같아야 한다. 둘 다 share의 판단을 쓴다
+  const liveBlank = $derived(!!shareState?.shots && shareState.stage === 'blank')
   const liveHint = $derived(
-    !shareState ? '공유할 화면을 고르면 시작돼요.'
-      : liveBlank ? BLANK_MSG
-      : shareState.needs ? '이번엔 마우스를 게이지에서 치워 주세요. 가려졌던 윗줄을 읽어요.'
-      : 'MVP 창을 열고 등급 게이지에 마우스를 올린 채로 잠깐 두세요.')
+    !shareState?.shots ? '공유할 화면을 고르면 시작돼요.' : STAGE[shareState.stage].body)
 
   async function live() {
     const b = getBase()
     if (!b || sharing) return
+    primeChime()   // 누른 이 순간에 열어 둬야 브라우저가 소리를 허락한다
     scanBad = scanPartial = false
     scanMsg = ''
     shareState = null
     try {
       handle = await startShare({
         collected: b.purchases,
+        guide: async () => {
+          const g = await openGuide(() => handle?.stop(), () => handle?.save())
+          guided = !!g
+          return g
+        },
         onStream: s => (stream = s),
         onState: s => (shareState = s),
         onDone: s => apply(s),
         onStop: reason => {
           sharing = false
+          guided = false
           stream = null
           handle = null
           if (reason) {
@@ -259,9 +280,7 @@
             apply(shareState.partial)   // 12줄까지는 건졌다
           } else {
             scanBad = true
-            scanMsg = !shareState?.frames ? '읽기 전에 멈췄어요.'
-              : shareState.seen === 0 ? BLANK_MSG
-              : 'MVP 등급 툴팁을 찾지 못했어요. MVP 창을 열고 등급 게이지에 마우스를 올린 채로 다시 해 주세요.'
+            scanMsg = !shareState?.shots ? '읽기 전에 멈췄어요.' : STAGE[shareState.stage].body
           }
         },
       })
@@ -301,22 +320,30 @@
     <div class="body">
       <p class="why">
         프리미엄 PC방 접속분은 6분마다 100캐시씩 MVP 금액에 반영되는데 구매내역에는 잡히지 않아요.
-        인게임에서 <b>등급 게이지에 마우스를 올린 채</b> 캡처하면 읽어 드려요.
+        인게임 <b>MVP 패널</b>만 보여 주시면 읽어 드려요.
       </p>
 
       <section class="cap" aria-label="캡처로 불러오기"
         ondragover={e => e.preventDefault()}
         ondrop={e => { e.preventDefault(); fromFile(e.dataTransfer?.files?.[0]) }}>
         <div class="capmain">
-          <b>게임에서 <kbd>PrintScreen</kbd>을 누른 뒤</b>
-          <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍어 주세요.
-            {#if app.web}여기에 <kbd>Ctrl</kbd>+<kbd>V</kbd> 하거나 이미지를 끌어다 놓으면 읽어 드려요.
-            {:else}이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.{/if}</span>
-          {#if app.web && canLive}
-            <span>화면 공유로 읽으면 캡처 없이 <b>마우스만 올렸다 치우면</b> 돼요. 커서 위치를 맞출 필요가 없어요.</span>
+          {#if live1st}
+            <b>화면을 공유하면 알아서 읽어 드려요</b>
+            <span>게임에서 MVP 패널을 열고 <b>그 위에 마우스를 올렸다 치우기만</b> 하면 돼요.
+              게임 위에 작은 안내 창이 떠서 지금 무엇을 할 차례인지 알려 줍니다.</span>
+            <span class="alt">캡처를 직접 찍어 붙여넣어도 돼요 —
+              <kbd>Ctrl</kbd>+<kbd>V</kbd>, 끌어다 놓기, 파일 선택 모두 됩니다.</span>
+          {:else}
+            <b>게임에서 <kbd>PrintScreen</kbd>을 누른 뒤</b>
+            <span>MVP 패널을 열고 그 위에 마우스를 올린 채로 찍어 주세요.
+              {#if app.web}여기에 <kbd>Ctrl</kbd>+<kbd>V</kbd> 하거나 이미지를 끌어다 놓으면 읽어 드려요.
+              {:else}이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.{/if}</span>
           {/if}
         </div>
-        <button class="btn primary" disabled={scanning}
+        {#if live1st}
+          <button class="btn primary" disabled={scanning || sharing} onclick={live}>화면 공유로 읽기</button>
+        {/if}
+        <button class="btn" class:primary={!live1st} disabled={scanning}
           onclick={() => (app.web ? pasteFromClipboard() : grab())}>
           {#if scanning}<span class="spin" aria-hidden="true"></span>{/if}
           {scanning ? '읽는 중…' : '붙여넣기'}
@@ -325,9 +352,6 @@
           파일 선택
           <input type="file" accept="image/*" disabled={scanning} onchange={e => fromFile(e.currentTarget.files?.[0])} />
         </label>
-        {#if app.web && canLive}
-          <button class="chip" disabled={scanning || sharing} onclick={live}>화면 공유로 읽기</button>
-        {/if}
       </section>
 
       {#if sharing}
@@ -345,9 +369,13 @@
             <div class="marks">
               <span class="mark" class:on={!!shareState?.needs}>툴팁 12줄</span>
               <span class="mark" class:on={!!shareState?.solved}>13주 합계</span>
-              <small>{shareState?.frames ?? 0}장 확인</small>
+              <small>{shareState?.shots ?? 0}장 확인</small>
             </div>
           </div>
+          {#if !guided && canGuide()}
+            <button class="chip call" onclick={showGuide}
+              title="게임 위에 떠 있는 작은 안내 창을 띄워요">안내 창 띄우기</button>
+          {/if}
           <button class="chip" onclick={() => handle?.stop()}>중지</button>
         </section>
       {/if}
@@ -513,6 +541,7 @@
   .capmain { flex: 1 1 320px; min-width: 0; display: grid; gap: 2px; }
   .capmain b { font-size: 13px; color: var(--color-tx); }
   .capmain span { font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
+  .capmain .alt { color: var(--color-tx4, var(--color-tx3)); opacity: .8; }
   kbd {
     font: inherit; font-family: var(--font-mono); font-size: 11.5px; padding: 1px 6px;
     border-radius: 6px; border: 1px solid var(--color-line2); background: var(--color-panel2);
@@ -610,6 +639,16 @@
   .btn:disabled { opacity: .45; cursor: default; }
   .chip { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 9px 13px; border-radius: 11px; border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx2); }
   .chip:hover:not(:disabled) { color: var(--color-tx); border-color: var(--color-line2); }
+  /* 크기는 그대로 두고 테두리 빛만 번지게 한다 */
+  .chip.call {
+    color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 65%, transparent);
+    animation: call 2.2s ease-out infinite;
+  }
+  @keyframes call {
+    0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-lav) 55%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 11px transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) { .chip.call { animation: none; } }
   .err { font-size: 12.5px; color: var(--color-bad); margin: 10px 0 0; }
   .label { font-size: 12px; color: var(--color-tx3); margin: 18px 0 7px; }
   .fold {
