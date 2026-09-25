@@ -225,7 +225,7 @@
   .seg button:hover { color: var(--color-tx2); }
   .seg button.on { background: color-mix(in oklab, var(--color-lav) 18%, var(--color-bg2)); color: var(--color-tx); }
   input[type=date], select {
-    font: inherit; font-size: 12.5px; color: var(--color-tx); color-scheme: dark;
+    font: inherit; font-size: 12.5px; color: var(--color-tx); color-scheme: inherit;
     background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 10px; padding: 8px 10px; outline: none;
   }
   input[type=date]:focus, select:focus, .search:focus-within { border-color: var(--color-lav); }

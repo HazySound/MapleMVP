@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app, refresh, setExtra, setTarget } from '../store.svelte'
-  import { eul, TIER_COLOR, TIER_VAR, addDays, countup, md, spotlight, tierName, won } from '../format'
+  import { eul, TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, countup, md, spotlight, tierName, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -97,7 +97,7 @@
           use:tip={now === 0 && next > 0
             ? `다음 주에도 ${t.name}${eul(t.name)} 유지하려면 ${won(next)}원 더 필요해요`
             : t.key === cur ? '지금 등급이에요' : ''}
-          style="--c:{TIER_VAR[t.key]}" onclick={() => setTarget(t.key)}>
+          style="--c:{TIER_VAR[t.key]};--ink:{TIER_INK_VAR[t.key]}" onclick={() => setTarget(t.key)}>
           <!-- 지금 등급인지는 아래 안내문이 말해 준다. 칸이 좁아 여기에는 표식을 넣지 않는다 -->
           <span class="nm"><i></i>{t.name}</span>
           <small class="mono">{now === 0 ? '달성' : '+' + won(next)}</small>
@@ -188,13 +188,13 @@
     transition: transform .15s, border-color .2s, background .2s;
   }
   .chip:hover { transform: translateY(-1px); border-color: var(--color-line2); }
-  .chip[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklab, var(--c) 14%, var(--color-bg2)); color: var(--color-tx); }
+  .chip[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklab, var(--c) 26%, var(--color-panel)); color: var(--color-tx); }
   .nm { display: flex; align-items: center; gap: 5px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; }
   /* flex 안에서는 기본이 '줄어도 됨'이라, 이름이 길면 동그라미가 타원으로 눌린다 */
-  .nm i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .nm i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px var(--ring-on-fill); }
   .chip small { font-size: 11px; color: var(--color-tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chip .nm { min-width: 0; }
-  .chip[aria-pressed="true"] small { color: var(--c); }
+  .chip[aria-pressed="true"] small { color: var(--ink); }
   .chip.done small { color: var(--color-good); }
   /* 지금은 달성했지만 다음 목요일에 떨어지는 등급 */
   .chip small.keep, .chip[aria-pressed="true"] small.keep { color: var(--color-peach); visibility: hidden; }

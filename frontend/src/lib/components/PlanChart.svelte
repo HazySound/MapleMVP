@@ -140,9 +140,10 @@
 
 <article class="card" use:spotlight>
   <h3 class="card-title">주별 흐름 <span class="sub">위: 그 주의 13주 합계 · 아래: 주별 계획 결제</span></h3>
-  <div class="chart" bind:this={wrap} use:onResize={draw}>
-    <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
-    <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 230}px">
+  <div class="scroll">
+    <div class="chart" bind:this={wrap} use:onResize={draw}>
+      <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
+      <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 230}px">
       {#if tip}
         <b>{tip.wk.offset === 0 ? '이번 주' : `${tip.wk.offset}주 뒤`}</b>
         <span class="mono" style="color:var(--color-tx3)">{md(tip.wk.start)} – {md(tip.wk.end)}</span>
@@ -151,6 +152,7 @@
         <div class="r"><span>13주 합계</span><span class="mono">{won(tip.wk.sum)}원</span></div>
         <div class="r"><span>등급</span><span style="color:{tierVar(tip.wk.tier)};font-weight:600">{tierName(d.tiers, tip.wk.tier)}</span></div>
       {/if}
+      </div>
     </div>
   </div>
   <div class="legend">
@@ -160,6 +162,9 @@
 </article>
 
 <style>
-  .chart { position: relative; margin-top: 10px; }
+  /* 좁은 화면에서 눌러 찌그러뜨리지 않는다. 주가 13개 넘게 들어가야 읽히므로,
+     자리가 모자라면 폭을 지키고 가로로 민다 (주차별 계획 표와 같은 방식) */
+  .scroll { overflow-x: auto; margin-top: 10px; }
+  .chart { position: relative; min-width: 600px; }
   canvas { display: block; width: 100%; height: 360px; }
 </style>

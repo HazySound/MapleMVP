@@ -107,17 +107,19 @@
 
 <article class="card" use:spotlight>
   <h3 class="card-title">주차별 결제 <span class="sub">이번 주 포함 13주 · 막대에 올리면 상세</span></h3>
-  <div class="chart" bind:this={wrap} use:onResize={draw}>
-    <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
-    <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 236}px">
-      {#if tip}
-        <b>{tip.i === 12 ? '이번 주' : `${tip.i + 1}주차`}</b>
-        <span class="mono" style="color:var(--color-tx3)">{md(tip.wk.start)} – {md(tip.wk.end)}</span>
-        <div class="r" style="margin-top:6px"><span>결제</span><span class="mono">{won(tip.wk.amount)}원</span></div>
-        <div class="r"><span>이 주가 빠진 뒤 합계</span><span class="mono">{won(tip.after.sum)}원</span></div>
-        <div class="r"><span>그때 등급</span><span style="color:{tierVar(tip.after.tier)};font-weight:600">{tierName(d.tiers, tip.after.tier)}</span></div>
-        <div style="margin-top:6px;color:var(--color-tx3)">{tip.note}</div>
-      {/if}
+  <div class="scroll">
+    <div class="chart" bind:this={wrap} use:onResize={draw}>
+      <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
+      <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 236}px">
+        {#if tip}
+          <b>{tip.i === 12 ? '이번 주' : `${tip.i + 1}주차`}</b>
+          <span class="mono" style="color:var(--color-tx3)">{md(tip.wk.start)} – {md(tip.wk.end)}</span>
+          <div class="r" style="margin-top:6px"><span>결제</span><span class="mono">{won(tip.wk.amount)}원</span></div>
+          <div class="r"><span>이 주가 빠진 뒤 합계</span><span class="mono">{won(tip.after.sum)}원</span></div>
+          <div class="r"><span>그때 등급</span><span style="color:{tierVar(tip.after.tier)};font-weight:600">{tierName(d.tiers, tip.after.tier)}</span></div>
+          <div style="margin-top:6px;color:var(--color-tx3)">{tip.note}</div>
+        {/if}
+      </div>
     </div>
   </div>
   <div class="legend">
@@ -129,6 +131,9 @@
 
 <style>
 
-  .chart { position: relative; margin-top: 12px; }
+  /* 좁은 화면에서 눌러 찌그러뜨리지 않는다. 주 막대가 붙어 버리면 읽을 수 없다.
+     자리가 모자라면 폭을 지키고 가로로 민다 */
+  .scroll { overflow-x: auto; margin-top: 12px; }
+  .chart { position: relative; min-width: 560px; }
   canvas { display: block; width: 100%; height: 260px; }
 </style>

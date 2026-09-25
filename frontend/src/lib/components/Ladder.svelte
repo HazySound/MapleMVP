@@ -27,7 +27,7 @@
   .rung { display: grid; grid-template-columns: 64px minmax(0, 1fr) 118px; gap: 12px; align-items: center; font-size: 13px; padding: 5px 8px; margin-inline: -8px; border-radius: 10px; transition: background .3s; }
   .rung.cur { background: color-mix(in oklab, var(--c) 9%, transparent); }
   .n { display: flex; align-items: center; gap: 7px; font-weight: 600; }
-  .n i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); }
+  .n i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); box-shadow: inset 0 0 0 1px var(--ring-on-fill); }
   .bar { height: 8px; border-radius: 99px; background: var(--color-bg2); overflow: hidden; border: 1px solid var(--color-line); }
   .bar i { display: block; height: 100%; background: var(--c); border-radius: 99px; transition: width .7s cubic-bezier(.2, .8, .2, 1); }
   .s { font-size: 12px; color: var(--color-tx3); text-align: right; }

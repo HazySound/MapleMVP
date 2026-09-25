@@ -642,7 +642,7 @@
   .hint b { color: var(--color-tx2); }
 
   input[type=text], select {
-    font: inherit; font-size: 13px; color: var(--color-tx); color-scheme: dark;
+    font: inherit; font-size: 13px; color: var(--color-tx); color-scheme: inherit;
     background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 9px;
     padding: 6px 9px; outline: none; min-width: 0;
   }

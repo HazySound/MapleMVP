@@ -58,6 +58,8 @@
   --color-tk-black: #c9b6ff;
   /* 모달 뒤를 덮는 막 */
   --color-scrim: #14151a;
+  /* 어두운 바탕에서는 파스텔이 알아서 떠오른다. 테가 필요 없다 */
+  --ring-on-fill: transparent;
 }
 
 /*
@@ -70,20 +72,22 @@
 :root[data-theme="light"] {
   color-scheme: light;
   /*
-   * 바탕을 순백으로 두지 않는다.
+   * 바탕에서 순백을 걷어낸다.
    *
-   * 흰 바탕에 파스텔을 올리면 색이 바탕에 먹혀서 안 보인다. 그래서 전에는
-   * 강조색을 어둡게 내렸는데, 그러면 갈색·올리브로 내려앉아 탁해졌다.
-   * 바탕을 회색 쪽으로 한 단 낮추면 파스텔을 그대로 두고도 색이 산다.
-   * 카드(panel)는 바탕보다 밝게 둬서 떠 보이게 한다.
+   * 흰 바탕에 파스텔을 올리면 색이 먹힌다. 그렇다고 회색으로 눌러 버리면
+   * 이번엔 회색이 색을 잡아먹는다. 한 번 그렇게 해 봤더니 칩이 회색 덩어리가
+   * 되고 그 위에 섞은 등급색이 도로 탁해졌다.
+   *
+   * 밝기는 그대로 두고 순백만 뺀다. 카드는 흰색이 아닌 밝은 회백, 바탕은 거기서
+   * 한 톤만 내린다. 칸(bg2)은 바탕과 거의 붙여 둬서 덩어리로 보이지 않게 한다.
    */
-  --color-bg: #e2e5ec;
-  --color-bg2: #d7dbe4;
-  --color-panel: #f2f4f8;
-  --color-panel2: #eaedf3;
-  --color-panel3: #e0e4ec;
-  --color-line: #ccd2de;
-  --color-line2: #b0b8c9;
+  --color-bg: #e9ebf2;
+  --color-bg2: #e1e4ed;
+  --color-panel: #f6f7fb;
+  --color-panel2: #eff1f7;
+  --color-panel3: #e5e8f1;
+  --color-line: #d4d9e5;
+  --color-line2: #b9c0d1;
   --color-tx: #1a1b21;
   --color-tx2: #494d5b;
   --color-tx3: #6f7484;
@@ -103,6 +107,8 @@
   --color-bad: #cf2f49;
   --color-on-accent: #ffffff;
   --color-scrim: #3a3f4d;
+  /* 옅은 등급색은 밝은 바탕에서 경계가 녹는다. 색은 그대로 두고 테를 둘러 세운다 */
+  --ring-on-fill: rgba(28, 32, 44, .18);
   /*
    * 칠하는 등급색은 어두운 화면과 똑같이 간다. 게이지와 뱃지는 글자가 아니라
    * 면이라 대비를 덜 타고, 여기가 달라지면 두 화면이 아예 다른 앱처럼 보인다.

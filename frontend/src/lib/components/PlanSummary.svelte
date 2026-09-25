@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { autoTargets, fixTargets, planner, spreadShortfall } from '../plan.svelte'
-  import { TIER_COLOR, TIER_VAR, countup, md, spotlight, won } from '../format'
+  import { TIER_COLOR, TIER_INK_VAR, TIER_VAR, countup, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
   const p = $derived(planner.input!)
@@ -26,7 +26,7 @@
   })
 </script>
 
-<article class="card sum" use:spotlight style="--c:{TIER_VAR[p.target]}">
+<article class="card sum" use:spotlight style="--c:{TIER_VAR[p.target]};--ink:{TIER_INK_VAR[p.target]}">
   <h3 class="card-title">계획 결과 <span class="sub">{md(p.date)}까지 {tier.name} ({won(tier.th)}원)</span></h3>
 
   {#if r?.error}
@@ -108,7 +108,7 @@
   .st { background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: var(--radius-md); padding: 10px 12px; }
   .st span { display: block; font-size: 11.5px; color: var(--color-tx3); }
   .st b { font-size: 17px; font-weight: 700; }
-  .st:first-child b { color: var(--c); }
+  .st:first-child b { color: var(--ink); }
   .st small { font-size: 12px; font-weight: 400; color: var(--color-tx3); }
   .actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 14px; }
   .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

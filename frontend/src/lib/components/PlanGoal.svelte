@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { planner, setDate, setSkipThisWeek, setTarget } from '../plan.svelte'
-  import { TIER_COLOR, TIER_VAR, addDays, md, spotlight, won } from '../format'
+  import { TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
   const p = $derived(planner.input!)
@@ -18,7 +18,7 @@
   <div class="label">달성할 등급</div>
   <div class="tiers" role="group" aria-label="목표 등급">
     {#each d.tiers as t (t.key)}
-      <button class="tier" aria-pressed={p.target === t.key} style="--c:{TIER_VAR[t.key]}" onclick={() => setTarget(t.key)}>
+      <button class="tier" aria-pressed={p.target === t.key} style="--c:{TIER_VAR[t.key]};--ink:{TIER_INK_VAR[t.key]}" onclick={() => setTarget(t.key)}>
         <i></i>{t.name}<small class="mono">{t.th / 10000}만</small>
       </button>
     {/each}
@@ -67,15 +67,17 @@
     transition: border-color .2s, background .2s, transform .15s;
   }
   .tier:hover { transform: translateY(-1px); border-color: var(--color-line2); }
-  .tier i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+  .tier i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; box-shadow: inset 0 0 0 1px var(--ring-on-fill); }
   .tier small { margin-left: auto; font-weight: 400; font-size: 11px; color: var(--color-tx3); }
-  .tier[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklab, var(--c) 15%, var(--color-bg2)); color: var(--color-tx); }
-  .tier[aria-pressed="true"] small { color: var(--c); }
+  /* 회색 칸에 등급색을 섞으면 탁해진다. 카드색에 섞고 비율을 올려 또렷하게 둔다 */
+  .tier[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklab, var(--c) 26%, var(--color-panel)); color: var(--color-tx); }
+  /* 글자는 칠하는 색이 아니라 잉크색이다. 파스텔로 쓰면 밝은 화면에서 안 보인다 */
+  .tier[aria-pressed="true"] small { color: var(--ink); }
   .daterow { display: flex; align-items: center; gap: 10px; }
   input[type=date] {
     flex: 1; font: inherit; font-family: var(--font-mono); font-size: 15px; color: var(--color-tx);
     background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 11px; padding: 9px 12px;
-    color-scheme: dark; outline: none; transition: border-color .2s;
+    color-scheme: inherit; outline: none; transition: border-color .2s;
   }
   input[type=date]:focus { border-color: var(--color-lav); }
   .dow { font-size: 13px; color: var(--color-tx2); }

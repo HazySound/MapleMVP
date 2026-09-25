@@ -127,24 +127,29 @@
 <article class="card" use:spotlight>
   <h3 class="card-title">더 결제하지 않으면 <span class="sub">목요일마다 가장 오래된 주가 빠져요</span></h3>
   <p class="sum">{summary}</p>
-  <div class="chart" bind:this={wrap} use:onResize={draw}>
-    <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
-    <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 200}px">
-      {#if tip}
-        <b>{md(addDays(d.deadline, tip.k * 7))} (목)</b>
-        <span style="color:var(--color-tx3)">{tip.k === 0 ? '다음 갱신' : `${tip.k}주 뒤 갱신`}</span>
-        <div class="r" style="margin-top:6px"><span>13주 합계</span><span class="mono">{won(tip.s.sum)}원</span></div>
-        {#if tip.s.carry || (tip.k > 0 && sim.forecast[tip.k - 1].carry)}
-          <div class="r"><span>남은 이월</span><span class="mono">{won(tip.s.carry)}원</span></div>
+  <div class="scroll">
+    <div class="chart" bind:this={wrap} use:onResize={draw}>
+      <canvas bind:this={cv} onpointermove={move} onpointerleave={() => (hover = null)}></canvas>
+      <div class="tip" class:show={!!tip} style="left:{tip?.left ?? 0}px;top:{tip?.top ?? 0}px;width:{tip?.tw ?? 200}px">
+        {#if tip}
+          <b>{md(addDays(d.deadline, tip.k * 7))} (목)</b>
+          <span style="color:var(--color-tx3)">{tip.k === 0 ? '다음 갱신' : `${tip.k}주 뒤 갱신`}</span>
+          <div class="r" style="margin-top:6px"><span>13주 합계</span><span class="mono">{won(tip.s.sum)}원</span></div>
+          {#if tip.s.carry || (tip.k > 0 && sim.forecast[tip.k - 1].carry)}
+            <div class="r"><span>남은 이월</span><span class="mono">{won(tip.s.carry)}원</span></div>
+          {/if}
+          <div class="r"><span>등급</span><span style="color:{tierVar(tip.s.tier)};font-weight:600">{tierName(d.tiers, tip.s.tier)}</span></div>
         {/if}
-        <div class="r"><span>등급</span><span style="color:{tierVar(tip.s.tier)};font-weight:600">{tierName(d.tiers, tip.s.tier)}</span></div>
-      {/if}
+      </div>
     </div>
   </div>
 </article>
 
 <style>
   .sum { margin: 6px 0 0; font-size: 13px; color: var(--color-tx2); }
-  .chart { position: relative; margin-top: 8px; }
+  /* 좁은 화면에서 눌러 찌그러뜨리지 않는다. 꺾은선이 뭉개지면 흐름이 안 보인다.
+     자리가 모자라면 폭을 지키고 가로로 민다 */
+  .scroll { overflow-x: auto; margin-top: 8px; }
+  .chart { position: relative; min-width: 520px; }
   canvas { display: block; width: 100%; height: 230px; }
 </style>
