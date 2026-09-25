@@ -133,15 +133,22 @@ export function pick(rows: Row[], q: string, start: string, end: string): Row[] 
     (!needle || r.item.toLowerCase().includes(needle)))
 }
 
-/** 날짜·이름·금액으로 줄을 세운다. 같으면 날짜를 뒤에 붙여 순서가 흔들리지 않게 한다 */
+/**
+ * 날짜·이름·금액으로 줄을 세운다.
+ *
+ * 값이 같을 때 무엇을 먼저 둘지까지 exe(app/api.py의 _filter)와 맞춘다.
+ * 거기서는 (금액, 날짜) 같은 짝으로 세우고 뒤집기를 짝 전체에 건다.
+ * 그래서 내림차순이면 뒤에 붙는 기준도 같이 뒤집힌다.
+ */
 export function sortRows(rows: Row[], sort: string, desc: boolean): Row[] {
-  const dir = desc ? -1 : 1
-  const cmp = (a: Row, b: Row) => {
-    if (sort === 'price') return (a.price - b.price) * dir || (a.date < b.date ? 1 : -1)
-    if (sort === 'item') return a.item.localeCompare(b.item, 'ko') * dir || (a.date < b.date ? 1 : -1)
-    return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir
+  const txt = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+  const keyed: Record<string, (a: Row, b: Row) => number> = {
+    date: (a, b) => txt(a.date, b.date) || txt(a.item, b.item),
+    item: (a, b) => txt(a.item, b.item) || txt(a.date, b.date),
+    price: (a, b) => a.price - b.price || txt(a.date, b.date),
   }
-  return [...rows].sort(cmp)
+  const cmp = keyed[sort] ?? keyed.date
+  return [...rows].sort((a, b) => cmp(a, b) * (desc ? -1 : 1))
 }
 
 function raw(): Raw {
@@ -231,15 +238,11 @@ export const webApi: PyApi = {
   async export_history(q, start, end, sort, desc) {
     const rows = sortRows(pick(load<Row[]>(KEY.rows, []), q, start, end), sort, desc)
     if (!rows.length) return { error: '내보낼 내역이 없어요.' } as ExportResult
-    // 브라우저는 파일을 어디에 둘지 고르게 할 수 없다. 받는 폴더로 바로 내려간다.
-    // 엑셀은 쉼표를 제 나라 글자로 읽으므로 앞에 BOM을 붙인다. 없으면 한글이 깨진다
-    const BOM = '\ufeff'
-    const CRLF = '\r\n'
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
-    const body = [['날짜', '아이템', '금액'].join(','),
-                  ...rows.map(r => [esc(r.date), esc(r.item), r.price].join(','))].join(CRLF)
-    const name = `MapleMVP_구매내역_${new Date().toISOString().slice(0, 10)}.csv`
-    const url = URL.createObjectURL(new Blob([BOM + body], { type: 'text/csv;charset=utf-8' }))
+    // 엑셀 만드는 코드는 이 단추를 누를 때만 있으면 된다. 첫 화면에서는 비워 둔다
+    const { buildXlsx } = await import('./xlsx')
+    // 브라우저는 어디에 둘지 묻지 못한다. 받는 폴더로 바로 내려간다
+    const name = `메이플_구매내역_${new Date().toISOString().slice(0, 10)}.xlsx`
+    const url = URL.createObjectURL(buildXlsx(rows))
     const a = document.createElement('a')
     a.href = url
     a.download = name
