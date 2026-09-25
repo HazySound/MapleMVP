@@ -132,6 +132,11 @@
     filled = true
     gsap.to(g, { ...to, duration: first ? 1.8 : 0.35, delay: first ? 0.4 : 0, ease: 'power3.out', overwrite: 'auto', onUpdate: draw })
   })
+
+  // PC방 접속분은 구매내역에 안 잡혀서, 맞추기 전까지는 인게임 숫자와 다르다.
+  // 한 번 맞춰 놔도 주가 지나면 새 주가 비므로 다시 어긋난다.
+  // 그래서 '아직 모르는 주'가 하나라도 있으면 계속 알린다 — 오랜만에 들어와도 눈에 띈다.
+  const needPc = $derived(app.web && !!d.syncedAt && d.pcroom.missing.length > 0)
 </script>
 
 <article class="card grade" use:spotlight>
@@ -139,8 +144,10 @@
     MVP 등급
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
-    <button class="pc" class:on={!!d.pcroom.total} onclick={() => (app.showPcRoom = true)}
-      title="프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요">
+    <button class="pc" class:on={!!d.pcroom.total} class:hl={needPc} onclick={() => (app.showPcRoom = true)}
+      title={needPc
+        ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
+        : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
       {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
     </button>
   </h3>
@@ -216,6 +223,13 @@
   }
   .pc:hover { color: var(--color-tx); border-color: var(--color-lav); }
   .pc.on { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
+  /* 크기는 그대로 두고 테두리 빛만 번지게 한다 */
+  .pc.hl { color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 65%, transparent); animation: call 2.2s ease-out infinite; }
+  @keyframes call {
+    0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-lav) 50%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 10px transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) { .pc.hl { animation: none; } }
   .tog {
     appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
     padding: 3px 9px; border-radius: 7px;

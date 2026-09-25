@@ -58,6 +58,13 @@ export function clearRows(): void {
   save(KEY.rows, [])
 }
 
+/** 이 브라우저에 저장해 둔 것을 전부 지운다. 서버에는 애초에 아무것도 없다. */
+export function clearAll(): void {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('maplemvp.')) localStorage.removeItem(k)
+  } catch { /* 저장이 막혀 있으면 지울 것도 없다 */ }
+}
+
 export const isWeb = () => import.meta.env.VITE_TARGET === 'web' || !window.pywebview
 
 function loadImage(src: string): Promise<HTMLImageElement> {

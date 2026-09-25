@@ -26,6 +26,8 @@ declare global {
     pywebview?: { api: PyApi }
     // Python → JS 푸시
     __mvp?: { onProgress(p: Progress): void; onLoggedIn(): void }
+    /** 같은 화면에서 북마클릿을 눌렀을 때 가져오기 안내를 여는 길 (웹) */
+    __mvpImport?: () => void
   }
 }
 

@@ -25,6 +25,9 @@ export const app = $state({
   showHistory: false,
   showPcRoom: false,
   showImport: false,
+  importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
+  importError: '',   // 북마클릿이 알려 온 실패 사유
+  importPoke: 0,     // 북마클릿이 이 화면을 부른 횟수. 다음에 누를 곳을 짚어 준다
   maximized: false,
   web: false,        // 브라우저에서 도는 중 (넥슨 수집을 직접 못 한다)
   simBusy: false,    // 시뮬레이션 금액이 움직이는 중
@@ -84,6 +87,7 @@ export async function boot() {
       refresh()
     },
   }
+  if (app.web) await listenWeb()
   py.get_ui().then(ui => { if (typeof ui?.medal === 'boolean') app.medal = ui.medal })
   const s = await py.get_state()
   if (s.status === 'empty') app.overlay = 'first-sync'
@@ -135,6 +139,63 @@ export async function pcroomSave(weeks: Record<string, number>) {
 /** 북마클릿이 보내온 구매내역이 저장된 뒤 화면을 다시 만든다 */
 export async function reloadWeb() {
   handle(await py.get_state())
+}
+
+/**
+ * 북마클릿이 보내오는 것을 앱이 뜰 때부터 듣는다.
+ *
+ * 모달이 열려 있을 때만 들으면, 북마클릿이 띄워 준 탭은 아무것도 못 받는다.
+ * 받는 동안에는 모달을 열어 진행률을 보여 주고, 다 받으면 스스로 닫는다.
+ */
+async function listenWeb() {
+  const { claimTab, listen } = await import('./web/import')
+  claimTab()   // 북마클릿이 이 탭을 이름으로 찾아온다
+  // 이 화면에서 북마클릿을 누르면 여기를 부른다. 주소를 건드리지 않는다.
+  // 창이 이미 열려 있으면 뜨는 변화가 없으므로, 다음에 누를 단추를 짚어 준다.
+  const openImport = () => {
+    app.showImport = true
+    app.importPoke++
+  }
+  window.__mvpImport = openImport
+  // 앱이 아직 안 떴을 때 북마클릿이 쓰는 길. 주소로 부르고 흔적은 지운다
+  const fromHash = () => {
+    if (location.hash !== '#import') return
+    history.replaceState(null, '', location.pathname + location.search)
+    openImport()
+  }
+  window.addEventListener('hashchange', fromHash)
+  fromHash()
+  listen({
+    onConnect: () => {
+      app.importError = ''
+      app.progress = null
+      app.importing = true
+      app.showImport = true
+    },
+    onProgress: p => { app.progress = p },
+    onRows: async () => {
+      app.importing = false
+      app.progress = null
+      await reloadWeb()
+      app.showImport = false   // 다 받았으니 바로 대시보드를 보여 준다
+    },
+    onError: message => {
+      app.importing = false
+      app.progress = null
+      app.importError = message
+      app.showImport = true
+    },
+    onOther: () => { void reloadWeb() },
+  })
+}
+
+/** 이 브라우저에 저장해 둔 구매내역·보정값을 모두 지운다 (웹 전용) */
+export async function clearWeb() {
+  const { clearAll } = await import('./web/api')
+  clearAll()
+  app.importError = ''
+  app.targetPicked = false
+  await reloadWeb()
 }
 
 export async function pcroomClear() {

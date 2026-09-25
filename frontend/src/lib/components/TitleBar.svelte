@@ -8,8 +8,11 @@
     return () => clearInterval(t)
   })
 
+  /** 넥슨에서 받아오는 중 — exe는 직접, 웹은 북마클릿이 */
+  const busy = $derived(app.syncing || app.importing)
+
   const status = $derived.by(() => {
-    if (app.syncing) {
+    if (busy) {
       const p = app.progress
       return p ? `불러오는 중 · ${p.label}${p.count ? ` · ${p.count}건` : ''}` : '불러오는 중'
     }
@@ -18,6 +21,10 @@
     const min = Math.floor((now - new Date(app.data.syncedAt).getTime()) / 60000)
     return min < 1 ? '방금 동기화됨' : min < 60 ? `${min}분 전 동기화` : `${Math.floor(min / 60)}시간 전 동기화`
   })
+
+  // 웹에는 로그인이 없다. 받아 둔 내역이 하나도 없으면 여기부터 시작해야 하므로
+  // 단추가 어디 있는지 확실히 알려 준다.
+  const needSync = $derived(app.web && !app.data?.syncedAt && !busy)
 </script>
 
 <header class="bar">
@@ -40,18 +47,18 @@
 
   <div class="sync">
     {#if app.web}
-      <span class="txt">{app.data?.syncedAt ? status : '구매내역을 가져와 주세요'}</span>
-    {:else if app.loggedOut && !app.syncing}
+      <span class="txt" class:call={needSync}>{app.data?.syncedAt ? status : '구매내역부터 가져와 주세요'}</span>
+    {:else if app.loggedOut && !busy}
       <button class="stat" onclick={showLogin} title="넥슨에 다시 로그인">
         <span class="dot out"></span><span class="txt">로그아웃됨 · 다시 로그인</span>
       </button>
     {:else}
-      <span class="dot" class:busy={app.syncing} class:err={!!app.error}></span>
+      <span class="dot" class:busy class:err={!!app.error}></span>
       <span class="txt">{app.error ? '동기화 실패 · 이전 결과 표시 중' : status}</span>
     {/if}
-    <button class="ib" class:spinning={app.syncing}
+    <button class="ib" class:spinning={busy} class:hl={needSync}
       onclick={() => (app.web ? (app.showImport = true) : refresh())}
-      disabled={app.syncing} aria-label="구매내역 가져오기" title={app.web ? '구매내역 가져오기' : '새로고침 (F5)'}>
+      disabled={busy} aria-label="구매내역 가져오기" title={app.web ? '구매내역 가져오기' : '새로고침 (F5)'}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
   </div>
@@ -122,6 +129,14 @@
   }
   .ib:hover:not(:disabled) { color: var(--color-tx); border-color: var(--color-line2); background: var(--color-panel2); }
   .ib svg { width: 15px; height: 15px; }
+  /* 크기는 그대로 두고 테두리 빛만 번지게 한다. 줄이 밀리면 안 된다 */
+  .ib.hl { color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 65%, transparent); animation: call 2.2s ease-out infinite; }
+  .txt.call { color: var(--color-lav); }
+  @keyframes call {
+    0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-lav) 50%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 10px transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) { .ib.hl { animation: none; } }
   .ib.spinning svg { animation: spin .9s linear infinite; }
   .winctl { display: flex; align-self: stretch; margin-left: 6px; }
   .winctl button {
