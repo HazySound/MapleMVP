@@ -115,6 +115,20 @@ export async function ensure(db: D1Database) {
   } catch { /* 이미 있다 */ }
 }
 
+/**
+ * 이 사람 것을 전부 지운다.
+ *
+ * 탈퇴 단추로도 오고, 카카오에서 연결을 끊었다는 알림으로도 온다. 두 길이
+ * 지우는 것이 다르면 한쪽으로 나간 사람의 흔적만 남는다. 그래서 한 군데 둔다.
+ */
+export async function erase(db: D1Database, uid: string): Promise<void> {
+  await ensure(db)
+  await db.batch([
+    db.prepare('DELETE FROM vault WHERE uid = ?').bind(uid),
+    db.prepare('DELETE FROM member WHERE uid = ?').bind(uid),
+  ])
+}
+
 /** 이용자가 정한 이름과 번호. 아직 안 정했으면 빈 이름 */
 export async function nickOf(db: D1Database, uid: string): Promise<{ nick: string; tag: number }> {
   const row = await db.prepare('SELECT nick, tag FROM member WHERE uid = ?').bind(uid)
