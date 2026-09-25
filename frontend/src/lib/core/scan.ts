@@ -49,7 +49,7 @@ export function acceptReading(v: number[], collected: number[]): boolean {
 }
 
 /** 화면에서 읽은 숫자 하나가 '○○ 등급까지'라고 가정했을 때 앞뒤가 맞는지 본다. */
-function totalsFor(needs: number[], collected: number[], amounts: number[]): Set<string> {
+export function totalsFor(needs: number[], collected: number[], amounts: number[]): Set<string> {
   const found = new Set<string>()
   for (let i = 1; i < THS.length; i++) {
     for (const v of amounts) {

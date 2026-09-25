@@ -2,6 +2,8 @@
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
   import { anchor, compare, restore } from '../core/pcroom'
   import { type Solved, panelFields, solveScan } from '../core/scan'
+  import type { VoteState } from '../core/vote'
+  import { type ShareHandle, canShare, startShare } from '../web/share'
   import type { PcRoomResult, Tier } from '../types'
   import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
 
@@ -132,21 +134,27 @@
         scanMsg = 'MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요.'
         return
       }
-      prev = s
-      needTexts = s.needs.map(v => v.toLocaleString('ko-KR'))
-      const f = panelFields(s)
-      nextIndex = f.tierIndex
-      if (f.remaining != null) remainText = f.remaining.toLocaleString('ko-KR')
-      if (s.total == null) {
-        scanPartial = true
-        scanMsg = "툴팁 12줄은 읽었어요. 상단 '○○ 등급까지'가 가려져 있어서 가장 오래된 주만 "
-          + '알 수 없어요. 마우스를 치우고 한 장 더 찍어 주세요.'
-      } else {
-        scanMsg = `읽었어요. 지금 13주 합계 ${s.total.toLocaleString('ko-KR')}원`
-        calc()
-      }
+      apply(s)
     } finally {
       scanning = false
+    }
+  }
+
+  /** 읽어낸 값을 입력칸에 넣는다. 캡처로 읽든 화면공유로 읽든 같다. */
+  function apply(s: Solved) {
+    prev = s
+    needTexts = s.needs.map(v => v.toLocaleString('ko-KR'))
+    const f = panelFields(s)
+    nextIndex = f.tierIndex
+    if (f.remaining != null) remainText = f.remaining.toLocaleString('ko-KR')
+    if (s.total == null) {
+      scanPartial = true
+      scanMsg = "툴팁 12줄은 읽었어요. 상단 '○○ 등급까지'가 가려져 있어서 가장 오래된 주만 "
+        + '알 수 없어요. 마우스를 치우고 한 장 더 찍어 주세요.'
+    } else {
+      scanPartial = false
+      scanMsg = `읽었어요. 지금 13주 합계 ${s.total.toLocaleString('ko-KR')}원`
+      calc()
     }
   }
 
@@ -186,6 +194,90 @@
     }
   }
 
+  // ---- 화면공유로 읽기 ----
+  // 캡처 한 장에 다 담으려면 툴팁이 상단 패널을 가리지 않게 커서를 맞춰야 한다.
+  // 화면을 계속 받으면 마우스를 올렸다 치우는 것만으로 둘 다 모인다.
+  let sharing = $state(false)
+  let shareState = $state<VoteState | null>(null)
+  let stream = $state<MediaStream | null>(null)
+  let screen = $state<HTMLVideoElement | null>(null)
+  let handle: ShareHandle | null = null
+  // 모바일 브라우저에는 화면 공유가 없다
+  const canLive = canShare() && !matchMedia('(pointer: coarse)').matches
+
+  $effect(() => {
+    if (screen && stream) {
+      screen.srcObject = stream
+      screen.play().catch(() => {})
+    }
+  })
+
+  // 게임이 전체화면(독점) 모드면 캡처가 까맣게 들어온다.
+  // 몇 장을 봐도 글자 하나 안 잡히면 화면이 아니라 그쪽을 의심해야 한다.
+  const liveBlank = $derived(!!shareState && shareState.frames >= 10 && shareState.seen === 0)
+  const BLANK_MSG = '화면이 비어 들어와요. 게임이 전체화면 모드면 캡처가 막혀요. '
+    + '게임 설정에서 전체 창 모드로 바꾼 뒤 다시 해 주세요.'
+
+  // 공유를 시작하면 브라우저 창을 떠나 게임으로 가야 해서, 지금 무엇을 할 차례인지
+  // 한눈에 보여야 한다. 진행에 따라 저절로 다음 줄로 넘어간다.
+  const LIVE_STEPS = [
+    '공유 창에서 게임이 있는 화면을 고르세요',
+    '게임에서 MVP 창을 열고 등급 게이지에 마우스를 2초쯤 올려 두세요',
+    '마우스를 게이지에서 치우세요',
+  ]
+  const liveStep = $derived(
+    !shareState?.frames ? 0 : !shareState.needs ? 1 : 2)
+
+  const liveHint = $derived(
+    !shareState ? '공유할 화면을 고르면 시작돼요.'
+      : liveBlank ? BLANK_MSG
+      : shareState.needs ? '이번엔 마우스를 게이지에서 치워 주세요. 가려졌던 윗줄을 읽어요.'
+      : 'MVP 창을 열고 등급 게이지에 마우스를 올린 채로 잠깐 두세요.')
+
+  async function live() {
+    const b = getBase()
+    if (!b || sharing) return
+    scanBad = scanPartial = false
+    scanMsg = ''
+    shareState = null
+    try {
+      handle = await startShare({
+        collected: b.purchases,
+        onStream: s => (stream = s),
+        onState: s => (shareState = s),
+        onDone: s => apply(s),
+        onStop: reason => {
+          sharing = false
+          stream = null
+          handle = null
+          if (reason) {
+            scanBad = true
+            scanMsg = `화면을 읽는 중에 끊겼어요. ${reason}`
+          } else if (shareState?.solved) {
+            // apply가 이미 채웠다
+          } else if (shareState?.partial) {
+            apply(shareState.partial)   // 12줄까지는 건졌다
+          } else {
+            scanBad = true
+            scanMsg = !shareState?.frames ? '읽기 전에 멈췄어요.'
+              : shareState.seen === 0 ? BLANK_MSG
+              : 'MVP 등급 툴팁을 찾지 못했어요. MVP 창을 열고 등급 게이지에 마우스를 올린 채로 다시 해 주세요.'
+          }
+        },
+      })
+      sharing = true
+    } catch (e) {
+      // 공유 창에서 취소한 것은 잘못이 아니다
+      const name = (e as Error)?.name
+      if (name !== 'NotAllowedError' && name !== 'AbortError') {
+        scanBad = true
+        scanMsg = '화면 공유를 시작하지 못했어요. 브라우저가 지원하지 않거나 권한이 막혀 있어요.'
+      }
+    }
+  }
+
+  // 창을 닫으면 공유도 끊는다
+  $effect(() => () => handle?.stop())
 </script>
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showPcRoom = false)}>
@@ -220,6 +312,9 @@
           <span>MVP 창을 열고 등급 게이지에 마우스를 올린 채로 찍어 주세요.
             {#if app.web}여기에 <kbd>Ctrl</kbd>+<kbd>V</kbd> 하거나 이미지를 끌어다 놓으면 읽어 드려요.
             {:else}이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.{/if}</span>
+          {#if app.web && canLive}
+            <span>화면 공유로 읽으면 캡처 없이 <b>마우스만 올렸다 치우면</b> 돼요. 커서 위치를 맞출 필요가 없어요.</span>
+          {/if}
         </div>
         <button class="btn primary" disabled={scanning}
           onclick={() => (app.web ? pasteFromClipboard() : grab())}>
@@ -230,7 +325,33 @@
           파일 선택
           <input type="file" accept="image/*" disabled={scanning} onchange={e => fromFile(e.currentTarget.files?.[0])} />
         </label>
+        {#if app.web && canLive}
+          <button class="chip" disabled={scanning || sharing} onclick={live}>화면 공유로 읽기</button>
+        {/if}
       </section>
+
+      {#if sharing}
+        <section class="live" aria-label="화면 공유로 읽는 중">
+          <!-- svelte-ignore a11y_media_has_caption -->
+          <video bind:this={screen} muted playsinline></video>
+          <div class="livebody">
+            <b><span class="spin small" aria-hidden="true"></span>화면을 읽고 있어요</b>
+            <ol class="lsteps">
+              {#each LIVE_STEPS as s, i (s)}
+                <li class:now={liveStep === i} class:ok={liveStep > i}>{s}</li>
+              {/each}
+            </ol>
+            <span class="hint" class:warn={liveBlank}>{liveHint}</span>
+            <div class="marks">
+              <span class="mark" class:on={!!shareState?.needs}>툴팁 12줄</span>
+              <span class="mark" class:on={!!shareState?.solved}>13주 합계</span>
+              <small>{shareState?.frames ?? 0}장 확인</small>
+            </div>
+          </div>
+          <button class="chip" onclick={() => handle?.stop()}>중지</button>
+        </section>
+      {/if}
+
       {#if scanning}
         <p class="scanmsg busy"><span class="spin small" aria-hidden="true"></span>캡처를 읽고 있어요…</p>
       {:else if scanMsg}
@@ -398,6 +519,55 @@
   }
   .file { position: relative; overflow: hidden; }
   .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  /* 화면공유로 읽는 동안 */
+  .live {
+    display: flex; align-items: center; gap: 12px; margin: -4px 0 14px;
+    padding: 11px 13px; border-radius: 12px; background: var(--color-bg2);
+    border: 1px solid color-mix(in oklab, var(--color-lav) 55%, var(--color-line));
+  }
+  .live video {
+    flex: none; width: 168px; height: 96px; border-radius: 8px; object-fit: contain;
+    background: #000; border: 1px solid var(--color-line);
+  }
+  .livebody { flex: 1 1 220px; min-width: 0; display: grid; gap: 5px; }
+  .lsteps { list-style: none; margin: 1px 0 2px; padding: 0; display: grid; gap: 3px; counter-reset: s; }
+  .lsteps li {
+    position: relative; padding-left: 20px; font-size: 11.5px; line-height: 1.45;
+    color: var(--color-tx3); counter-increment: s; transition: color .2s;
+  }
+  .lsteps li::before {
+    content: counter(s); position: absolute; left: 0; top: 1px;
+    width: 14px; height: 14px; border-radius: 50%; font-size: 9.5px; line-height: 14px;
+    text-align: center; color: var(--color-tx3); background: var(--color-panel2);
+    border: 1px solid var(--color-line2);
+  }
+  .lsteps li.now { color: var(--color-tx); font-weight: 600; }
+  .lsteps li.now::before { color: #1b1c21; background: var(--color-lav); border-color: var(--color-lav); }
+  .lsteps li.ok { color: var(--color-tx3); }
+  .lsteps li.ok::before {
+    content: '¹3'; color: var(--color-good);
+    border-color: color-mix(in oklab, var(--color-good) 45%, transparent);
+    background: color-mix(in oklab, var(--color-good) 14%, transparent);
+  }
+  .livebody b { display: flex; align-items: center; font-size: 13px; color: var(--color-tx); }
+  .hint { font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
+  .hint.warn { color: var(--color-peach); }
+  .marks { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 2px; }
+  .mark {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; color: var(--color-tx3);
+    border: 1px solid var(--color-line2); background: var(--color-panel2);
+    transition: color .2s, border-color .2s, background .2s;
+  }
+  /* 표시가 켜져도 폭이 변하지 않게 자리를 미리 잡아 둔다 */
+  .mark::before { content: '✓ '; opacity: 0; }
+  .mark.on::before { opacity: 1; }
+  .mark.on {
+    color: var(--color-good);
+    border-color: color-mix(in oklab, var(--color-good) 45%, transparent);
+    background: color-mix(in oklab, var(--color-good) 14%, transparent);
+  }
+  .marks small { font-size: 11px; color: var(--color-tx3); }
+
   .scanmsg { margin: -6px 2px 12px; font-size: 12px; color: var(--color-good); line-height: 1.55; }
   .scanmsg.warn { color: var(--color-peach); }
   .scanmsg.bad { color: var(--color-bad); }
