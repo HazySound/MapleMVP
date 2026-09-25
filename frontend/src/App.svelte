@@ -79,12 +79,23 @@
 <ResizeHandles />
 
 <style>
-  .shell { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; }
+  /*
+   * 글자 크기를 하나하나 올리면 칸은 그대로인데 글만 커져서 줄바꿈이 사방에서 달라진다.
+   * 배율을 걸면 여백과 간격도 같이 커져서, 사용자가 브라우저를 확대한 것과 같아진다.
+   * 배경(Aurora)과 창 테두리는 이 바깥이라 영향을 받지 않는다.
+   */
+  .shell {
+    zoom: var(--ui-scale, 1);
+    position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column;
+  }
   main { flex: 1; overflow-y: auto; overflow-x: hidden; }
   .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 16px; max-width: 1560px; margin: 0 auto; }
-  @media (max-width: 760px) { .grid { gap: 10px; padding: 10px; } }
+  /* 중단점은 --ui-scale(1.2)을 미리 곱해 둔 값이다.
+     미디어 쿼리는 창 너비만 보고 배율을 모르기 때문에, 그냥 두면 자리가 없는데도 발동한다.
+     원래 값: 760 / 900 / 1100 */
+  @media (max-width: 912px) { .grid { gap: 10px; padding: 10px; } }
   .grid > div { grid-column: span 12; display: grid; }
-  @media (min-width: 900px) {
+  @media (min-width: 1080px) {
     .c5 { grid-column: span 5 !important; }
     .c6 { grid-column: span 6 !important; }
     .c7 { grid-column: span 7 !important; }
@@ -92,8 +103,13 @@
   .plan-top { gap: 14px; grid-template-columns: minmax(0, 1fr); }
   .main { display: grid; gap: 14px; min-width: 0; }
   .side { display: grid; }
-  @media (min-width: 1100px) {
-    .plan-top { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); }
+  /*
+   * 주차별 계획 표는 720px 아래로는 줄지 않는다. 카드 안쪽 여백까지 756px이 필요해서,
+   * 그만큼 남지 않으면 가로 스크롤이 생긴다. 목표 카드 폭을 줄이고 기준을 그에 맞췄다.
+   * (창 1360 → 배율 1.2를 빼면 1133, 여백 32와 목표 320과 간격 14를 빼면 767 > 756)
+   */
+  @media (min-width: 1360px) {
+    .plan-top { grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); }
     .side { align-self: start; position: sticky; top: 16px; }
   }
   .boot { height: 100%; display: grid; place-items: center; }

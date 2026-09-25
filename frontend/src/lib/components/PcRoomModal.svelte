@@ -2,11 +2,13 @@
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
   import { anchor, compare, restore } from '../core/pcroom'
   import { type Solved, acceptReading, panelFields, solveScan, whyReject } from '../core/scan'
+  import HelpModal from './HelpModal.svelte'
   import { STAGE, type ShareHandle, type ShareStatus, canShare, startShare } from '../web/share'
   import { primeChime } from '../web/chime'
   import { type Guide, canGuide, openGuide } from '../web/pip'
   import type { PcRoomResult, Tier } from '../types'
   import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
+  import { tip } from '../tip'
 
   const d = $derived(app.data!)
 
@@ -215,6 +217,7 @@
   let guided = $state(false)
   // 화면공유가 주된 길이다. 캡처는 그게 안 되는 자리를 위한 대비책
   const live1st = $derived(app.web && canLive)
+  let showHelp = $state(false)
   // 모바일 브라우저에는 화면 공유가 없다
   const canLive = canShare() && !matchMedia('(pointer: coarse)').matches
 
@@ -299,6 +302,8 @@
   $effect(() => () => handle?.stop())
 </script>
 
+{#if showHelp}<HelpModal web={app.web && canLive} onClose={() => (showHelp = false)} />{/if}
+
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showPcRoom = false)}>
   <div class="sheet" role="dialog" aria-label="PC방 반영액 보정" use:spotlight>
     <header>
@@ -312,6 +317,10 @@
           보정값 없음
         {/if}
       </span>
+      <button class="help" onclick={() => (showHelp = true)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.9 2.9 0 1 1 3.6 3.1c-.6.2-.8.7-.8 1.3v.4"/><path d="M12 17.2h.01"/></svg>
+        사용법
+      </button>
       <button class="x" onclick={() => (app.showPcRoom = false)} aria-label="닫기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
@@ -374,7 +383,7 @@
           </div>
           {#if !guided && canGuide()}
             <button class="chip call" onclick={showGuide}
-              title="게임 위에 떠 있는 작은 안내 창을 띄워요">안내 창 띄우기</button>
+              use:tip={'게임 위에 떠 있는 작은 안내 창을 띄워요'}>안내 창 띄우기</button>
           {/if}
           <button class="chip" onclick={() => handle?.stop()}>중지</button>
         </section>
@@ -515,7 +524,14 @@
   h2 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 0; }
   .meta { font-size: 12px; color: var(--color-tx3); }
   .meta em { font-style: normal; color: var(--color-butter); }
-  .x { margin-left: auto; appearance: none; width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; border: 1px solid var(--color-line); background: var(--color-panel2); color: var(--color-tx2); }
+  .help {
+    margin-left: auto; appearance: none; cursor: pointer; font: inherit; font-size: 12.5px;
+    display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px;
+    border: 1px solid var(--color-line); background: var(--color-panel2); color: var(--color-tx2);
+  }
+  .help:hover { color: var(--color-tx); border-color: var(--color-lav); }
+  .help svg { width: 15px; height: 15px; }
+  .x { appearance: none; width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; border: 1px solid var(--color-line); background: var(--color-panel2); color: var(--color-tx2); }
   .x:hover { color: var(--color-tx); border-color: var(--color-line2); }
   .x svg { width: 15px; height: 15px; }
 

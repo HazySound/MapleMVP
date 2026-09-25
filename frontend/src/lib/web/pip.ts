@@ -13,9 +13,7 @@
  * 사진 위 표시는 비율로 두되, 그러려면 그림 상자와 사진이 정확히 같은 크기여야 한다.
  * (width를 100%로 두고 높이는 비율대로 따라오게 한다. max-height를 걸면 어긋난다.)
  */
-import menuShot from '../assets/mvp-menu.webp'
-import panelShot from '../assets/mvp-panel.webp'
-import tipShot from '../assets/mvp-tip.webp'
+import { SHOT, SPOT } from '../guide'
 
 export type Tone = 'warn' | 'wait' | 'good'
 
@@ -70,27 +68,15 @@ const HEIGHT = 470
 /** 처음 띄울 때 화면 모서리에서 띄워 둘 간격 */
 const MARGIN = 24
 
-/** 사진 위의 자리. 사진 크기에 상관없게 비율로 둔다. */
-const SPOT = {
-  /** 패널 사진: 가리면 안 되는 '○○ 등급까지 N 캐시' */
-  amount: 'left:3%;top:63%;width:48%;height:18%',
-  /** 패널 사진: 마우스를 올려 둬도 되는 자리 */
-  hover: 'left:53%;top:42%;width:44%;height:50%',
-  /** 메뉴 사진: 이벤트 칸의 MVP */
-  mvp: 'left:4.5%;top:61.5%;width:39.5%;height:9.7%',
-  /** 표가 뜬 사진: 여기서도 금액이 안 가려져 있다 */
-  tipAmount: 'left:2.2%;top:16.3%;width:37.5%;height:4.8%',
-}
-
 /** 단계별 가이드. MVP 패널을 처음 띄워 보는 사람을 위한 것. */
 const STEPS: { shot: string; w: number; h: number; marks: string[]; head: string; text: string }[] = [
-  { shot: menuShot, w: 200, h: 298, marks: [`mvp:${SPOT.mvp}`],
+  { shot: SHOT.menu.src, w: SHOT.menu.w, h: SHOT.menu.h, marks: [`mvp:${SPOT.mvp}`],
     head: 'ESC를 눌러 메뉴를 열고, 이벤트 › MVP를 누릅니다',
     text: '이벤트 칸의 세 번째 항목이에요.' },
-  { shot: panelShot, w: 420, h: 126, marks: [`no:${SPOT.amount}`, `ok:${SPOT.hover}`],
+  { shot: SHOT.panel.src, w: SHOT.panel.w, h: SHOT.panel.h, marks: [`no:${SPOT.amount}`, `ok:${SPOT.hover}`],
     head: 'MVP 패널이 뜹니다',
     text: '빨간 칸만 피해서, 초록 칸 아무 데나 마우스를 올려 두세요.' },
-  { shot: tipShot, w: 375, h: 340, marks: [`no:${SPOT.tipAmount}`],
+  { shot: SHOT.tip.src, w: SHOT.tip.w, h: SHOT.tip.h, marks: [`no:${SPOT.tipAmount}`],
     head: '12줄 표가 나옵니다',
     text: '그대로 두면 읽어요. 이때도 빨간 칸이 가려지지 않아야 해요.' },
 ]
@@ -169,7 +155,7 @@ const BODY = `
     <h1 id="t"></h1>
     <p id="b"></p>
     <figure id="pfig">
-      <img id="pi" src="${panelShot}" alt="인게임 MVP 패널">
+      <img id="pi" src="${SHOT.panel.src}" alt="인게임 MVP 패널">
       <span class="hl no" id="ha" style="${SPOT.amount}" data-ok="0"></span>
       <span class="hl ok" style="${SPOT.hover}"></span>
     </figure>

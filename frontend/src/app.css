@@ -26,7 +26,8 @@
   --radius-md: 13px;
 }
 
-:root { color-scheme: dark; }
+/* 화면 전체 배율. 1이 예전 크기다 */
+:root { color-scheme: dark; --ui-scale: 1.2; }
 html, body, #app { height: 100%; }
 body {
   margin: 0;

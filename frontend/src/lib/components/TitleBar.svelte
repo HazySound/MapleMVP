@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app, refresh, showLogin, win } from '../store.svelte'
+  import { tip } from '../tip'
 
   let now = $state(Date.now())
   onMount(() => {
@@ -49,7 +50,7 @@
     {#if app.web}
       <span class="txt" class:call={needSync}>{app.data?.syncedAt ? status : '구매내역부터 가져와 주세요'}</span>
     {:else if app.loggedOut && !busy}
-      <button class="stat" onclick={showLogin} title="넥슨에 다시 로그인">
+      <button class="stat" onclick={showLogin} use:tip={'넥슨에 다시 로그인'}>
         <span class="dot out"></span><span class="txt">로그아웃됨 · 다시 로그인</span>
       </button>
     {:else}
@@ -58,11 +59,12 @@
     {/if}
     <button class="ib" class:spinning={busy} class:hl={needSync}
       onclick={() => (app.web ? (app.showImport = true) : refresh())}
-      disabled={busy} aria-label="구매내역 가져오기" title={app.web ? '구매내역 가져오기' : '새로고침 (F5)'}>
+      disabled={busy} aria-label="구매내역 가져오기" use:tip={app.web ? '구매내역 가져오기' : '새로고침 (F5)'}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
   </div>
 
+  {#if !app.web}
   <div class="winctl">
     <button onclick={win.minimize} aria-label="최소화"><svg viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.3"/></svg></button>
     <button onclick={win.maximize} aria-label={app.maximized ? '이전 크기로' : '최대화'}>
@@ -78,6 +80,7 @@
     </button>
     <button class="x" onclick={win.close} aria-label="닫기"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
   </div>
+  {/if}
 </header>
 
 <style>
@@ -105,7 +108,7 @@
   .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
   .ind.right { transform: translateX(100%); }
   .sync { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--color-tx3); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-mint); animation: ping 2.4s infinite; }
+  .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--color-mint); animation: ping 2.4s infinite; }
   .dot.busy { background: var(--color-lav); }
   .dot.err { background: var(--color-peach); animation: none; }
   .dot.out { background: var(--color-bad); animation: none; }
@@ -146,5 +149,5 @@
   .winctl button:hover { background: var(--color-panel2); color: var(--color-tx); }
   .winctl button.x:hover { background: #d9536a; color: #fff; }
   .winctl svg { width: 12px; height: 12px; }
-  @media (max-width: 860px) { .sync .txt, .tag { display: none; } .tabs { margin-left: 4px; } .tabs button { padding: 5px 12px; } }
+  @media (max-width: 1032px) { .sync .txt, .tag { display: none; } .tabs { margin-left: 4px; } .tabs button { padding: 5px 12px; } }
 </style>

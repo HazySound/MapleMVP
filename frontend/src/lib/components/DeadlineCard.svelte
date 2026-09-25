@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app, refresh, setExtra, setTarget } from '../store.svelte'
-  import { TIER_COLOR, addDays, countup, md, spotlight, tierName, won } from '../format'
+  import { eul, TIER_COLOR, addDays, countup, md, spotlight, tierName, won } from '../format'
+  import { tip } from '../tip'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -92,11 +93,17 @@
       {#each d.tiers as t (t.key)}
         {@const now = Math.max(0, d.needNow[t.key] - sim.extra)}
         {@const next = Math.max(0, d.need[t.key] - sim.extra)}
-        <button class="chip" class:done={now === 0} aria-pressed={app.target === t.key} style="--c:{TIER_COLOR[t.key]}" onclick={() => setTarget(t.key)}>
-          <span class="nm"><i></i>{t.name}{#if t.key === cur}<em>유지</em>{/if}</span>
+        <button class="chip" class:done={now === 0} aria-pressed={app.target === t.key}
+          use:tip={now === 0 && next > 0
+            ? `다음 주에도 ${t.name}${eul(t.name)} 유지하려면 ${won(next)}원 더 필요해요`
+            : t.key === cur ? '지금 등급이에요' : ''}
+          style="--c:{TIER_COLOR[t.key]}" onclick={() => setTarget(t.key)}>
+          <!-- 지금 등급인지는 아래 안내문이 말해 준다. 칸이 좁아 여기에는 표식을 넣지 않는다 -->
+          <span class="nm"><i></i>{t.name}</span>
           <small class="mono">{now === 0 ? '달성' : '+' + won(next)}</small>
-          <!-- 줄이 생겼다 사라지면 카드 높이가 달라져서, 자리는 늘 잡아 두고 숨기기만 한다 -->
-          <small class="keep mono" class:on={now === 0 && next > 0}>유지 +{won(next)}</small>
+          <!-- 줄이 생겼다 사라지면 카드 높이가 달라져서, 자리는 늘 잡아 두고 숨기기만 한다.
+               설명은 칩 전체에 하나만 단다. 안쪽에 또 달면 마우스가 지날 때마다 툴팁이 갈린다 -->
+          <small class="keep mono" class:on={now === 0 && next > 0}>+{won(next)}</small>
         </button>
       {/each}
     </div>
@@ -183,8 +190,8 @@
   .chip:hover { transform: translateY(-1px); border-color: var(--color-line2); }
   .chip[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklab, var(--c) 14%, var(--color-bg2)); color: var(--color-tx); }
   .nm { display: flex; align-items: center; gap: 5px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; }
-  .nm i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
-  .nm em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--color-tx3); }
+  /* flex 안에서는 기본이 '줄어도 됨'이라, 이름이 길면 동그라미가 타원으로 눌린다 */
+  .nm i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
   .chip small { font-size: 11px; color: var(--color-tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chip .nm { min-width: 0; }
   .chip[aria-pressed="true"] small { color: var(--c); }

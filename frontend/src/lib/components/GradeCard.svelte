@@ -5,6 +5,7 @@
   import { C, FONT, REDUCED, TIER_COLOR, countup, hexA, spotlight, tierIdx, won } from '../format'
   import Badge from './Badge.svelte'
   import Medal from './Medal.svelte'
+  import { tip } from '../tip'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -145,7 +146,7 @@
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
     <button class="pc" class:on={!!d.pcroom.total} class:hl={needPc} onclick={() => (app.showPcRoom = true)}
-      title={needPc
+      use:tip={needPc
         ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
         : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
       {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
@@ -164,7 +165,7 @@
   <div class="gauge" use:onResize={draw}>
     <canvas bind:this={cv} aria-label="최근 13주 합계 게이지"></canvas>
     <button class="center" onclick={() => !preview && toggleMedal()}
-      title={preview ? '미리보기 중' : '클릭하면 합계와 메달이 바뀌어요'}>
+      use:tip={preview ? '미리보기 중' : '클릭하면 합계와 메달이 바뀌어요'}>
       {#if app.medal || preview}
         <Medal tier={now} size={116} />
       {:else}

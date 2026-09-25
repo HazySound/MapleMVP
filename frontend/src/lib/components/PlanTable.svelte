@@ -2,6 +2,7 @@
   import { app } from '../store.svelte'
   import { planner, setAmount, toggleLock, toggleSelect } from '../plan.svelte'
   import { md, spotlight, tierColor, tierName, won } from '../format'
+  import { tip } from '../tip'
 
   const d = $derived(app.data!)
   const r = $derived(planner.result)
@@ -59,7 +60,7 @@
           </span>
           <span>
             <button class="lock" class:locked={w.fixed} disabled={!w.counts} onclick={() => toggleLock(w.start, w.amount)}
-              title={w.fixed ? '자동 분배로 되돌리기' : '이 금액으로 고정'}>
+              use:tip={w.fixed ? '자동 분배로 되돌리기' : '이 금액으로 고정'}>
               {#if w.skipped}
                 제외
               {:else if w.fixed}

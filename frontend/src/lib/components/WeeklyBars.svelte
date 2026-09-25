@@ -2,7 +2,7 @@
   import gsap from 'gsap'
   import { onMount } from 'svelte'
   import { app } from '../store.svelte'
-  import { clamp01, easeOut, fit, niceStep, onResize, roundRect } from '../canvas'
+  import { atX, clamp01, easeOut, fit, niceStep, onResize, roundRect } from '../canvas'
   import { C, FONT, REDUCED, addDays, hexA, man, md, spotlight, tierColor, tierName, won } from '../format'
 
   const d = $derived(app.data!)
@@ -84,7 +84,7 @@
   $effect(() => { void data; void hover; draw() })
 
   function move(e: PointerEvent) {
-    const x = e.clientX - cv.getBoundingClientRect().left
+    const x = atX(cv, e.clientX)
     const i = rects.findIndex(r => x >= r.x && x < r.x + r.w)
     hover = i < 0 ? null : i
   }

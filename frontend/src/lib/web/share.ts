@@ -34,7 +34,7 @@ const QUIET = 2500
  * 잘 읽히면 몇 초면 넘어가므로, 넘어가지 않는다는 것 자체가 신호다.
  */
 const NUDGE: Partial<Record<Stage, { after: number; body: string }>> = {
-  blank: { after: 8000, body: 'MVP 패널이 안 보여요. 아래 「MVP 패널 여는 법」을 눌러 보세요.' },
+  blank: { after: 8000, body: 'MVP 패널이 안 보여요. 여는 법은 아래 단추에 있어요.\n게임이 전체화면이면 창 모드로 바꾸거나, 캡처를 찍어 붙여넣어 주세요.' },
   noTooltip: { after: 8000, body: '표가 보이지 않아요.\n초록 칸에 마우스를 올린 채로 가만히 두세요.' },
   // 멈춘 화면은 몇 번을 읽어도 같은 답이 나온다. 그대로 두라고 하면 영영 안 끝난다
   tooltip: { after: 5000, body: '표는 보이는데 숫자가 맞지 않아요.\n마우스를 아주 조금만 움직여 주세요.' },
@@ -52,7 +52,7 @@ export const STAGE: Record<Stage, { title: string; body: string; tone: Tone }> =
   blank: {
     tone: 'warn',
     title: '⚠️ MVP 패널을 못 찾았어요',
-    body: 'MVP 패널을 열어 주세요. 전체화면 모드면 캡처가 막히니 전체 창 모드로 바꿔 주세요.',
+    body: 'MVP 패널을 열어 주세요. 게임이 전체화면이면 화면공유로는 잡히지 않아요.',
   },
   noTooltip: {
     tone: 'wait',

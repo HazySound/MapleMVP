@@ -64,3 +64,10 @@ export function spotlight(node: HTMLElement) {
   node.addEventListener('pointermove', move)
   return { destroy: () => node.removeEventListener('pointermove', move) }
 }
+
+/** 받침이 있으면 '을', 없으면 '를'. (블랙을 / 다이아를) */
+export function eul(word: string): string {
+  const c = word.codePointAt(word.length - 1) ?? 0
+  if (c < 0xac00 || c > 0xd7a3) return '를'
+  return (c - 0xac00) % 28 ? '을' : '를'
+}

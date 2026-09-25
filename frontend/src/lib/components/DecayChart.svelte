@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../store.svelte'
-  import { fit, onResize } from '../canvas'
+  import { atX, fit, onResize } from '../canvas'
   import { C, FONT, TIER_COLOR, addDays, hexA, md, spotlight, tierColor, tierName, won } from '../format'
 
   const d = $derived(app.data!)
@@ -99,7 +99,7 @@
   $effect(() => { void sim; void hover; draw() })
 
   function move(e: PointerEvent) {
-    const x = e.clientX - cv.getBoundingClientRect().left
+    const x = atX(cv, e.clientX)
     let best = 0
     pts.forEach((p, i) => { if (Math.abs(p.x - x) < Math.abs(pts[best].x - x)) best = i })
     hover = best

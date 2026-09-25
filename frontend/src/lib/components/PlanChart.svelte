@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { fit, niceStep, onResize, roundRect } from '../canvas'
+  import { atX, fit, niceStep, onResize, roundRect } from '../canvas'
   import { C, FONT, TIER_COLOR, hexA, man, md, spotlight, tierColor, tierName, won } from '../format'
 
   const d = $derived(app.data!)
@@ -125,7 +125,7 @@
   $effect(() => { void r; void hover; draw() })
 
   function move(e: PointerEvent) {
-    const x = e.clientX - cv.getBoundingClientRect().left
+    const x = atX(cv, e.clientX)
     const i = cols.findIndex(c => x >= c.x && x < c.x + c.w)
     hover = i < 0 ? null : i
   }
