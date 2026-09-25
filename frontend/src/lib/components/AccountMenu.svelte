@@ -210,15 +210,7 @@
   }
   .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* 휴대폰에서는 줄 하나에 다 들어가야 한다. 로그인 뒤에는 동그라미만 남긴다.
-     (중단점은 --ui-scale 1.2를 미리 곱한 값. 원래 560) */
-  @media (max-width: 672px) {
-    .who { padding: 5px 10px; max-width: 132px; }
-    .who svg { display: none; }        /* 글씨만으로 충분하다 */
-    .who.on { padding: 4px; gap: 0; }
-    .who.on .nm { display: none; }
-    .menu { width: min(252px, calc(100vw - 20px)); }
-  }
+
 
   .veil { position: fixed; inset: 0; z-index: 40; }
   .menu {
@@ -302,5 +294,15 @@
   }
   .row button.del {
     color: var(--color-on-accent); background: var(--color-bad); border-color: var(--color-bad);
+  }
+
+  /* 휴대폰에서는 줄 하나에 다 들어가야 한다. 로그인 뒤에는 동그라미만 남긴다.
+     (중단점은 app.css에 적어 둔 좁은 화면 기준값 672) */
+  @media (max-width: 672px) {
+    .who { padding: 5px 10px; max-width: 132px; }
+    .who svg { display: none; }        /* 글씨만으로 충분하다 */
+    .who.on { padding: 4px; gap: 0; }
+    .who.on .nm { display: none; }
+    .menu { width: min(252px, calc(100vw - 20px)); }
   }
 </style>

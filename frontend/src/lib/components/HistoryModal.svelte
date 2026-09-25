@@ -240,50 +240,6 @@
   .x:hover { color: var(--color-tx); border-color: var(--color-line2); }
   .x { flex: none; }
   .x svg { width: 15px; height: 15px; }
-  /*
-   * 좁은 화면. 한 줄에 억지로 우겨넣지 않고 줄마다 하나씩 맡긴다.
-   *
-   *   [ 검색                    ]
-   *   [ 전체 | 월별 | 기간 지정 ]
-   *   [ 날짜 ]  ~  [ 날짜 ]
-   *   [ 50개씩 ] [ 조건 초기화 ]
-   *
-   * 토글이 줄 맨 앞에 서므로 방식을 바꿔도 자리가 흔들리지 않는다.
-   * (중단점은 app.css에 적어 둔 좁은 화면 기준값 672)
-   */
-  @media (max-width: 672px) {
-    header { gap: 8px; padding: 14px 14px 10px; }
-    .meta { display: none; }
-    .out { padding: 8px 10px; }
-    .out :global(svg) { margin: 0; }
-    .out .lbl { display: none; }
-
-    .tools { padding: 0 14px 10px; gap: 7px; }
-    .search { width: 100%; }
-    .range { flex: 1 1 100%; }
-    /* 토글은 줄을 통째로 쓰고 셋으로 고르게 나눈다 */
-    .seg { width: 100%; }
-    .seg button { flex: 1 1 0; min-width: 0; padding: 9px 4px; }
-    /* 바뀌는 칸도 제 줄을 갖는다. 둘이 자리를 반씩 나눠 가지므로 안 잘린다 */
-    .opts { flex: 1 1 100%; min-width: 0; }
-    .opts:empty { display: none; }
-    .opts select, .opts input[type=date] { flex: 1 1 0; width: 100%; max-width: none; }
-    .grow { display: none; }
-    .tail { flex: 1 1 100%; }
-    .tail select { flex: none; }
-    .tail .chip { flex: 1 1 0; }
-
-    /* 표: 날짜 칸을 좁히고 금액은 내용만큼만 */
-    .rows { padding: 0 14px; }
-    .row { grid-template-columns: 74px minmax(0, 1fr) auto; gap: 8px; font-size: 12.5px; }
-    .count { padding: 0 14px 8px; font-size: 12px; }
-    /* 쪽 넘기기는 다섯 개가 한 줄에 안 들어간다. 양 끝을 접고 가운데만 남긴다 */
-    footer { padding: 10px 14px; gap: 6px; }
-    footer .chip:first-child, footer .chip:last-child { display: none; }
-    footer .chip { flex: 1 1 0; }
-    .pages { min-width: 0; flex: 1 1 0; }
-  }
-
   .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 20px 12px; }
   /*
    * 검색칸이 남는 자리를 먹었다 뱉었다 했다. '전체'를 고르면 뒤따르는 칸이
@@ -319,8 +275,8 @@
   .opts input[type=date] { flex: 0 1 auto; min-width: 0; max-width: 150px; }
   .opts select { flex: 0 1 auto; min-width: 0; }
   .tail { display: flex; flex: none; align-items: center; gap: 8px; }
-  .seg { display: flex; flex: none; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; background: var(--color-bg2); }
-  .seg button { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 8px 11px; border: 0; background: none; color: var(--color-tx3); }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; flex: none; border: 1px solid var(--color-line); border-radius: 10px; overflow: hidden; background: var(--color-bg2); }
+  .seg button { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 8px 11px; border: 0; background: none; color: var(--color-tx3); white-space: nowrap; min-width: 0; }
   .seg button:hover { color: var(--color-tx2); }
   .seg button.on { background: color-mix(in oklab, var(--color-lav) 18%, var(--color-bg2)); color: var(--color-tx); }
   input[type=date], select {
@@ -368,4 +324,43 @@
 
   footer { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--color-line); }
   .pages { font-size: 13px; color: var(--color-tx2); min-width: 70px; text-align: center; }
+  /*
+   * 좁은 화면.
+   *
+   * 줄마다 하나씩 맡긴다. 검색 / 토글 / 바뀌는 칸 / 개수·초기화.
+   * 토글은 줄을 통째로 쓰고 셋으로 고르게 나눈다. 어느 방식을 골라도 폭이
+   * 같으니 자리가 흔들리지 않는다.
+   *
+   * 이 덩어리는 반드시 스타일시트 맨 끝에 둔다. 가운데 끼워 두면 뒤에 오는
+   * 기본 규칙들이 그대로 덮어써서 아무 일도 일어나지 않는다. 실제로 그랬다.
+   *
+   * (중단점은 app.css에 적어 둔 좁은 화면 기준값 672)
+   */
+  @media (max-width: 672px) {
+    header { gap: 8px; padding: 14px 14px 10px; }
+    .meta { display: none; }
+    .out { padding: 8px 10px; }
+    .out .lbl { display: none; }
+
+    .tools { padding: 0 14px 10px; gap: 7px; }
+    .search { width: 100%; }
+    .range { flex: 1 1 100%; gap: 7px; }
+    .seg { width: 100%; }
+    .seg button { padding: 9px 4px; font-size: 12.5px; }
+    .opts { flex: 1 1 100%; min-width: 0; gap: 7px; }
+    .opts select, .opts input[type=date] { flex: 1 1 0; width: 100%; min-width: 0; max-width: none; }
+    .grow { display: none; }
+    .tail { flex: 1 1 100%; }
+    .tail select { flex: none; }
+    .tail .chip { flex: 1 1 0; }
+
+    .count { padding: 0 14px 8px; font-size: 12px; }
+    .rows { padding: 0 14px; }
+    .row { grid-template-columns: 74px minmax(0, 1fr) auto; gap: 8px; font-size: 12.5px; }
+    /* 쪽 넘기기는 다섯 개가 한 줄에 안 들어간다. 양 끝을 접는다 */
+    footer { padding: 10px 14px; gap: 6px; }
+    footer .chip:first-child, footer .chip:last-child { display: none; }
+    footer .chip { flex: 1 1 0; }
+    .pages { min-width: 0; flex: 1 1 0; }
+  }
 </style>

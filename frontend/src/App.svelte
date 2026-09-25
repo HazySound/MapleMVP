@@ -97,10 +97,7 @@
   }
   main { flex: 1; overflow-y: auto; overflow-x: hidden; }
   .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 16px; max-width: 1560px; margin: 0 auto; }
-  /* 중단점은 --ui-scale(1.2)을 미리 곱해 둔 값이다.
-     미디어 쿼리는 창 너비만 보고 배율을 모르기 때문에, 그냥 두면 자리가 없는데도 발동한다.
-     원래 값: 760 / 900 / 1100 */
-  @media (max-width: 912px) { .grid { gap: 10px; padding: 10px; } }
+
   .grid > div { grid-column: span 12; display: grid; }
   @media (min-width: 1080px) {
     .c5 { grid-column: span 5 !important; }
@@ -121,4 +118,9 @@
   }
   .boot { height: 100%; display: grid; place-items: center; }
   .boot span { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--color-line2); border-top-color: var(--color-lav); animation: spin .8s linear infinite; }
+
+  /* 중단점은 --ui-scale(1.2)을 미리 곱해 둔 값이다.
+     미디어 쿼리는 창 너비만 보고 배율을 모르기 때문에, 그냥 두면 자리가 없는데도 발동한다.
+     원래 값: 760 / 900 / 1100 */
+  @media (max-width: 912px) { .grid { gap: 10px; padding: 10px; } }
 </style>
