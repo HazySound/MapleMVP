@@ -48,6 +48,31 @@ export function acceptReading(v: number[], collected: number[]): boolean {
   return THS.some(th => tierFits(th, v[v.length - 1], collected))
 }
 
+/**
+ * acceptReading이 왜 물렀는지 한 줄로 돌려준다.
+ * '맞지 않아요'만으로는 표를 잘못 읽은 건지 받아 둔 결제가 어긋난 건지 알 수 없다.
+ */
+export function whyReject(v: number[], collected: number[]): string {
+  const w = (n: number) => n.toLocaleString('ko-KR')
+  if (v.length !== TOOLTIP_ROWS) return `표가 ${TOOLTIP_ROWS}줄이 아니라 ${v.length}줄로 읽혔어요.`
+  for (let i = 0; i < v.length - 1; i++) {
+    if (v[i] > v[i + 1]) {
+      return `${i + 1}주 뒤(${w(v[i])})가 ${i + 2}주 뒤(${w(v[i + 1])})보다 커요. 잘못 읽은 자리가 있어요.`
+    }
+  }
+  for (let k = 1; k < v.length; k++) {
+    const week = v[k] - v[k - 1]
+    const spent = collected[k]
+    if (week < spent) {
+      return `${k + 1}번째 주: 표에서는 ${w(week)}원인데 받아 둔 결제는 ${w(spent)}원이에요.`
+    }
+    if ((week - spent) % UNIT !== 0) {
+      return `${k + 1}번째 주: 차이 ${w(week - spent)}원이 100의 배수가 아니에요.`
+    }
+  }
+  return '어느 등급 기준에도 들어맞지 않아요.'
+}
+
 /** 화면에서 읽은 숫자 하나가 '○○ 등급까지'라고 가정했을 때 앞뒤가 맞는지 본다. */
 export function totalsFor(needs: number[], collected: number[], amounts: number[]): Set<string> {
   const found = new Set<string>()

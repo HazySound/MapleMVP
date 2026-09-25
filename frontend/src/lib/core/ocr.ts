@@ -15,6 +15,13 @@ const MAX_GLYPH = 15            // 숫자 한 글자의 최대 폭. 한글('캐�
 const THRESHOLDS = [180, 190, 200, 210, 220, 230, 240]
 const BLURS: (number | null)[] = [null, 0.5, 0.8]
 const CLUSTER_THRESHOLDS = [200, 220, 235]
+/**
+ * 표의 줄을 찾을 때 '글자'로 칠 밝기.
+ * 화면공유 프레임은 색 변환을 한 번 거쳐 생캡처보다 어둡게 들어온다. 하나만 박아 두면
+ * 조금만 어두워도 줄을 하나도 못 찾아 표가 아예 안 잡힌다. 위에서부터 훑되,
+ * 찾는 즉시 멈춰서 밝은 화면에서는 예전만큼 빠르다.
+ */
+const TABLE_THRESHOLDS = [220, 195, 170, 145]
 
 const BOX_H = templates.height
 const BOX_W = templates.width
@@ -27,7 +34,34 @@ export function toGray(rgba: Uint8ClampedArray | Uint8Array, width: number, heig
   for (let i = 0, p = 0; i < data.length; i++, p += 4) {
     data[i] = (rgba[p] + rgba[p + 1] + rgba[p + 2]) / 3
   }
-  return { data, width, height }
+  return { data: level(data), width, height }
+}
+
+/**
+ * 밝은 쪽 끝을 일정하게 맞춘다.
+ *
+ * 화면을 공유받은 프레임은 색 변환을 한 번 거쳐 생캡처보다 어둡게 들어온다.
+ * 아래 단계들이 밝기를 숫자로 박아 쓰기 때문에, 조금만 어두워도 글자를 하나도
+ * 못 찾는다. 여기서 한 번 맞춰 두면 그 아래는 손댈 것이 없다.
+ *
+ * 가장 밝은 화소 하나에 맞추면 흰 점 하나에 휘둘리므로 위쪽 0.2% 지점을 쓴다.
+ * 이미 밝으면 그대로 두고, 너무 어두우면 억지로 늘리지 않는다. 많이 당길수록
+ * 글자 가장자리가 뭉개져 오히려 잘못 읽으므로 끌어올리는 폭도 제한한다.
+ */
+function level(d: Float32Array): Float32Array {
+  const hist = new Int32Array(256)
+  for (let i = 0; i < d.length; i++) hist[d[i] | 0]++
+  const want = d.length * 0.002
+  let n = 0
+  let peak = 255
+  for (let v = 255; v >= 0; v--) {
+    n += hist[v]
+    if (n >= want) { peak = v; break }
+  }
+  if (peak >= 238 || peak < 60) return d
+  const k = Math.min(1.35, 245 / peak)
+  for (let i = 0; i < d.length; i++) d[i] = Math.min(255, d[i] * k)
+  return d
 }
 
 const GLYPHS: Record<string, Float32Array> = (() => {
@@ -193,11 +227,12 @@ function digitSegs(g: Gray, y0: number, y1: number, x0: number, x1: number,
 }
 
 /** 금액 열다운 정도. 오른쪽 정렬이고 글자 수가 그럴듯하면 높다. */
-function score(g: Gray, rows: [number, number][], x0: number, x1: number, scale: number): number {
+function score(g: Gray, rows: [number, number][], x0: number, x1: number,
+               scale: number, th = 220): number {
   const ends: number[] = []
   let plausible = 0
   for (const [y0, y1] of rows) {
-    const segs = digitSegs(g, y0, y1, x0, x1, scale)
+    const segs = digitSegs(g, y0, y1, x0, x1, scale, th)
     if (!segs.length) return 0
     ends.push(segs[segs.length - 1][1])
     if (segs.length >= 3 && segs.length <= 9) plausible++
@@ -234,12 +269,20 @@ function chain(segs: [number, number][]): [number, number][] {
  * 배율은 미리 알 필요 없이 줄 간격에서 역산한다.
  */
 export function findTables(g: Gray, win = 320, step = 40, limit = 6): Table[] {
+  for (const th of TABLE_THRESHOLDS) {
+    const out = tablesAt(g, th, win, step, limit)
+    if (out.length) return out
+  }
+  return []
+}
+
+function tablesAt(g: Gray, th: number, win: number, step: number, limit: number): Table[] {
   const { width: W, height: H } = g
   // 가로 누적합을 만들어 두면 어떤 열 구간의 밝은 화소 수도 뺄셈 한 번이다
   const cum = new Int32Array((W + 1) * H)
   for (let y = 0; y < H; y++) {
     const r = y * (W + 1)
-    for (let x = 0; x < W; x++) cum[r + x + 1] = cum[r + x] + (g.data[y * W + x] > 220 ? 1 : 0)
+    for (let x = 0; x < W; x++) cum[r + x + 1] = cum[r + x] + (g.data[y * W + x] > th ? 1 : 0)
   }
 
   const seen = new Map<string, [number, number][]>()
@@ -269,14 +312,14 @@ export function findTables(g: Gray, win = 320, step = 40, limit = 6): Table[] {
     const cols = new Uint8Array(W)
     for (const [y0, y1] of rows) {
       for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) {
-        for (let x = 0; x < W; x++) if (g.data[y * W + x] > 220) cols[x] = 1
+        for (let x = 0; x < W; x++) if (g.data[y * W + x] > th) cols[x] = 1
       }
     }
     for (const [lo0, hi0] of runs(x => !!cols[x], W, s(24), s(30))) {
       if (hi0 - lo0 > s(420)) continue
       const lo = Math.max(0, lo0 - s(6))
       const hi = Math.min(W, hi0 + s(7))
-      const sc = score(g, rows, lo, hi, scale)
+      const sc = score(g, rows, lo, hi, scale, th)
       if (sc > 0) out.push({ s: sc, t: { rows, x0: lo, x1: hi, scale } })
     }
   }
@@ -395,7 +438,10 @@ function readAmounts(g: Gray, t: Table, th: number, blurR: number | null,
 }
 
 /** 화면에서 '숫자 여러 개가 붙어 있는 덩어리'를 모두 찾는다. */
-function digitClusters(g: Gray, scale: number, skip: [number, number][] = [],
+/** 이미 표에서 읽은 자리. 그 칸만 빼고, 같은 높이의 다른 곳은 건드리지 않는다 */
+interface Skip { x0: number; x1: number; rows: [number, number][] }
+
+function digitClusters(g: Gray, scale: number, skip?: Skip,
                        win = 360, step = 60) {
   const { width: W, height: H } = g
   const s = (v: number) => Math.max(1, Math.round(v * scale))
@@ -412,11 +458,13 @@ function digitClusters(g: Gray, scale: number, skip: [number, number][] = [],
       const hit = (y: number) => cum[y * (W + 1) + wx1] - cum[y * (W + 1) + wx] >= 3
       for (const [a, b] of runs(hit, H, s(3), s(8))) {
         if (b - a < s(10) || b - a > s(30)) continue
-        if (skip.some(([s0, s1]) => a < s1 && s0 < b)) continue
         const cols = new Uint8Array(W)
         for (let y = a; y < b; y++) for (let x = 0; x < W; x++) if (g.data[y * W + x] > th) cols[x] = 1
         for (const [lo0, hi0] of runs(x => !!cols[x], W, s(24), s(18))) {
           if (hi0 <= wx || lo0 >= wx1) continue
+          // 표의 숫자만 뺀다. 줄 전체를 빼면 옆에 나란히 있는 상단 금액까지 사라진다
+          if (skip && lo0 < skip.x1 && skip.x0 < hi0
+              && skip.rows.some(([s0, s1]) => a < s1 && s0 < b)) continue
           const lo = Math.max(0, lo0 - s(6))
           const hi = Math.min(W, hi0 + s(7))
           const n = digitSegs(g, a - s(4), b + s(6), lo, hi, scale, th).length
@@ -433,7 +481,7 @@ function digitClusters(g: Gray, scale: number, skip: [number, number][] = [],
 }
 
 /** 화면에 보이는 숫자들을 모두 읽어 온다. 어느 게 맞는지는 규칙이 가린다. */
-function findAmounts(g: Gray, scale: number, skip: [number, number][] = []): number[] {
+function findAmounts(g: Gray, scale: number, skip?: Skip): number[] {
   const vals = new Set<number>()
   for (const c of digitClusters(g, scale, skip)) {
     for (const th of [...THRESHOLDS, 235, 245]) {
@@ -463,7 +511,8 @@ export function scan(g: Gray, fallbackScale = 0): ScanResult {
       }
     }
     if (seen.length) {
-      return { readings: seen, scale: t.scale, amounts: findAmounts(g, t.scale, t.rows) }
+      return { readings: seen, scale: t.scale,
+               amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }) }
     }
   }
   // 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
