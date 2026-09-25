@@ -7,13 +7,31 @@
   let q = $state('')      // 실제로 적용된 검색어
   // 기간은 '월별'(연·월 드롭다운)이 기본이고, 필요하면 '기간 지정'으로 날짜를 직접 넣는다
   const TODAY = new Date()
-  let mode = $state<'month' | 'range'>('month')
-  let year = $state(TODAY.getFullYear())
-  let month = $state(TODAY.getMonth() + 1)
+  const NOW_Y = TODAY.getFullYear()
+  const NOW_M = TODAY.getMonth() + 1
+  const pad = (n: number) => String(n).padStart(2, '0')
+  /** 오늘. 날짜 칸의 max로 써서 오지 않은 날을 못 고르게 한다 */
+  const TODAY_STR = `${NOW_Y}-${pad(NOW_M)}-${pad(TODAY.getDate())}`
+
+  let mode = $state<'all' | 'month' | 'range'>('all')
+  let year = $state(NOW_Y)
+  let month = $state(NOW_M)
   let start = $state('')   // 기간 지정 모드에서만 쓴다
   let end = $state('')
-  const pad = (n: number) => String(n).padStart(2, '0')
+
+  /** 고른 해에서 고를 수 있는 달. 올해라면 이번 달까지다 */
+  const months = $derived.by(() => {
+    const last = year === NOW_Y ? NOW_M : 12
+    return Array.from({ length: last }, (_, i) => i + 1)
+  })
+  // 2026년 3월을 보다가 2025년으로 옮기면 3월이 그대로 맞지만, 반대로 올해로
+  // 돌아오면 아직 오지 않은 달에 머무를 수 있다. 그때는 이번 달로 당긴다
+  $effect(() => {
+    if (year === NOW_Y && month > NOW_M) month = NOW_M
+  })
+
   const period = $derived.by(() => {
+    if (mode === 'all') return { start: '', end: '' }
     if (mode === 'range') return { start, end }
     const lastDay = new Date(year, month, 0).getDate()   // 다음 달 0일 = 이번 달 말일
     return { start: `${year}-${pad(month)}-01`, end: `${year}-${pad(month)}-${pad(lastDay)}` }
@@ -45,9 +63,11 @@
 
   /** 드롭다운에 띄울 연도. 보관된 내역의 범위에 올해와 지금 고른 해를 always 포함한다 */
   const years = $derived.by(() => {
-    const ys = [TODAY.getFullYear(), year]
+    const ys = [NOW_Y, year]
     for (const d of [res?.first, res?.last]) if (d) ys.push(Number(d.slice(0, 4)))
-    const lo = Math.min(...ys), hi = Math.max(...ys)
+    // 오지 않은 해는 고를 것이 없다. 보관된 내역이 미래 날짜를 들고 있어도 자른다
+    const hi = Math.min(Math.max(...ys), NOW_Y)
+    const lo = Math.min(Math.min(...ys), hi)
     return Array.from({ length: hi - lo + 1 }, (_, i) => hi - i)
   })
 
@@ -78,7 +98,7 @@
 
   function reset() {
     term = ''; q = ''
-    mode = 'month'; year = TODAY.getFullYear(); month = TODAY.getMonth() + 1
+    mode = 'all'; year = NOW_Y; month = NOW_M
     start = ''; end = ''
     sort = null; sortDesc = false
   }
@@ -95,6 +115,11 @@
           {#if !res.archived}<em>· 과거 내역을 아직 받아오는 중이에요</em>{/if}
         </span>
       {/if}
+      <!-- 도구줄에 두면 앞의 것들이 줄바꿈될 때마다 같이 밀린다. 여기는 안 밀린다 -->
+      <button class="btn primary out" onclick={save} disabled={exporting || !res?.total}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        <span class="lbl">{exporting ? '내보내는 중…' : '엑셀로 내보내기'}</span>
+      </button>
       <button class="x" onclick={() => (app.showHistory = false)} aria-label="닫기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
@@ -111,6 +136,7 @@
       </div>
       <div class="range">
         <div class="seg" role="group" aria-label="기간 고르는 방식">
+          <button class:on={mode === 'all'} aria-pressed={mode === 'all'} onclick={() => (mode = 'all')}>전체</button>
           <button class:on={mode === 'month'} aria-pressed={mode === 'month'} onclick={() => (mode = 'month')}>월별</button>
           <button class:on={mode === 'range'} aria-pressed={mode === 'range'} onclick={() => (mode = 'range')}>기간 지정</button>
         </div>
@@ -119,23 +145,19 @@
             {#each years as y (y)}<option value={y}>{y}년</option>{/each}
           </select>
           <select bind:value={month} aria-label="월">
-            {#each Array.from({ length: 12 }, (_, i) => i + 1) as m (m)}<option value={m}>{m}월</option>{/each}
+            {#each months as m (m)}<option value={m}>{m}월</option>{/each}
           </select>
-        {:else}
-          <input type="date" bind:value={start} aria-label="시작 날짜" />
+        {:else if mode === 'range'}
+          <!-- max를 걸어 오지 않은 날은 달력에서 아예 못 고르게 한다 -->
+          <input type="date" bind:value={start} max={end || TODAY_STR} aria-label="시작 날짜" />
           <span>~</span>
-          <input type="date" bind:value={end} aria-label="끝 날짜" />
+          <input type="date" bind:value={end} min={start} max={TODAY_STR} aria-label="끝 날짜" />
         {/if}
       </div>
       <select bind:value={size} aria-label="한 페이지 개수">
         {#each [25, 50, 100, 200] as n (n)}<option value={n}>{n}개씩</option>{/each}
       </select>
       <button class="chip" onclick={reset}>조건 초기화</button>
-      <div class="grow"></div>
-      <button class="btn primary" onclick={save} disabled={exporting || !res?.total}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
-        엑셀로 내보내기
-      </button>
     </div>
 
     {#if res}
@@ -202,15 +224,27 @@
     overflow: hidden;
   }
   header { display: flex; align-items: center; gap: 12px; padding: 18px 20px 12px; }
+  h2 { flex: none; }
   h2 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 0; }
-  .meta { font-size: 12px; color: var(--color-tx3); }
+  /* 보관 범위가 길어도 내보내기·닫기를 밀어내지 않게 줄여서 말줄임 */
+  .meta { min-width: 0; font-size: 12px; color: var(--color-tx3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta em { font-style: normal; color: var(--color-butter); }
-  .x { margin-left: auto; appearance: none; width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; border: 1px solid var(--color-line); background: var(--color-panel2); color: var(--color-tx2); }
+  .out { margin-left: auto; flex: none; white-space: nowrap; }
+  .x { appearance: none; width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: grid; place-items: center; border: 1px solid var(--color-line); background: var(--color-panel2); color: var(--color-tx2); }
   .x:hover { color: var(--color-tx); border-color: var(--color-line2); }
+  .x { flex: none; }
   .x svg { width: 15px; height: 15px; }
+  /* 좁은 화면에서는 글씨를 접고 아이콘만 남긴다. 자리는 그대로 지킨다.
+     (중단점은 --ui-scale 1.05를 미리 곱한 값. 원래 600) */
+  @media (max-width: 630px) {
+    header { gap: 8px; padding: 14px 14px 10px; }
+    .meta { display: none; }
+    .out { padding: 8px 10px; }
+    .out :global(svg) { margin: 0; }
+    .out .lbl { display: none; }
+  }
 
   .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 20px 12px; }
-  .grow { flex: 1; }
   .search { display: flex; align-items: center; gap: 4px; flex: 1 1 220px; min-width: 200px; padding: 0 4px 0 12px; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-bg2); }
   .search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--color-tx); font: inherit; font-size: 13px; padding: 9px 0; }
   .search .go, .search .clear { appearance: none; border: 0; background: none; cursor: pointer; color: var(--color-tx3); display: grid; place-items: center; }

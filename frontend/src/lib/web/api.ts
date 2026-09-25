@@ -124,6 +124,26 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
+/** 검색어와 기간으로 고른다. 날짜는 YYYY-MM-DD라 글자 그대로 견주면 된다 */
+export function pick(rows: Row[], q: string, start: string, end: string): Row[] {
+  const needle = q.trim().toLowerCase()
+  return rows.filter(r =>
+    (!start || r.date >= start) &&
+    (!end || r.date <= end) &&
+    (!needle || r.item.toLowerCase().includes(needle)))
+}
+
+/** 날짜·이름·금액으로 줄을 세운다. 같으면 날짜를 뒤에 붙여 순서가 흔들리지 않게 한다 */
+export function sortRows(rows: Row[], sort: string, desc: boolean): Row[] {
+  const dir = desc ? -1 : 1
+  const cmp = (a: Row, b: Row) => {
+    if (sort === 'price') return (a.price - b.price) * dir || (a.date < b.date ? 1 : -1)
+    if (sort === 'item') return a.item.localeCompare(b.item, 'ko') * dir || (a.date < b.date ? 1 : -1)
+    return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir
+  }
+  return [...rows].sort(cmp)
+}
+
 function raw(): Raw {
   return {
     status: 'ok',
@@ -191,21 +211,41 @@ export const webApi: PyApi = {
   async get_plan() { return load<Partial<PlanInput>>(KEY.plan, {}) },
   async save_plan(p) { save(KEY.plan, p) },
 
-  async history(page, size) {
-    const rows = load<Row[]>(KEY.rows, [])
+  async history(page, size, q, start, end, sort, desc) {
+    const all = load<Row[]>(KEY.rows, [])
+    const rows = sortRows(pick(all, q, start, end), sort, desc)
+    // 보관 범위는 걸러낸 것이 아니라 전체 기준이다. 필터를 좁힐 때마다
+    // 연도 드롭다운이 줄어들면 고르던 해가 사라진다
+    const dates = all.map(r => r.date).sort()
     return {
       rows: rows.slice((page - 1) * size, page * size),
       total: rows.length, sum: rows.reduce((a, r) => a + r.price, 0),
       page, pages: Math.max(1, Math.ceil(rows.length / size)),
-      allTotal: rows.length,
-      first: rows.length ? rows[rows.length - 1].date : '',
-      last: rows.length ? rows[0].date : '',
+      allTotal: all.length,
+      first: dates[0] ?? '',
+      last: dates[dates.length - 1] ?? '',
       archived: true,
     } as HistoryPage
   },
 
-  async export_history() {
-    return { error: '이 화면에서는 내보내기를 지원하지 않아요.' } as ExportResult
+  async export_history(q, start, end, sort, desc) {
+    const rows = sortRows(pick(load<Row[]>(KEY.rows, []), q, start, end), sort, desc)
+    if (!rows.length) return { error: '내보낼 내역이 없어요.' } as ExportResult
+    // 브라우저는 파일을 어디에 둘지 고르게 할 수 없다. 받는 폴더로 바로 내려간다.
+    // 엑셀은 쉼표를 제 나라 글자로 읽으므로 앞에 BOM을 붙인다. 없으면 한글이 깨진다
+    const BOM = '\ufeff'
+    const CRLF = '\r\n'
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const body = [['날짜', '아이템', '금액'].join(','),
+                  ...rows.map(r => [esc(r.date), esc(r.item), r.price].join(','))].join(CRLF)
+    const name = `MapleMVP_구매내역_${new Date().toISOString().slice(0, 10)}.csv`
+    const url = URL.createObjectURL(new Blob([BOM + body], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+    return { name, count: rows.length } as ExportResult
   },
 
   async open_login() {},
