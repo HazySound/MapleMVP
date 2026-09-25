@@ -7,6 +7,7 @@
   import GradeCard from './lib/components/GradeCard.svelte'
   import HistoryModal from './lib/components/HistoryModal.svelte'
   import ImportModal from './lib/components/ImportModal.svelte'
+  import Footer from './lib/components/Footer.svelte'
   import LoginModal from './lib/components/LoginModal.svelte'
   import NameModal from './lib/components/NameModal.svelte'
   import PcRoomModal from './lib/components/PcRoomModal.svelte'
@@ -72,6 +73,8 @@
     {:else if app.overlay === 'boot'}
       <div class="boot"><span></span></div>
     {/if}
+    <!-- 화면 맨 아래. 내용이 끝난 다음에 온다 -->
+    {#if app.data}<Footer />{/if}
   </main>
   <Overlay />
   {#if app.data && app.showHistory}<HistoryModal />{/if}

@@ -87,8 +87,25 @@ export async function who(ctx: Ctx) {
   return verify(ctx.env.SESSION_SECRET, cookieOf(ctx.request))
 }
 
+/**
+ * 한 번 만들고 나면 다시 묻지 않는다.
+ *
+ * ensure는 요청마다 불리는데, 그때마다 CREATE TABLE IF NOT EXISTS 넷을 D1에
+ * 보내면 아무것도 바뀌지 않는 왕복이 넷씩 쌓인다. 워커는 같은 일꾼이 여러
+ * 요청을 받으므로, 그 일꾼이 한 번 확인했으면 그걸로 충분하다.
+ *
+ * 일꾼이 새로 뜨면 이 값도 새로 시작해서 다시 한 번 확인한다.
+ */
+let ready = false
+
 /** 표가 없으면 만든다. 마이그레이션 도구를 따로 두기엔 표가 둘뿐이다. */
 export async function ensure(db: D1Database) {
+  if (ready) return
+  await build(db)
+  ready = true
+}
+
+async function build(db: D1Database) {
   await db.exec(
     'CREATE TABLE IF NOT EXISTS vault (' +
     'uid TEXT PRIMARY KEY, ' +

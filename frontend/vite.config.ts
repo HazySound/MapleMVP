@@ -1,7 +1,27 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 import Icons from 'unplugin-icons/vite'
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
+
+/**
+ * 맨 아래에 찍을 빌드 표시.
+ *
+ * 제보를 받을 때 '언제 것을 보고 있는지'를 알아야 한다. 고친 뒤인지 전인지
+ * 모르면 같은 것을 두 번 쫓는다.
+ *
+ * Cloudflare Pages는 커밋 해시를 환경변수로 준다. 로컬에서는 git에게 묻고,
+ * git도 없으면(내려받은 소스 등) 날짜만 남긴다.
+ */
+function buildTag(): string {
+  // 쓰는 사람도 만드는 사람도 한국에 있다. UTC로 찍으면 하루 전 날짜가 보인다
+  const date = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
+  let sha = process.env.CF_PAGES_COMMIT_SHA ?? ''
+  if (!sha) {
+    try { sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() } catch { /* git이 없다 */ }
+  }
+  return sha ? `${date} · ${sha.slice(0, 7)}` : date
+}
 
 /**
  * fontsource CSS는 woff2 뒤에 구형 woff를 나란히 적어 둔다.
@@ -26,6 +46,7 @@ const woff2Only = {
 
 export default defineConfig(({ mode }) => ({
   plugins: [woff2Only, svelte(), tailwindcss(), Icons({ compiler: 'svelte' })],
+  define: { __BUILD__: JSON.stringify(buildTag()) },
   // pywebview는 dist/index.html을 파일로 열기 때문에 상대 경로가 필요하다.
   // 웹 배포는 루트 기준으로 올린다.
   base: mode === 'web' ? '/' : './',
