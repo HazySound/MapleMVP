@@ -18,18 +18,34 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
 
-    <h2>휴대폰에서도 보시려면</h2>
+    <h2>로그인</h2>
     <p class="why">
-      받아 둔 구매내역은 <b>이 브라우저에만</b> 저장돼요. 로그인하면 계정에 함께 보관해서
-      휴대폰이나 다른 PC에서도 같은 내역을 볼 수 있습니다.
+      PC에서 모아 둔 구매내역을<br><b>휴대폰에서도 그대로</b> 볼 수 있어요.
     </p>
 
-    <ul class="pts">
-      <li><span class="ok">✓</span> 가입도 비밀번호도 없어요</li>
-      <li><span class="ok">✓</span> 카카오에서 받는 건 <b>회원번호 하나</b>예요. 이름·이메일·전화번호는 받지 않아요</li>
-      <li><span class="ok">✓</span> 넥슨 아이디와 비밀번호는 <b>받지도, 볼 수도 없어요</b></li>
-      <li><span class="ok">✓</span> 언제든 화면에서 바로 지울 수 있어요</li>
-    </ul>
+    <div class="flow" aria-hidden="true">
+      <div class="step">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2.6" y="4" width="18.8" height="12.4" rx="2"/><path d="M8.6 20.4h6.8M12 16.4v4"/>
+        </svg>
+        <b>PC</b>
+        <span>구매내역 가져오기</span>
+      </div>
+      <svg class="arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12h15M13.5 6.5 20 12l-6.5 5.5"/>
+      </svg>
+      <div class="step on">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="6.4" y="2.6" width="11.2" height="18.8" rx="2.4"/><path d="M11 18.6h2"/>
+        </svg>
+        <b>휴대폰</b>
+        <span>로그인하고 보기</span>
+      </div>
+    </div>
+
+    <p class="note">
+      휴대폰에서는 넥슨 내역을 <b>가져올 수 없어요.</b> PC에서 먼저 가져와 주세요.
+    </p>
 
     <button class="kakao" onclick={login}>
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -38,9 +54,6 @@
       카카오로 로그인
     </button>
 
-    <p class="note">
-      로그인하지 않아도 <b>모든 기능을 그대로 쓸 수 있어요.</b> 그때는 어떤 정보도 서버로 보내지 않습니다.
-    </p>
     <p class="legal">
       로그인하면 <a href="/privacy.html" target="_blank" rel="noopener">개인정보 처리방침</a>에
       동의하는 것으로 봅니다.
@@ -58,7 +71,7 @@
   }
   .sheet {
     position: relative; width: min(420px, 100%); max-height: 100%; overflow-y: auto;
-    display: grid; gap: 13px; padding: 24px 22px 20px;
+    display: grid; gap: 14px; padding: 24px 22px 20px;
     border-radius: 16px; border: 1px solid var(--color-line2); background: var(--color-panel);
   }
   .x {
@@ -71,15 +84,38 @@
   .x svg { width: 14px; height: 14px; }
 
   h2 { margin: 0; padding-right: 34px; font-size: 17px; font-weight: 700; color: var(--color-tx); }
-  .why { margin: 0; font-size: 13px; line-height: 1.7; color: var(--color-tx2); }
-  .why b, .pts b, .note b { color: var(--color-tx); }
-
-  .pts { margin: 2px 0; padding: 0; list-style: none; display: grid; gap: 7px; }
-  .pts li {
-    display: flex; gap: 8px; align-items: flex-start;
-    font-size: 12.5px; line-height: 1.6; color: var(--color-tx3);
+  .why {
+    margin: 0; font-size: 14px; line-height: 1.75; color: var(--color-tx2);
+    letter-spacing: -.01em;
   }
-  .ok { flex: none; color: var(--color-good); font-weight: 700; }
+  .why b { color: var(--color-tx); font-weight: 700; }
+
+  /* PC에서 모아 휴대폰에서 본다 — 순서가 한눈에 보여야 한다 */
+  .flow { display: flex; align-items: stretch; gap: 8px; margin: 2px 0; }
+  .step {
+    flex: 1; min-width: 0; display: grid; justify-items: center; gap: 4px;
+    padding: 13px 8px 12px; border-radius: 13px;
+    background: var(--color-bg2); border: 1px solid var(--color-line);
+    color: var(--color-tx3);
+  }
+  .step svg { width: 20px; height: 20px; }
+  .step b { font-size: 12.5px; font-weight: 700; color: var(--color-tx2); }
+  .step span { font-size: 11px; line-height: 1.45; text-align: center; }
+  .step.on {
+    border-color: color-mix(in oklab, var(--color-lav) 50%, var(--color-line));
+    background: color-mix(in oklab, var(--color-lav) 10%, var(--color-bg2));
+    color: var(--color-tx2);
+  }
+  .step.on svg, .step.on b { color: var(--color-lav); }
+  .arw { flex: none; align-self: center; width: 17px; height: 17px; color: var(--color-tx3); }
+
+  .note {
+    margin: 0; padding: 10px 12px; border-radius: 10px;
+    font-size: 11.5px; line-height: 1.6; color: var(--color-tx3);
+    background: var(--color-bg2); border: 1px solid var(--color-line);
+  }
+  .note b { color: var(--color-tx2); }
+
 
   /* 카카오 브랜드 색. 여기만은 테마를 따르지 않는다 */
   .kakao {
@@ -91,10 +127,6 @@
   .kakao:hover { filter: brightness(.96); }
   .kakao svg { width: 19px; height: 19px; }
 
-  .note {
-    margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--color-tx3);
-    padding: 10px 12px; border-radius: 10px; background: var(--color-bg2); border: 1px solid var(--color-line);
-  }
   .legal { margin: 0; font-size: 11px; line-height: 1.6; color: var(--color-tx3); text-align: center; }
   .legal a { color: var(--color-lav); }
 </style>

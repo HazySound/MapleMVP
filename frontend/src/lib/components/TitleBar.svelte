@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import AccountMenu from './AccountMenu.svelte'
   import { app, refresh, showLogin, toggleTheme, win } from '../store.svelte'
+  import { TOUCH } from '../format'
   import { tip } from '../tip'
 
   let now = $state(Date.now())
@@ -26,7 +27,8 @@
 
   // 웹에는 로그인이 없다. 받아 둔 내역이 하나도 없으면 여기부터 시작해야 하므로
   // 단추가 어디 있는지 확실히 알려 준다.
-  const needSync = $derived(app.web && !app.data?.syncedAt && !busy)
+  // 손가락 기기에서는 가져오기 자체가 안 된다. 없는 길을 가리키지 않는다
+  const needSync = $derived(app.web && !app.data?.syncedAt && !busy && !TOUCH)
 </script>
 
 <header class="bar">
@@ -49,7 +51,9 @@
 
   <div class="sync">
     {#if app.web}
-      <span class="txt" class:call={needSync}>{app.data?.syncedAt ? status : '구매내역부터 가져와 주세요'}</span>
+      <span class="txt" class:call={needSync}>
+        {app.data?.syncedAt ? status : TOUCH ? 'PC에서 가져온 뒤 로그인하면 보여요' : '구매내역부터 가져와 주세요'}
+      </span>
     {:else if app.loggedOut && !busy}
       <button class="stat" onclick={showLogin} use:tip={'넥슨에 다시 로그인'}>
         <span class="dot out"></span><span class="txt">로그아웃됨 · 다시 로그인</span>
@@ -58,11 +62,13 @@
       <span class="dot" class:busy class:err={!!app.error}></span>
       <span class="txt">{app.error ? '동기화 실패 · 이전 결과 표시 중' : status}</span>
     {/if}
+    {#if !(app.web && TOUCH)}
     <button class="ib" class:spinning={busy} class:hl={needSync}
       onclick={() => (app.web ? (app.showImport = true) : refresh())}
       disabled={busy} aria-label="구매내역 가져오기" use:tip={app.web ? '구매내역 가져오기' : '새로고침 (F5)'}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
+    {/if}
   </div>
 
   <!-- 왼쪽부터: 동기화 · 화면 밝기 · 로그인. 오른쪽 끝은 창 단추가 있던 자리라 비워 둔다 -->

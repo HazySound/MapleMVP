@@ -4,6 +4,12 @@ import type { Tier, TierKey } from './types'
 export const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /**
+ * 손가락으로 쓰는 기기.
+ * 넥슨 내역 가져오기는 북마크바가 있어야 해서 이런 기기에서는 할 수 없다.
+ */
+export const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+
+/**
  * 색은 app.css가 쥐고 있다. 여기서 값을 또 적으면 밝은 화면으로 바꿨을 때
  * 한쪽만 따라오지 않는다.
  *

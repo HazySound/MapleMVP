@@ -25,6 +25,7 @@ export const app = $state({
   showHistory: false,
   showPcRoom: false,
   showImport: false,
+  showSignIn: false,   // 로그인 안내 창 (웹)
   user: null as { id: string; nick: string } | null,   // 카카오로 로그인한 사람 (웹)
   syncingUp: false,  // 계정에 올리는 중
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)

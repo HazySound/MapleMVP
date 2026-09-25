@@ -7,6 +7,7 @@
   import GradeCard from './lib/components/GradeCard.svelte'
   import HistoryModal from './lib/components/HistoryModal.svelte'
   import ImportModal from './lib/components/ImportModal.svelte'
+  import LoginModal from './lib/components/LoginModal.svelte'
   import PcRoomModal from './lib/components/PcRoomModal.svelte'
   import Ladder from './lib/components/Ladder.svelte'
   import Overlay from './lib/components/Overlay.svelte'
@@ -75,6 +76,8 @@
   {#if app.data && app.showHistory}<HistoryModal />{/if}
   {#if app.data && app.showPcRoom}<PcRoomModal />{/if}
   {#if app.data && app.web && app.showImport}<ImportModal />{/if}
+  <!-- 모달은 화면 전체를 덮어야 한다. 타이틀바 안에 두면 거기에 갇힌다 -->
+  {#if app.web && app.showSignIn}<LoginModal onClose={() => (app.showSignIn = false)} />{/if}
 </div>
 <ResizeHandles />
 
