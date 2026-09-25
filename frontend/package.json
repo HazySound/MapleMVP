@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:web": "vite --mode web",
-    "build:web": "vite build --mode web --outDir dist-web"
+    "build:web": "vite build --mode web --outDir dist-web",
+    "deploy": "npm run build:web && wrangler pages deploy dist-web --project-name maplemvp"
   },
   "devDependencies": {
     "@iconify-json/game-icons": "^1.2.4",
