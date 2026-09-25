@@ -2,9 +2,10 @@
  * 카카오에서 돌아온 사람을 맞는다.
  *
  * 받은 일회용 코드를 토큰으로 바꾸고, 그 토큰으로 회원번호를 묻는다.
+ * 카카오에서 받는 것은 회원번호 하나뿐이다. 이름은 이용자가 우리 쪽에서 정한다.
  * 코드 교환은 여기(서버)에서만 한다. 브라우저에 열쇠를 내보내지 않는다.
  */
-import { type Ctx, SESSION, SESSION_AGE, cookieOf, setCookie, sign } from '../_lib'
+import { type Ctx, SESSION, SESSION_AGE, cookieOf, ensure, setCookie, sign } from '../_lib'
 
 const fail = (why: string) =>
   new Response(null, { status: 302, headers: { location: `/?login=${encodeURIComponent(why)}` } })
@@ -39,11 +40,16 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     headers: { authorization: `Bearer ${access_token}` },
   })
   if (!me.ok) return fail('user')
-  const info = (await me.json()) as { id?: number; kakao_account?: { profile?: { nickname?: string } } }
+  const info = (await me.json()) as { id?: number }
   if (!info.id) return fail('user')
 
-  const token = await sign(ctx.env.SESSION_SECRET, `kakao:${info.id}`,
-                           info.kakao_account?.profile?.nickname ?? '')
+  const uid = `kakao:${info.id}`
+  await ensure(ctx.env.DB)
+  await ctx.env.DB
+    .prepare("INSERT INTO member (uid, nick, joined_at) VALUES (?, '', ?) ON CONFLICT(uid) DO NOTHING")
+    .bind(uid, Date.now()).run()
+
+  const token = await sign(ctx.env.SESSION_SECRET, uid)
   return new Response(null, {
     status: 302,
     headers: [

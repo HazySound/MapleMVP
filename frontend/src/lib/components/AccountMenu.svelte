@@ -5,13 +5,27 @@
    * 로그인 전에는 단추 하나, 로그인 뒤에는 닉네임과 메뉴다.
    * 앱은 로그인 없이도 그대로 돌아가므로, 여기서 막는 것은 아무것도 없다.
    */
-  import { app, clearWeb, pullDown, pushUp, signOut, wipeAccount } from '../store.svelte'
+  import { app, clearWeb, pullDown, pushUp, setNick, signOut, wipeAccount } from '../store.svelte'
   import { login } from '../web/account'
   import { tip } from '../tip'
 
   let open = $state(false)
   let busy = $state('')
   let asking = $state(false)
+  let naming = $state(false)
+  let draft = $state('')
+
+  const shown = $derived(app.user?.nick || '이름 없음')
+
+  function startName() {
+    draft = app.user?.nick ?? ''
+    naming = true
+  }
+
+  async function saveName() {
+    await run('nick', () => setNick(draft))
+    naming = false
+  }
 
   async function run(what: string, job: () => Promise<void>) {
     busy = what
@@ -42,17 +56,30 @@
   <div class="wrap">
     <button class="who on" onclick={() => (open = !open)} aria-expanded={open}>
       <span class="ini">{(app.user.nick || '?').slice(0, 1)}</span>
-      <span class="nm">{app.user.nick || '내 계정'}</span>
+      <span class="nm">{shown}</span>
     </button>
 
     {#if open}
       <!-- 바깥을 누르면 닫힌다 -->
       <div class="veil" role="presentation" onclick={() => (open = false)}></div>
       <div class="menu" role="menu">
-        <div class="head">
-          <b>{app.user.nick || '내 계정'}</b>
-          <span>카카오로 로그인됨</span>
-        </div>
+        {#if naming}
+          <div class="name">
+            <label for="nick">화면에 보일 이름</label>
+            <input id="nick" maxlength="12" placeholder="이름 없음" bind:value={draft}
+              onkeydown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') naming = false }} />
+            <div class="row">
+              <button class="go" disabled={!!busy} onclick={saveName}>{busy === 'nick' ? '저장 중…' : '저장'}</button>
+              <button disabled={!!busy} onclick={() => (naming = false)}>취소</button>
+            </div>
+          </div>
+        {:else}
+          <div class="head">
+            <b>{shown}</b>
+            <span>카카오로 로그인됨</span>
+            <button class="rename" onclick={startName}>이름 바꾸기</button>
+          </div>
+        {/if}
 
         <button role="menuitem" disabled={!!busy} onclick={() => run('up', pushUp)}>
           {busy === 'up' ? '올리는 중…' : '지금 계정에 올리기'}
@@ -118,6 +145,22 @@
   .head { display: grid; gap: 1px; padding: 7px 9px 9px; }
   .head b { font-size: 13px; color: var(--color-tx); }
   .head span { font-size: 11px; color: var(--color-tx3); }
+  .head .rename {
+    justify-self: start; margin-top: 5px; padding: 0; font-size: 11px;
+    color: var(--color-lav); background: none; text-decoration: underline;
+  }
+  .head .rename:hover { background: none; }
+
+  .name { display: grid; gap: 6px; padding: 7px 9px 9px; }
+  .name label { font-size: 11px; color: var(--color-tx3); }
+  .name input {
+    font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 9px;
+    border: 1px solid var(--color-line2); background: var(--color-bg2); color: var(--color-tx);
+  }
+  .name input:focus { outline: none; border-color: var(--color-lav); }
+  .row button.go {
+    color: var(--color-on-accent); background: var(--color-lav); border-color: var(--color-lav);
+  }
 
   .menu button {
     appearance: none; cursor: pointer; font: inherit; text-align: left;

@@ -183,6 +183,13 @@ export async function pushUp(): Promise<void> {
   }
 }
 
+/** 화면에 보일 이름을 정한다 */
+export async function setNick(nick: string): Promise<void> {
+  const acc = await import('./web/account')
+  const u = await acc.rename(nick)
+  if (u) app.user = u
+}
+
 export async function signOut(): Promise<void> {
   const acc = await import('./web/account')
   await acc.logout()

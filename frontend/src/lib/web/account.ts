@@ -6,6 +6,8 @@
  *
  * 합치는 규칙은 브라우저 쪽 saveRows가 이미 쥐고 있다(넥슨 결제번호로 중복 제거).
  * 서버는 받은 것을 그대로 보관만 한다.
+ *
+ * 이름은 카카오에서 받지 않는다. 이용자가 여기서 직접 정한다.
  */
 import type { Row } from '../types'
 
@@ -29,6 +31,21 @@ export async function me(): Promise<User | null> {
     return u?.id ? u : null
   } catch {
     return null   // 서버가 없는 자리(로컬 개발 등)에서도 앱은 돌아가야 한다
+  }
+}
+
+/** 이름을 정한다. 빈 값이면 이름 없는 상태로 돌아간다 */
+export async function rename(nick: string): Promise<User | null> {
+  try {
+    const r = await fetch('/api/me', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nick }),
+    })
+    return r.ok ? ((await r.json()) as User) : null
+  } catch {
+    return null
   }
 }
 

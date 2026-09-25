@@ -41,15 +41,15 @@ async function key(secret: string) {
                                  false, ['sign', 'verify'])
 }
 
-/** 회원번호와 닉네임을 담은 쿠키 값을 만든다. */
-export async function sign(secret: string, uid: string, nick: string): Promise<string> {
-  const body = b64url(enc.encode(JSON.stringify({ uid, nick, exp: Date.now() + DAYS * 864e5 })))
+/** 회원번호를 담은 쿠키 값을 만든다. 이름은 우리 쪽에 따로 둔다 */
+export async function sign(secret: string, uid: string): Promise<string> {
+  const body = b64url(enc.encode(JSON.stringify({ uid, exp: Date.now() + DAYS * 864e5 })))
   const mac = await crypto.subtle.sign('HMAC', await key(secret), enc.encode(body))
   return `${body}.${b64url(mac)}`
 }
 
 /** 쿠키에서 누구인지 꺼낸다. 서명이 틀리거나 기한이 지났으면 null. */
-export async function verify(secret: string, token: string | null): Promise<{ uid: string; nick: string } | null> {
+export async function verify(secret: string, token: string | null): Promise<{ uid: string } | null> {
   if (!token || !token.includes('.')) return null
   const [body, mac] = token.split('.')
   try {
@@ -57,7 +57,7 @@ export async function verify(secret: string, token: string | null): Promise<{ ui
     if (!ok) return null
     const p = JSON.parse(new TextDecoder().decode(unb64url(body)))
     if (!p.uid || typeof p.exp !== 'number' || p.exp < Date.now()) return null
-    return { uid: String(p.uid), nick: String(p.nick ?? '') }
+    return { uid: String(p.uid) }
   } catch {
     return null
   }
@@ -85,7 +85,7 @@ export async function who(ctx: Ctx) {
   return verify(ctx.env.SESSION_SECRET, cookieOf(ctx.request))
 }
 
-/** 표가 없으면 만든다. 마이그레이션 도구를 따로 두기엔 표가 하나뿐이다. */
+/** 표가 없으면 만든다. 마이그레이션 도구를 따로 두기엔 표가 둘뿐이다. */
 export async function ensure(db: D1Database) {
   await db.exec(
     'CREATE TABLE IF NOT EXISTS vault (' +
@@ -94,6 +94,18 @@ export async function ensure(db: D1Database) {
     'pcroom TEXT NOT NULL, ' +
     'synced_at TEXT, ' +
     'saved_at INTEGER NOT NULL)')
+  // 이름은 카카오에서 받지 않는다. 이용자가 직접 정한 것을 여기 둔다
+  await db.exec(
+    'CREATE TABLE IF NOT EXISTS member (' +
+    'uid TEXT PRIMARY KEY, ' +
+    "nick TEXT NOT NULL DEFAULT '', " +
+    'joined_at INTEGER NOT NULL)')
+}
+
+/** 이용자가 정한 이름. 아직 안 정했으면 빈 문자열 */
+export async function nickOf(db: D1Database, uid: string): Promise<string> {
+  const row = await db.prepare('SELECT nick FROM member WHERE uid = ?').bind(uid).first<{ nick: string }>()
+  return row?.nick ?? ''
 }
 
 export const json = (data: unknown, status = 200) =>
