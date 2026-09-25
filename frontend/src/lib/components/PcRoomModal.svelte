@@ -7,7 +7,7 @@
   import { primeChime } from '../web/chime'
   import { type Guide, canGuide, openGuide } from '../web/pip'
   import type { PcRoomResult, Tier } from '../types'
-  import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
+  import { TIER_COLOR, TIER_INK_VAR, addDays, md, spotlight, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -406,7 +406,7 @@
       <section class="panel">
         <div class="prow">
           <span class="k">이번 주 등급</span>
-          <b class="tier" style="--c:{curTier ? TIER_COLOR[curTier.key] : 'var(--color-tx3)'}">{curTier?.name ?? '등급 없음'}</b>
+          <b class="tier" style="--c:{curTier ? TIER_INK_VAR[curTier.key] : 'var(--color-tx3)'}">{curTier?.name ?? '등급 없음'}</b>
           <small>인게임 표시와 같아야 해요</small>
         </div>
         <div class="prow">
@@ -438,7 +438,7 @@
           <div class="tr">
             <span class="wk">{i + 1} 주차 뒤</span>
             <span class="dt mono">{addDays(d.thisWeek, (i + 1) * 7)}</span>
-            <span class="c tg" style="--c:{p?.tier ? TIER_COLOR[p.tier.key] : 'var(--color-tx3)'}">
+            <span class="c tg" style="--c:{p?.tier ? TIER_INK_VAR[p.tier.key] : 'var(--color-tx3)'}">
               {#if !p}–{:else if p.bad}?{:else}{p.tier?.name ?? '없음'}{/if}
             </span>
             <span class="r in">
@@ -512,7 +512,7 @@
   .back {
     position: absolute; inset: 52px 0 0 0; z-index: 40;
     display: grid; place-items: center; padding: 20px;
-    background: color-mix(in oklab, #14151a 72%, transparent); backdrop-filter: blur(8px);
+    background: color-mix(in oklab, var(--color-scrim) 72%, transparent); backdrop-filter: blur(8px);
   }
   .sheet {
     position: relative; width: min(820px, 100%); max-height: 100%;
@@ -587,7 +587,7 @@
     border: 1px solid var(--color-line2);
   }
   .lsteps li.now { color: var(--color-tx); font-weight: 600; }
-  .lsteps li.now::before { color: #1b1c21; background: var(--color-lav); border-color: var(--color-lav); }
+  .lsteps li.now::before { color: var(--color-on-accent); background: var(--color-lav); border-color: var(--color-lav); }
   .lsteps li.ok { color: var(--color-tx3); }
   .lsteps li.ok::before {
     content: '¹3'; color: var(--color-good);
@@ -651,7 +651,7 @@
 
   .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   .btn { appearance: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 9px 15px; border-radius: 11px; border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx); }
-  .btn.primary { background: var(--color-lav); border-color: var(--color-lav); color: #1b1c21; }
+  .btn.primary { background: var(--color-lav); border-color: var(--color-lav); color: var(--color-on-accent); }
   .btn:disabled { opacity: .45; cursor: default; }
   .chip { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 9px 13px; border-radius: 11px; border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx2); }
   .chip:hover:not(:disabled) { color: var(--color-tx); border-color: var(--color-line2); }

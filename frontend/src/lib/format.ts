@@ -3,21 +3,46 @@ import type { Tier, TierKey } from './types'
 
 export const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
 
-export const TIER_COLOR: Record<TierKey, string> = {
-  bronze: '#e7b98f',
-  silver: '#cdd5e1',
-  gold: '#f3d47e',
-  diamond: '#9fe0f2',
-  red: '#ff9aa8',
-  black: '#c9b6ff',
+/**
+ * 색은 app.css가 쥐고 있다. 여기서 값을 또 적으면 밝은 화면으로 바꿨을 때
+ * 한쪽만 따라오지 않는다.
+ *
+ * CSS에 넣을 때는 var(...) 그대로 건네준다. 그래야 테마가 바뀌는 순간
+ * 다시 그리지 않아도 색이 따라온다.
+ * 캔버스는 값이 있어야 하므로 그때만 실제 색을 읽어 온다.
+ */
+const KEYS: TierKey[] = ['bronze', 'silver', 'gold', 'diamond', 'red', 'black']
+const varsOf = (p: string) =>
+  Object.fromEntries(KEYS.map(k => [k, `var(--color-${p}-${k})`])) as Record<TierKey, string>
+
+/** 칠하는 색 (게이지·점·배경) */
+export const TIER_VAR = varsOf('t')
+/** 글자 색 (바탕 위에서 읽혀야 하는 곳) */
+export const TIER_INK_VAR = varsOf('tk')
+
+let ink: Record<string, string> = {}
+let inkFor = ''
+
+/** 지금 테마에서 이 변수의 실제 색. 테마가 바뀌면 알아서 다시 읽는다 */
+function read(name: string): string {
+  const now = document.documentElement.dataset.theme ?? 'dark'
+  if (now !== inkFor) { ink = {}; inkFor = now }
+  return (ink[name] ??= getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#80828f')
 }
 
-/** 캔버스에서 쓰는 테마 색 (app.css @theme과 같은 값) */
-export const C = {
-  bg2: '#202228', line: '#383b46',
-  tx: '#ecebf2', tx2: '#b4b5c3', tx3: '#80828f',
-  lav: '#b8a8ff', mint: '#95e2c4', peach: '#ffc29e', rose: '#ffa9c2', butter: '#f4e19c',
-}
+/** 캔버스용 칠하는 색 */
+export const TIER_COLOR = new Proxy({} as Record<TierKey, string>, {
+  get: (_, k) => read(`--color-t-${String(k)}`),
+})
+/** 캔버스용 글자 색 */
+export const TIER_INK = new Proxy({} as Record<TierKey, string>, {
+  get: (_, k) => read(`--color-tk-${String(k)}`),
+})
+
+/** 캔버스에서 쓰는 테마 색. app.css의 값을 그때그때 읽어 온다 */
+export const C = new Proxy({} as Record<string, string>, {
+  get: (_, k) => read(`--color-${String(k)}`),
+})
 export const FONT = {
   sans: '"IBM Plex Sans KR", "Malgun Gothic", sans-serif',
   mono: '"JetBrains Mono", Consolas, monospace',
@@ -36,10 +61,14 @@ export function addDays(iso: string, days: number): string {
 
 export const tierName = (tiers: Tier[], k: TierKey | null) => tiers.find(t => t.key === k)?.name ?? '미달'
 export const tierIdx = (tiers: Tier[], k: TierKey | null) => tiers.findIndex(t => t.key === k)
+/** 캔버스용: 지금 테마의 실제 색 */
 export const tierColor = (k: TierKey | null) => (k ? TIER_COLOR[k] : C.tx3)
+/** CSS용 글자 색. 이 함수는 전부 style="color:..." 자리에 쓰인다 */
+export const tierVar = (k: TierKey | null) => (k ? TIER_INK_VAR[k] : 'var(--color-tx3)')
 
 export function hexA(hex: string, a: number) {
-  const n = parseInt(hex.slice(1), 16)
+  // 여섯 자리 색이 아니면 조용히 엉뚱한 색이 된다 ('#888'은 남색이 된다)
+  const n = /^#[0-9a-f]{6}$/i.test(hex) ? parseInt(hex.slice(1), 16) : 0x80828f
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
 }
 

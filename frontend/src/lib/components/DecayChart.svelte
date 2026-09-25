@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { atX, fit, onResize } from '../canvas'
-  import { C, FONT, TIER_COLOR, addDays, hexA, md, spotlight, tierColor, tierName, won } from '../format'
+  import { C, FONT, TIER_COLOR, addDays, hexA, md, spotlight, tierColor, tierVar, tierName, won } from '../format'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -96,7 +96,7 @@
     })
   }
 
-  $effect(() => { void sim; void hover; draw() })
+  $effect(() => { void app.theme; void sim; void hover; draw() })
 
   function move(e: PointerEvent) {
     const x = atX(cv, e.clientX)
@@ -137,7 +137,7 @@
         {#if tip.s.carry || (tip.k > 0 && sim.forecast[tip.k - 1].carry)}
           <div class="r"><span>남은 이월</span><span class="mono">{won(tip.s.carry)}원</span></div>
         {/if}
-        <div class="r"><span>등급</span><span style="color:{tierColor(tip.s.tier)};font-weight:600">{tierName(d.tiers, tip.s.tier)}</span></div>
+        <div class="r"><span>등급</span><span style="color:{tierVar(tip.s.tier)};font-weight:600">{tierName(d.tiers, tip.s.tier)}</span></div>
       {/if}
     </div>
   </div>

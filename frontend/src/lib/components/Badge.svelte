@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { tierColor, tierName } from '../format'
+  import { TIER_VAR, tierName, tierVar } from '../format'
   import type { Tier, TierKey } from '../types'
 
   let { tier, tiers, ghost = false }: { tier: TierKey | null; tiers: Tier[]; ghost?: boolean } = $props()
 </script>
 
-<span class="badge" class:ghost class:black={tier === 'black' && !ghost} class:none={!tier} style="--c:{tierColor(tier)}">
+<!-- 칠하는 색과 글자 색을 따로 받는다. 배경은 맑게, 글자는 읽히게 -->
+<span class="badge" class:ghost class:black={tier === 'black' && !ghost} class:none={!tier}
+  style="--c:{tier ? TIER_VAR[tier] : 'var(--color-panel3)'};--ink:{tierVar(tier)}">
   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>
   {tierName(tiers, tier)}
 </span>
@@ -15,7 +17,7 @@
     position: relative; isolation: isolate; overflow: hidden;
     display: inline-flex; align-items: center; gap: 8px;
     padding: 7px 14px 7px 10px; border-radius: 999px;
-    font-weight: 700; font-size: 15px; color: #1b1c21; background: var(--c);
+    font-weight: 700; font-size: 15px; color: var(--color-on-tier); background: var(--c);
     width: fit-content;
   }
   .badge::after {
@@ -33,7 +35,7 @@
       inset 0 0 0 1px rgba(176, 156, 255, .16),
       0 0 14px -9px rgba(130, 100, 230, .6);
   }
-  .badge.ghost { background: transparent; color: var(--c); border: 1.5px dashed var(--c); padding-block: 5.5px; }
+  .badge.ghost { background: transparent; color: var(--ink); border: 1.5px dashed var(--ink); padding-block: 5.5px; }
   .badge.ghost::after, .badge.none::after { display: none; }
   .badge.none:not(.ghost) { background: var(--color-panel3); color: var(--color-tx2); }
   svg { width: 16px; height: 16px; }

@@ -25,7 +25,8 @@
         const y = (b.y + Math.cos(t * b.sy + i * 2) * 0.1) * h
         const r = b.r * Math.max(w, h)
         const g = ctx.createRadialGradient(x, y, 0, x, y, r)
-        g.addColorStop(0, hexA(b.c, 0.26))
+        // 밝은 화면에서는 같은 진하기로 깔면 바탕이 탁해진다
+        g.addColorStop(0, hexA(b.c, document.documentElement.dataset.theme === 'light' ? 0.13 : 0.26))
         g.addColorStop(1, hexA(b.c, 0))
         ctx.fillStyle = g
         ctx.fillRect(0, 0, w, h)

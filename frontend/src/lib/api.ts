@@ -6,8 +6,8 @@ export interface PyApi {
   pcroom_scan(dataUrl: string, scale: number): Promise<PcRoomScan>
   pcroom_save(weeks: Record<string, number>): Promise<Raw | Bare>
   pcroom_clear(): Promise<Raw | Bare>
-  get_ui(): Promise<{ medal?: boolean }>
-  save_ui(data: { medal: boolean }): Promise<void>
+  get_ui(): Promise<{ medal?: boolean; theme?: 'dark' | 'light' }>
+  save_ui(data: { medal: boolean; theme: 'dark' | 'light' }): Promise<void>
   get_plan(): Promise<Partial<PlanInput>>
   save_plan(p: PlanInput): Promise<void>
   history(page: number, size: number, q: string, start: string, end: string, sort: string, desc: boolean): Promise<HistoryPage>

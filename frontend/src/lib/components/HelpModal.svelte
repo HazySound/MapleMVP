@@ -170,7 +170,7 @@
   .back {
     position: absolute; inset: 52px 0 0 0; z-index: 60;
     display: grid; place-items: center; padding: 20px;
-    background: color-mix(in oklab, #14151a 78%, transparent); backdrop-filter: blur(8px);
+    background: color-mix(in oklab, var(--color-scrim) 78%, transparent); backdrop-filter: blur(8px);
   }
   .sheet {
     position: relative; width: min(640px, 100%); max-height: 100%;
@@ -238,7 +238,7 @@
   }
   .b.lav { background: color-mix(in oklab, var(--color-lav) 35%, var(--color-panel2)); color: var(--color-tx); }
   .b.on {
-    color: #1b1c21; background: var(--color-lav); border-color: var(--color-lav);
+    color: var(--color-on-accent); background: var(--color-lav); border-color: var(--color-lav);
     box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-lav) 30%, transparent);
   }
 

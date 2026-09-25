@@ -32,6 +32,7 @@ export const app = $state({
   web: false,        // 브라우저에서 도는 중 (넥슨 수집을 직접 못 한다)
   simBusy: false,    // 시뮬레이션 금액이 움직이는 중
   simTarget: 0,      // 움직여 가는 목표 금액 (0이면 원래대로 돌아가는 중)
+  theme: 'dark' as 'dark' | 'light',
   medal: false,   // MVP 등급 카드 가운데: false=합계, true=메달
   previewTier: null as TierKey | null,   // 개발자용: 다른 등급으로 바꿔서 보기
   history: null as HistoryPage | null,
@@ -88,7 +89,10 @@ export async function boot() {
     },
   }
   if (app.web) await listenWeb()
-  py.get_ui().then(ui => { if (typeof ui?.medal === 'boolean') app.medal = ui.medal })
+  py.get_ui().then(ui => {
+    if (typeof ui?.medal === 'boolean') app.medal = ui.medal
+    if (ui?.theme === 'light' || ui?.theme === 'dark') setTheme(ui.theme)
+  })
   const s = await py.get_state()
   if (s.status === 'empty') app.overlay = 'first-sync'
   else handle(s)
@@ -203,9 +207,21 @@ export async function pcroomClear() {
   handle(await py.pcroom_clear())
 }
 
+/** 밝은 화면/어두운 화면. 색은 전부 CSS 변수를 거치므로 표시 하나만 바꾸면 된다 */
+export function setTheme(t: 'dark' | 'light') {
+  app.theme = t
+  if (t === 'light') document.documentElement.dataset.theme = 'light'
+  else delete document.documentElement.dataset.theme
+}
+
+export function toggleTheme() {
+  setTheme(app.theme === 'dark' ? 'light' : 'dark')
+  py.save_ui({ medal: app.medal, theme: app.theme })
+}
+
 export function toggleMedal() {
   app.medal = !app.medal
-  py.save_ui({ medal: app.medal })   // 다음에 열 때도 그대로 보이게 저장
+  py.save_ui({ medal: app.medal, theme: app.theme })   // 다음에 열 때도 그대로 보이게 저장
 }
 
 export function openLogin() {

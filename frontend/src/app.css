@@ -27,7 +27,85 @@
 }
 
 /* 화면 전체 배율. 1이 예전 크기다 */
-:root { color-scheme: dark; --ui-scale: 1.2; }
+:root {
+  color-scheme: dark;
+  --ui-scale: 1.2;
+  /* 강조색 위에 얹는 글자. 밝은 색 단추 안의 글씨다 */
+  --color-on-accent: #1b1c21;
+  /* 등급색 위에 얹는 글자. 등급색은 두 테마 모두 밝은 쪽이라 늘 어둡다 */
+  --color-on-tier: #1b1c21;
+
+  /*
+   * 등급색은 둘로 나뉜다.
+   *   t-  : 칠하는 색. 게이지, 점, 배경. 이어 붙여 그라데이션이 되므로 맑아야 한다
+   *   tk- : 글자 색. 바탕 위에서 읽혀야 하므로 진해야 한다
+   * 어두운 화면에서는 파스텔 하나로 둘 다 된다.
+   *
+   * @theme이 아니라 여기 두는 이유: 변수 이름을 코드에서 조립해 쓰기 때문에
+   * Tailwind가 '아무도 안 쓰는 변수'로 보고 통째로 걷어낸다.
+   */
+  --color-t-bronze: #e7b98f;
+  --color-t-silver: #cdd5e1;
+  --color-t-gold: #f3d47e;
+  --color-t-diamond: #9fe0f2;
+  --color-t-red: #ff9aa8;
+  --color-t-black: #c9b6ff;
+  --color-tk-bronze: #e7b98f;
+  --color-tk-silver: #cdd5e1;
+  --color-tk-gold: #f3d47e;
+  --color-tk-diamond: #9fe0f2;
+  --color-tk-red: #ff9aa8;
+  --color-tk-black: #c9b6ff;
+  /* 모달 뒤를 덮는 막 */
+  --color-scrim: #14151a;
+}
+
+/*
+ * 밝은 화면.
+ *
+ * 구조색은 뒤집고, 강조색은 어둡게 내린다. 어두운 바탕에서 잘 보이라고 고른
+ * 파스텔 그대로 흰 바탕에 올리면 글씨가 읽히지 않는다.
+ * 색을 쓰는 곳은 전부 이 변수들을 거치므로, 여기만 바꾸면 화면 전체가 따라온다.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f1f3f8;
+  --color-bg2: #e9ecf3;
+  --color-panel: #ffffff;
+  --color-panel2: #f3f5fa;
+  --color-panel3: #e7eaf2;
+  --color-line: #e0e4ed;
+  --color-line2: #c8cedd;
+  --color-tx: #1a1b21;
+  --color-tx2: #494d5b;
+  --color-tx3: #767b8c;
+  --color-lav: #6a4fd6;
+  --color-mint: #128a63;
+  --color-peach: #b35f14;
+  --color-sky: #1f6cc4;
+  --color-rose: #c2426d;
+  --color-butter: #8a6a0f;
+  --color-good: #128a63;
+  --color-bad: #cf2f49;
+  --color-on-accent: #ffffff;
+  --color-scrim: #3a3f4d;
+  /*
+   * 칠하는 색은 파스텔 그대로 두되 채도만 올린다. 어둡게 내리면 이웃한 색끼리
+   * 섞이면서 게이지가 탁해진다. 글자만 따로 진하게 쓴다.
+   */
+  --color-t-bronze: #f2a55c;
+  --color-t-silver: #aebbd0;
+  --color-t-gold: #f6c83a;
+  --color-t-diamond: #5ccfe8;
+  --color-t-red: #ff7d92;
+  --color-t-black: #a98cff;
+  --color-tk-bronze: #b0621a;
+  --color-tk-silver: #5c6880;
+  --color-tk-gold: #96700a;
+  --color-tk-diamond: #0a7b97;
+  --color-tk-red: #d32c4b;
+  --color-tk-black: #6743d4;
+}
 html, body, #app { height: 100%; }
 body {
   margin: 0;

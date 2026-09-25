@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { autoTargets, fixTargets, planner, spreadShortfall } from '../plan.svelte'
-  import { TIER_COLOR, countup, md, spotlight, won } from '../format'
+  import { TIER_COLOR, TIER_VAR, countup, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
   const p = $derived(planner.input!)
@@ -26,7 +26,7 @@
   })
 </script>
 
-<article class="card sum" use:spotlight style="--c:{TIER_COLOR[p.target]}">
+<article class="card sum" use:spotlight style="--c:{TIER_VAR[p.target]}">
   <h3 class="card-title">계획 결과 <span class="sub">{md(p.date)}까지 {tier.name} ({won(tier.th)}원)</span></h3>
 
   {#if r?.error}

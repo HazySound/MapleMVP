@@ -3,7 +3,7 @@
   import { onMount } from 'svelte'
   import { app } from '../store.svelte'
   import { atX, clamp01, easeOut, fit, niceStep, onResize, roundRect } from '../canvas'
-  import { C, FONT, REDUCED, addDays, hexA, man, md, spotlight, tierColor, tierName, won } from '../format'
+  import { C, FONT, REDUCED, addDays, hexA, man, md, spotlight, tierColor, tierVar, tierName, won } from '../format'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -81,7 +81,7 @@
   onMount(() => {
     if (!REDUCED) gsap.to(anim, { p: 1, duration: 1.5, delay: 0.35, ease: 'none', onUpdate: draw })
   })
-  $effect(() => { void data; void hover; draw() })
+  $effect(() => { void app.theme; void data; void hover; draw() })
 
   function move(e: PointerEvent) {
     const x = atX(cv, e.clientX)
@@ -115,7 +115,7 @@
         <span class="mono" style="color:var(--color-tx3)">{md(tip.wk.start)} – {md(tip.wk.end)}</span>
         <div class="r" style="margin-top:6px"><span>결제</span><span class="mono">{won(tip.wk.amount)}원</span></div>
         <div class="r"><span>이 주가 빠진 뒤 합계</span><span class="mono">{won(tip.after.sum)}원</span></div>
-        <div class="r"><span>그때 등급</span><span style="color:{tierColor(tip.after.tier)};font-weight:600">{tierName(d.tiers, tip.after.tier)}</span></div>
+        <div class="r"><span>그때 등급</span><span style="color:{tierVar(tip.after.tier)};font-weight:600">{tierName(d.tiers, tip.after.tier)}</span></div>
         <div style="margin-top:6px;color:var(--color-tx3)">{tip.note}</div>
       {/if}
     </div>

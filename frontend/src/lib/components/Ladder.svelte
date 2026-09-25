@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../store.svelte'
-  import { TIER_COLOR, spotlight, won } from '../format'
+  import { TIER_COLOR, TIER_VAR, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -13,7 +13,7 @@
   <div class="ladder">
     {#each [...d.tiers].reverse() as t (t.key)}
       {@const ok = v >= t.th}
-      <div class="rung" class:ok class:cur={t.key === (sim.current ?? d.current)} style="--c:{TIER_COLOR[t.key]}">
+      <div class="rung" class:ok class:cur={t.key === (sim.current ?? d.current)} style="--c:{TIER_VAR[t.key]}">
         <span class="n"><i></i>{t.name}</span>
         <span class="bar"><i style="width:{Math.min(100, (v / t.th) * 100)}%"></i></span>
         <span class="s mono">{ok ? `달성 · ${t.th / 10000}만` : `−${won(t.th - v)}`}</span>

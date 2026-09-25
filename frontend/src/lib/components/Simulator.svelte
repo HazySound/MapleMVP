@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MAX_EXTRA, app, setExtra } from '../store.svelte'
-  import { addDays, md, spotlight, tierColor, tierIdx, tierName, won } from '../format'
+  import { addDays, md, spotlight, tierColor, tierVar, tierIdx, tierName, won } from '../format'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -49,8 +49,8 @@
     {/each}
   </div>
   <div class="out">
-    <div class="kv"><span>현재 등급</span><b style="color:{tierColor(sim.current)}">{tierName(d.tiers, sim.current)}</b></div>
-    <div class="kv"><span>다음 주 예정 등급</span><b style="color:{tierColor(sim.next)}">{tierName(d.tiers, sim.next)}</b></div>
+    <div class="kv"><span>현재 등급</span><b style="color:{tierVar(sim.current)}">{tierName(d.tiers, sim.current)}</b></div>
+    <div class="kv"><span>다음 주 예정 등급</span><b style="color:{tierVar(sim.next)}">{tierName(d.tiers, sim.next)}</b></div>
     <div class="kv"><span>최근 13주 합계</span><b class="mono">{won(sim.total)}</b></div>
     <div class="kv"><span>다음 주 예상 합계</span><b class="mono">{won(sim.forecast[0].sum)}</b></div>
     <div class="kv"><span>현재 등급 유지</span><b>{keepText}</b></div>

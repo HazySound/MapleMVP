@@ -190,7 +190,7 @@
   .back {
     position: absolute; inset: 52px 0 0 0; z-index: 40;
     display: grid; place-items: center; padding: 20px;
-    background: color-mix(in oklab, #14151a 72%, transparent);
+    background: color-mix(in oklab, var(--color-scrim) 72%, transparent);
     backdrop-filter: blur(8px);
   }
   .sheet {

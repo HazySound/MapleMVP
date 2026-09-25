@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { planner, setDate, setSkipThisWeek, setTarget } from '../plan.svelte'
-  import { TIER_COLOR, addDays, md, spotlight, won } from '../format'
+  import { TIER_COLOR, TIER_VAR, addDays, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
   const p = $derived(planner.input!)
@@ -18,7 +18,7 @@
   <div class="label">달성할 등급</div>
   <div class="tiers" role="group" aria-label="목표 등급">
     {#each d.tiers as t (t.key)}
-      <button class="tier" aria-pressed={p.target === t.key} style="--c:{TIER_COLOR[t.key]}" onclick={() => setTarget(t.key)}>
+      <button class="tier" aria-pressed={p.target === t.key} style="--c:{TIER_VAR[t.key]}" onclick={() => setTarget(t.key)}>
         <i></i>{t.name}<small class="mono">{t.th / 10000}만</small>
       </button>
     {/each}

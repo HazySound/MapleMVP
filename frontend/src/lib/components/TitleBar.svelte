@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { app, refresh, showLogin, win } from '../store.svelte'
+  import { app, refresh, showLogin, toggleTheme, win } from '../store.svelte'
   import { tip } from '../tip'
 
   let now = $state(Date.now())
@@ -64,6 +64,30 @@
     </button>
   </div>
 
+  <!-- 왼쪽부터: 동기화 · 화면 밝기 · 로그인. 오른쪽 끝은 창 단추가 있던 자리라 비워 둔다 -->
+  <button class="sw" role="switch" aria-checked={app.theme === 'light'} onclick={toggleTheme}
+    aria-label="화면 밝기" use:tip={app.theme === 'dark' ? '밝은 화면으로' : '어두운 화면으로'}>
+    <span class="knob">
+      {#if app.theme === 'dark'}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.5 14.2A8.6 8.6 0 0 1 9.8 3.5a8.6 8.6 0 1 0 10.7 10.7z"/>
+        </svg>
+      {:else}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4.4"/>
+          <path d="M12 2.4v2.4M12 19.2v2.4M4.1 4.1l1.7 1.7M18.2 18.2l1.7 1.7M2.4 12h2.4M19.2 12h2.4M4.1 19.9l1.7-1.7M18.2 5.8l1.7-1.7"/>
+        </svg>
+      {/if}
+    </span>
+  </button>
+
+  <button class="login" disabled use:tip={'휴대폰에서도 보기 · 준비 중이에요'}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="8.4" r="3.8"/><path d="M4.6 20.2a7.4 7.4 0 0 1 14.8 0"/>
+    </svg>
+    로그인
+  </button>
+
   {#if !app.web}
   <div class="winctl">
     <button onclick={win.minimize} aria-label="최소화"><svg viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.3"/></svg></button>
@@ -95,7 +119,7 @@
   }
   .logo {
     width: 26px; height: 26px; border-radius: 8px; flex: none;
-    display: grid; place-items: center; color: #1b1c21;
+    display: grid; place-items: center; color: var(--color-on-accent);
     background: linear-gradient(135deg, var(--color-lav), var(--color-rose));
   }
   .logo svg { width: 16px; height: 16px; }
@@ -141,6 +165,33 @@
   }
   @media (prefers-reduced-motion: reduce) { .ib.hl { animation: none; } }
   .ib.spinning svg { animation: spin .9s linear infinite; }
+  /* 화면 밝기: 켜고 끄는 느낌으로 */
+  .sw {
+    flex: none; appearance: none; cursor: pointer; padding: 0; margin-left: 2px;
+    width: 46px; height: 26px; border-radius: 999px;
+    border: 1px solid var(--color-line); background: var(--color-bg2);
+    display: flex; align-items: center; transition: background .2s, border-color .2s;
+  }
+  .sw[aria-checked="true"] { background: color-mix(in oklab, var(--color-lav) 30%, var(--color-bg2)); border-color: var(--color-lav); }
+  .knob {
+    width: 20px; height: 20px; margin: 0 2px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--color-panel2); color: var(--color-tx2);
+    transition: transform .2s cubic-bezier(.4,0,.2,1), color .2s;
+  }
+  .sw[aria-checked="true"] .knob { transform: translateX(20px); background: var(--color-lav); color: var(--color-on-accent); }
+  .knob svg { width: 12px; height: 12px; }
+
+  .login {
+    flex: none; appearance: none; cursor: pointer; font: inherit; font-size: 12.5px;
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px;
+    border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-tx2);
+  }
+  .login:hover:not(:disabled) { color: var(--color-tx); border-color: var(--color-line2); }
+  .login:disabled { opacity: .5; cursor: default; }
+  .login svg { width: 14px; height: 14px; }
+  /* 창 단추가 없는 웹에서도 그 자리는 비워 둔다 */
+  .bar:not(:has(.winctl)) { padding-right: 46px; }
   .winctl { display: flex; align-self: stretch; margin-left: 6px; }
   .winctl button {
     appearance: none; border: 0; background: transparent; color: var(--color-tx2);

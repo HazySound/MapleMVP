@@ -2,7 +2,7 @@
   import gsap from 'gsap'
   import { app, toggleMedal } from '../store.svelte'
   import { fit, onResize } from '../canvas'
-  import { C, FONT, REDUCED, TIER_COLOR, countup, hexA, spotlight, tierIdx, won } from '../format'
+  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, countup, hexA, spotlight, tierIdx, won } from '../format'
   import Badge from './Badge.svelte'
   import Medal from './Medal.svelte'
   import { tip } from '../tip'
@@ -81,8 +81,12 @@
 
     const f0 = frac(g.base), f1 = frac(g.base + g.extra), f2 = frac(g.base + g.extra + g.carry)
 
-    stroke(ctx, cx, cy, R, lw, 0, 1, 0.13)                                // 바탕
-    if (!REDUCED) stroke(ctx, cx, cy, R, lw * 0.9, 0, f1, 0.5, lw * 0.5)  // 글로우 (같은 그라데이션)
+    // 밝은 바탕에서는 옅게 깔면 있는지도 모른다. 바탕도 글로우도 진하게 올린다
+    const light = document.documentElement.dataset.theme === 'light'
+    stroke(ctx, cx, cy, R, lw, 0, 1, light ? 0.22 : 0.13)                 // 바탕
+    if (!REDUCED) {
+      stroke(ctx, cx, cy, R, lw * 0.9, 0, f1, light ? 0.8 : 0.5, lw * (light ? 0.42 : 0.5))
+    }
     stroke(ctx, cx, cy, R, lw, 0, f1, 0.45)                               // 시뮬레이션까지 더한 길이
     stroke(ctx, cx, cy, R, lw, 0, f0, 1)                                  // 실제 결제 부분
 
@@ -105,7 +109,8 @@
     d.tiers.forEach((t, i) => {
       const a = START + (SWEEP * (i + 1)) / 6, rr = R - lw - 24
       const reached = g.base + g.extra + g.carry >= t.th
-      ctx.fillStyle = hexA(TIER_COLOR[t.key], reached ? 1 : 0.5)
+      // 이름은 카드 바탕 위에 얹히는 글자다. 칠하는 색이 아니라 글자색을 쓴다
+      ctx.fillStyle = hexA(TIER_INK[t.key], reached ? 1 : 0.5)
       ctx.fillText(t.name, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr)
       ctx.beginPath()
       ctx.moveTo(cx + Math.cos(a) * (R - lw / 2 - 4), cy + Math.sin(a) * (R - lw / 2 - 4))
@@ -124,6 +129,7 @@
   }
 
   $effect(() => {
+    void app.theme
     const to = preview
       ? { base: previewTh, extra: 0, carry: 0 }
       : { base, extra: sim.extra, carry: d.carry }
@@ -156,7 +162,7 @@
   {#if preview}
     <div class="devrow">
       {#each d.tiers as t (t.key)}
-        <button class:on={preview === t.key} style="--c:{TIER_COLOR[t.key]}"
+        <button class:on={preview === t.key} style="--c:{TIER_VAR[t.key]};--ink:{TIER_INK_VAR[t.key]}"
           onclick={() => (app.previewTier = t.key)}>{t.name}</button>
       {/each}
     </div>
@@ -243,7 +249,7 @@
     appearance: none; cursor: pointer; font: inherit; font-size: 11.5px; padding: 3px 8px; border-radius: 7px;
     border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx3);
   }
-  .devrow button.on { color: var(--c, var(--color-tx)); border-color: currentColor; }
+  .devrow button.on { color: var(--ink, var(--color-tx)); border-color: currentColor; }
   .big { font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
   .plus { font-size: 11.5px; min-height: 18px; display: grid; }
 

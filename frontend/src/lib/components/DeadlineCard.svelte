@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app, refresh, setExtra, setTarget } from '../store.svelte'
-  import { eul, TIER_COLOR, addDays, countup, md, spotlight, tierName, won } from '../format'
+  import { eul, TIER_COLOR, TIER_VAR, addDays, countup, md, spotlight, tierName, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -97,7 +97,7 @@
           use:tip={now === 0 && next > 0
             ? `다음 주에도 ${t.name}${eul(t.name)} 유지하려면 ${won(next)}원 더 필요해요`
             : t.key === cur ? '지금 등급이에요' : ''}
-          style="--c:{TIER_COLOR[t.key]}" onclick={() => setTarget(t.key)}>
+          style="--c:{TIER_VAR[t.key]}" onclick={() => setTarget(t.key)}>
           <!-- 지금 등급인지는 아래 안내문이 말해 준다. 칸이 좁아 여기에는 표식을 넣지 않는다 -->
           <span class="nm"><i></i>{t.name}</span>
           <small class="mono">{now === 0 ? '달성' : '+' + won(next)}</small>
@@ -132,7 +132,7 @@
         </button>
       </div>
     </div>
-    <div class="prog" style="--c:{TIER_COLOR[target.key]}">
+    <div class="prog" style="--c:{TIER_VAR[target.key]}">
       <i style="width:{pctBase}%"></i><em style="left:{pctBase}%;width:{pctExtra}%"></em>
     </div>
     <div class="legend">

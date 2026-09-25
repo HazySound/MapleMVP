@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { planner, setAmount, toggleLock, toggleSelect } from '../plan.svelte'
-  import { md, spotlight, tierColor, tierName, won } from '../format'
+  import { md, spotlight, tierColor, tierVar, tierName, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -72,7 +72,7 @@
           </span>
           <span class="num mono drop">{w.drop ? `−${won(w.drop)}` : '-'}</span>
           <span class="num mono">{won(w.sum)}</span>
-          <span class="tier" style="color:{tierColor(w.tier)}">
+          <span class="tier" style="color:{tierVar(w.tier)}">
             {tierName(d.tiers, w.tier)}
             {#if r.reached === w.offset}<i>목표 달성</i>{/if}
           </span>

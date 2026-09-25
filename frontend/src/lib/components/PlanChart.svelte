@@ -2,7 +2,7 @@
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
   import { atX, fit, niceStep, onResize, roundRect } from '../canvas'
-  import { C, FONT, TIER_COLOR, hexA, man, md, spotlight, tierColor, tierName, won } from '../format'
+  import { C, FONT, TIER_COLOR, hexA, man, md, spotlight, tierColor, tierVar, tierName, won } from '../format'
 
   const d = $derived(app.data!)
   const r = $derived(planner.result)
@@ -122,7 +122,7 @@
     ctx.fillText('주별 계획 결제', padL, botT - 14)
   }
 
-  $effect(() => { void r; void hover; draw() })
+  $effect(() => { void app.theme; void r; void hover; draw() })
 
   function move(e: PointerEvent) {
     const x = atX(cv, e.clientX)
@@ -149,7 +149,7 @@
         <div class="r" style="margin-top:6px"><span>계획 결제 ({tip.wk.fixed ? '고정' : '자동'})</span><span class="mono">{won(tip.wk.amount)}원</span></div>
         {#if tip.wk.drop}<div class="r"><span>이 주 목요일에 빠진 금액</span><span class="mono">−{won(tip.wk.drop)}원</span></div>{/if}
         <div class="r"><span>13주 합계</span><span class="mono">{won(tip.wk.sum)}원</span></div>
-        <div class="r"><span>등급</span><span style="color:{tierColor(tip.wk.tier)};font-weight:600">{tierName(d.tiers, tip.wk.tier)}</span></div>
+        <div class="r"><span>등급</span><span style="color:{tierVar(tip.wk.tier)};font-weight:600">{tierName(d.tiers, tip.wk.tier)}</span></div>
       {/if}
     </div>
   </div>

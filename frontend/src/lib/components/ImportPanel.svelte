@@ -169,7 +169,7 @@
 
   .btn { appearance: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-bg2); color: var(--color-tx); }
   .btn:disabled { opacity: .5; cursor: default; }
-  .btn.primary { background: var(--color-lav); border-color: var(--color-lav); color: #1b1c21; }
+  .btn.primary { background: var(--color-lav); border-color: var(--color-lav); color: var(--color-on-accent); }
   /* 크기는 그대로 두고 테두리 빛만 번지게 한다 */
   .btn.poke { animation: call 1.8s ease-out infinite; }
   @keyframes call {
@@ -192,7 +192,7 @@
   .ask b { color: var(--color-tx2); }
   .btn.del { color: var(--color-bad); border-color: color-mix(in oklab, var(--color-bad) 45%, var(--color-line)); }
   .btn.del:hover:not(:disabled) { background: color-mix(in oklab, var(--color-bad) 14%, transparent); }
-  .btn.del.on { background: var(--color-bad); border-color: var(--color-bad); color: #1b1c21; }
+  .btn.del.on { background: var(--color-bad); border-color: var(--color-bad); color: var(--color-on-accent); }
   .btn.del.on:hover:not(:disabled) { filter: brightness(1.08); }
 
   .status { margin: 0; font-size: 12.5px; color: var(--color-tx2); }
