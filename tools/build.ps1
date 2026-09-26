@@ -4,12 +4,17 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
+# README는 venv로 만들라고 하지만 .venv를 쓰는 사람도 있다. 있는 쪽을 쓴다
+$py = "venv\Scripts\python.exe"
+if (-not (Test-Path $py)) { $py = ".venv\Scripts\python.exe" }
+if (-not (Test-Path $py)) { throw "가상환경을 찾지 못했습니다 (venv 또는 .venv)" }
+
 Push-Location frontend
 npm run build
 if ($LASTEXITCODE -ne 0) { throw "프론트엔드 빌드 실패" }
 Pop-Location
 
-& venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onefile --windowed `
+& $py -m PyInstaller --noconfirm --clean --onefile --windowed `
     --name MapleMVP `
     --icon "$root\app\icon.ico" `
     --add-data "$root\frontend\dist;frontend\dist" `
