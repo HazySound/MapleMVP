@@ -1,6 +1,6 @@
 <script lang="ts">
   import gsap from 'gsap'
-  import { app, toggleMedal } from '../store.svelte'
+  import { app, refresh, toggleMedal } from '../store.svelte'
   import { fit, onResize } from '../canvas'
   import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, spotlight, tierIdx, won } from '../format'
   import Badge from './Badge.svelte'
@@ -153,6 +153,24 @@
    * 뭘 잘못한 줄 안다. 맞춰 둔 금액만 보여 주고 고치는 길은 닫는다.
    */
   const canFix = $derived(!(app.web && TOUCH))
+
+  /*
+   * 구매내역이 없으면 맞출 것이 없다.
+   *
+   * 보정은 '인게임이 아는 금액'에서 '내가 수집한 결제'를 뺀 나머지를 PC방으로
+   * 보는 것이다. 뺄 것이 없으면 인게임 금액이 통째로 PC방 접속분이 되어,
+   * 13주 내내 말이 안 되는 숫자가 저장된다.
+   *
+   * 그래서 막되, 막기만 하면 왜 안 되는지 모른다. 눌렀을 때 대신 동기화 창을
+   * 열어 준다 — 어차피 그것이 지금 해야 할 일이다.
+   */
+  const noRows = $derived(!d.syncedAt)
+
+  /** 지금 해야 할 일로 보낸다. exe는 스스로 읽어 오고, 웹은 동기화 창을 연다 */
+  function want() {
+    if (app.web) app.showImport = true
+    else refresh()
+  }
 </script>
 
 <article class="card grade" use:spotlight>
@@ -161,11 +179,14 @@
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
     {#if canFix}
-      <button class="pc" class:on={!!d.pcroom.total} class:hl={needPc} onclick={() => (app.showPcRoom = true)}
-        use:tip={needPc
-          ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
-          : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
-        {#if d.pcroom.total}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
+      <button class="pc" class:on={!!d.pcroom.total && !noRows} class:hl={needPc} class:off={noRows}
+        onclick={() => (noRows ? want() : (app.showPcRoom = true))}
+        use:tip={noRows
+          ? '구매내역을 먼저 동기화해 주세요. 수집한 결제가 있어야 그 차이를 PC방으로 볼 수 있어요'
+          : needPc
+            ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
+            : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
+        {#if d.pcroom.total && !noRows}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
       </button>
     {:else if d.pcroom.total}
       <span class="pc tag on"
@@ -246,6 +267,9 @@
   }
   .pc:hover { color: var(--color-tx); border-color: var(--color-lav); }
   /* 휴대폰에서는 읽는 것만 된다. 누를 것처럼 보이면 안 된다 */
+  /* 아직 맞출 수 없는 상태. 눌리기는 해야 왜 안 되는지 알려줄 수 있다 */
+  .pc.off { opacity: .45; }
+  .pc.off:hover { color: var(--color-tx3); border-color: var(--color-line); }
   .pc.tag { cursor: default; }
   .pc.tag:hover { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
   .pc.on { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }

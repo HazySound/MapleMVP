@@ -78,8 +78,9 @@
   </main>
   <Overlay />
   {#if app.data && app.showHistory}<HistoryModal />{/if}
-  <!-- 보정은 인게임 캡처나 화면공유가 있어야 한다. 휴대폰에서는 열 길이 없다 -->
-  {#if app.data && app.showPcRoom && !(app.web && TOUCH)}<PcRoomModal />{/if}
+  <!-- 보정은 인게임 캡처나 화면공유가 있어야 하고(휴대폰에는 둘 다 없다),
+       뺄 결제가 있어야 인게임 금액에서 PC방 몫을 가려낼 수 있다 -->
+  {#if app.data?.syncedAt && app.showPcRoom && !(app.web && TOUCH)}<PcRoomModal />{/if}
   {#if app.data && app.web && app.showImport}<ImportModal />{/if}
   <!-- 모달은 화면 전체를 덮어야 한다. 타이틀바 안에 두면 거기에 갇힌다 -->
   {#if app.web && app.showSignIn}<LoginModal onClose={() => (app.showSignIn = false)} />{/if}
