@@ -34,7 +34,13 @@
       if (!res.ok) return { error: "http", status: res.status };
 
       const json = await res.json();
-      if (json.errors) return { error: "graphql", detail: JSON.stringify(json.errors).slice(0, 300) };
+      if (json.errors) {
+        // 넥슨은 세션이 끊겨도 200으로 답하고 본문에만 그 사실을 적는다.
+        // 그냥 오류로 넘기면 로그인하라는 말을 못 하고 옛 숫자를 계속 보여 주게 된다.
+        const why = JSON.stringify(json.errors);
+        if (/"70006"|세션 만료|로그인/.test(why)) return { needsLogin: true, detail: why.slice(0, 300) };
+        return { error: "graphql", detail: why.slice(0, 300) };
+      }
       const list = json && json.data && json.data.nexonCashHistoryDetailUseWithPaging
         ? json.data.nexonCashHistoryDetailUseWithPaging.useList : null;
       if (!Array.isArray(list)) return { error: "shape" };
