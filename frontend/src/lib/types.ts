@@ -58,6 +58,7 @@ export type PcRoom = Computed['pcroom']
 /** 데이터가 하나도 없을 때의 응답 */
 export interface Bare { status: 'empty' | 'needs_login' | 'error'; message?: string; demo: boolean }
 
+/** total이 0이면 끝을 모른다는 뜻이다. 그때는 눈금 없는 막대로 보여 준다 */
 export interface Progress { label: string; done: number; total: number; count?: number }
 
 export interface ExportResult { path?: string; name?: string; count?: number; canceled?: boolean; error?: string }

@@ -13,7 +13,7 @@
  */
 
 /** 북마클릿 안에서 도는 본체. 바깥 것을 참조하면 안 된다 (문자열로 만들어 넣는다). */
-function collect(appOrigin: string, months: number) {
+function collect(appOrigin: string) {
   const API = 'https://public.api.nexon.com/billing-bff/mycash'
   const OP = 'getNxCashHistoryDetailUseWithPaging'
   const QUERY = `
@@ -178,13 +178,17 @@ function collect(appOrigin: string, months: number) {
       const now = new Date()
       const rows: { date: string; item: string; price: number; id: string }[] = []
       let empty = 0
-      for (let i = 0; i < months; i++) {
+      // 몇 달치가 있는지는 넥슨만 안다. 물어볼 방법이 없으니 빈 달이 이어질 때까지
+      // 거슬러 올라간다. 미리 정해 둔 개월 수로 끊으면 남아 있는 내역을 두고 온다.
+      // STOP은 넥슨이 고장 났을 때 끝없이 도는 것만 막는 울타리다 (20년)
+      const STOP = 240
+      for (let i = 0; i < STOP; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
         const y = d.getFullYear()
         const m = d.getMonth() + 1
-        say(`<b>MapleMVP</b><br>${y}년 ${m}월 읽는 중… (${i + 1}/${months})<br>`
-          + dim(`메이플 ${rows.length}건`))
-        send({ kind: 'progress', label: `${y}년 ${m}월`, done: i + 1, total: months, count: rows.length })
+        say(`<b>MapleMVP</b><br>${y}년 ${m}월 읽는 중…<br>` + dim(`메이플 ${rows.length}건`))
+        // 끝을 모르므로 total은 보내지 않는다. 받은 건수로 나아가는 것이 보인다
+        send({ kind: 'progress', label: `${y}년 ${m}월`, done: i + 1, count: rows.length })
         const raw = await fetchMonth(y, m)
         const mine = raw.filter(r => (r.gameName || '').trim() === MAPLE && (r.purchaseStatus || '').trim() === '사용')
         for (const r of mine) {
@@ -225,8 +229,8 @@ function collect(appOrigin: string, months: number) {
 }
 
 /** 북마크에 넣을 `javascript:` 주소를 만든다. */
-export function bookmarkletUrl(appOrigin = location.origin, months = 24): string {
-  const body = `(${collect.toString()})(${JSON.stringify(appOrigin)},${months})`
+export function bookmarkletUrl(appOrigin = location.origin): string {
+  const body = `(${collect.toString()})(${JSON.stringify(appOrigin)})`
   return 'javascript:' + encodeURIComponent(body)
 }
 
