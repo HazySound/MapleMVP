@@ -1,22 +1,24 @@
 <script lang="ts">
-  /** 3. 시세 — 엄 시세와 메소마켓은 직접, 경매장 수수료는 사는 순간 오를 등급으로 */
+  /**
+   * 3. 시세 — 엄 시세와 메소마켓은 직접.
+   * 경매장 수수료는 계획을 따를 때만 '자동'(주마다 사는 순간 오를 등급)이 있고,
+   * 금액을 직접 정할 때는 사용자가 3%·5% 중에 고른다.
+   */
   import NumBox from './NumBox.svelte'
   import { app } from '../store.svelte'
   import { ageOf, eff, saveEff, touch } from '../eff.svelte'
   import { feeOf } from '../core/efficiency'
+  import { iga } from '../format'
   import type { TierKey } from '../types'
 
-  let { tier }: { tier: TierKey | null } = $props()
+  let { tier, mode }: { tier: TierKey | null; mode: 'plan' | 'amount' } = $props()
 
   const d = $derived(app.data!)
   const tierName = $derived(d.tiers.find(t => t.key === tier)?.name ?? '등급 없음')
-  const fee = $derived(eff.feeOverride ?? feeOf(tier))
-
-  // 자동 → 5% → 3% → 자동
-  function cycle() {
-    eff.feeOverride = eff.feeOverride == null ? 0.05 : eff.feeOverride === 0.05 ? 0.03 : null
-    saveEff()
-  }
+  const auto = $derived(feeOf(tier))
+  /** 금액 직접일 때 아직 안 골랐으면 오를 등급으로 먼저 채워 둔 값 */
+  const manual = $derived(eff.feeOverride ?? auto)
+  const setFee = (v: number | null) => { eff.feeOverride = v; saveEff() }
 </script>
 
 <article class="card">
@@ -36,13 +38,23 @@
 
   <div class="ef-field">
     <span class="lbl">경매장 수수료</span>
-    <div class="fee">
-      <button class="pill" class:manual={eff.feeOverride != null} onclick={cycle} aria-label="경매장 수수료 바꾸기">{Math.round(fee * 100)}%</button>
+    {#if mode === 'plan'}
+      <div class="ef-seg" role="group" aria-label="경매장 수수료">
+        <button aria-pressed={eff.feeOverride == null} onclick={() => setFee(null)}>자동</button>
+        <button aria-pressed={eff.feeOverride === 0.03} onclick={() => setFee(0.03)}>3%</button>
+        <button aria-pressed={eff.feeOverride === 0.05} onclick={() => setFee(0.05)}>5%</button>
+      </div>
       <span class="ef-hint">
-        {#if eff.feeOverride != null}직접 정함 · 한 번 더 누르면 {eff.feeOverride === 0.05 ? '3%' : '자동'}
-        {:else}사는 순간 {tierName}{tier && tier !== 'bronze' ? ' → 실버 이상이라 3%' : ' → 5%'}{/if}
+        {#if eff.feeOverride == null}<b>자동</b> · 주마다 사는 순간 오를 등급으로 정해요. 이번 주는 {tierName} → {Math.round(auto * 100)}%
+        {:else}<b>직접 정함</b> · 모든 주를 {Math.round(eff.feeOverride * 100)}%로 계산해요{/if}
       </span>
-    </div>
+    {:else}
+      <div class="ef-seg" role="group" aria-label="경매장 수수료">
+        <button aria-pressed={manual === 0.03} onclick={() => setFee(0.03)}>3%</button>
+        <button aria-pressed={manual === 0.05} onclick={() => setFee(0.05)}>5%</button>
+      </div>
+      <span class="ef-hint">직접 골라 주세요. MVP 실버 이상이면 3%, 아니면 5%예요. 이 금액을 결제하면 {tierName}{iga(tierName)} 돼요.</span>
+    {/if}
   </div>
 </article>
 
@@ -50,12 +62,5 @@
   .card { display: grid; gap: 14px; align-content: start; }
   .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 7px; background: var(--color-panel3); font-family: var(--font-mono); font-size: 11px; color: var(--color-lav); }
   .u { font-size: 11px; opacity: .8; }
-  .fee { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .pill {
-    appearance: none; cursor: pointer; font-family: var(--font-mono); font-size: 14px; font-weight: 600;
-    padding: 4px 14px; border-radius: 999px; color: var(--color-mint);
-    background: color-mix(in oklab, var(--color-mint) 12%, transparent);
-    border: 1px solid color-mix(in oklab, var(--color-mint) 45%, transparent);
-  }
-  .pill.manual { color: var(--color-peach); background: color-mix(in oklab, var(--color-peach) 12%, transparent); border-color: color-mix(in oklab, var(--color-peach) 45%, transparent); }
+  .ef-seg { justify-self: start; }
 </style>

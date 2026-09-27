@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fund, minPrice, planAll, rateOf, solve, type FundCtx, type Sellable } from './efficiency'
+import { fund, knee, minPrice, planAll, rateOf, solve, type FundCtx, type Sellable } from './efficiency'
 
 const nx = { key: 'nexon', name: '넥슨카드', rate: 0.9 }
 const ctx = (over: Partial<FundCtx> = {}): FundCtx => ({
@@ -63,10 +63,21 @@ describe('조합', () => {
   })
 
   it('판매 1회로 정하면 전승 스크롤 한 장이 메소마켓보다 낫다', () => {
-    const r = solve({ ...base, target: 99_000, items: [karma, potential], maxSales: 1 })!
-    expect(r.route.lines).toEqual([{ item: potential, n: 1 }])
-    expect(r.route.sales).toBe(1)
-    expect(r.route.loss).toBeGreaterThan(r.best.loss)
+    const r = solve({ ...base, target: 99_000, items: [karma, potential] })!
+    const one = r.routeAt(1)
+    expect(one.lines).toEqual([{ item: potential, n: 1 }])
+    expect(one.sales).toBe(1)
+    expect(one.loss).toBeGreaterThan(r.best.loss)
+    expect(r.lossAt[1]).toBeCloseTo(one.loss)
+    // 횟수가 늘면 잃는 돈은 줄거나 같다
+    for (let k = 2; k < r.lossAt.length; k++) expect(r.lossAt[k]).toBeLessThanOrEqual(r.lossAt[k - 1] + 1e-6)
+    expect(r.lossAt.at(-1)).toBeCloseTo(r.best.loss)
+  })
+
+  it('최적화 지점: 곡선이 꺾이는 곳, 곧으면 최저가', () => {
+    expect(knee([Infinity, 100, 40, 30, 25, 22], 1, 5)).toBe(2)
+    expect(knee([0, 50, 40, 30, 20], 1, 4)).toBe(4)
+    expect(knee([0, 10, 10, 10], 1, 3)).toBe(1)
   })
 
   it('계획이 없으면 조금 넘겨 사는 게 더 남을 때 그렇게 한다', () => {
@@ -84,17 +95,17 @@ describe('주별 상품권 한도', () => {
         { start: '2026-10-01', amount: 250_000, tier: 'gold', month: '2026-10' },
         { start: '2026-10-08', amount: 250_000, tier: 'gold', month: '2026-10' },
       ],
-      held: { cash: 0, won: 0 },
+      balance: 0,
       cards: [{ key: 'nexon', name: '넥슨카드', disc: 10, on: true }, { key: 'culture', name: '컬쳐랜드', disc: 6, on: true }],
       leftNow: { nexon: 200_000, culture: 0 },
       thisMonth: '2026-09',
       barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
-      um: 1500, mk: 2300, items: [karma], feeOverride: null, exact: true,
+      um: 1500, mk: 2300, items: [karma], fee: null, exact: true,
     })!
-    const cash = (i: number) => res[i].funding.parts.map(p => [p.name, p.cash])
+    const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
     expect(cash(0)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000]])
     expect(cash(1)).toEqual([['넥슨카드', 200_000], ['컬쳐랜드', 50_000]])
     expect(cash(2)).toEqual([['컬쳐랜드', 150_000], ['일반 충전', 100_000]])
-    for (const w of res) expect(w.route.pay).toBe(250_000)
+    for (const w of res) expect(w.solved.best.pay).toBe(250_000)
   })
 })

@@ -10,6 +10,7 @@
   import EffItems from './EffItems.svelte'
   import EffMarket from './EffMarket.svelte'
   import EffResult from './EffResult.svelte'
+  import EffStyles from './EffStyles.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
   import { computeEff, eff, planWeeks, tierAfter } from '../eff.svelte'
@@ -19,14 +20,12 @@
   const d = $derived(app.data!)
   const out = $derived(computeEff(d, planner.result))
   let sel = $state(0)
-  const cur = $derived(out?.weeks ? out.weeks[Math.min(sel, out.weeks.length - 1)] : null)
+  const cur = $derived(out ? out.sel.weeks[Math.min(sel, out.sel.weeks.length - 1)] : null)
+  const pw = $derived(eff.usePlan ? planWeeks(d, planner.result) : null)
+  const mode = $derived<'plan' | 'amount'>(pw ? 'plan' : 'amount')
   // 결과가 아직 없어도 수수료 안내는 해 준다
-  const tier = $derived.by(() => {
-    if (cur) return cur.tier
-    const pw = eff.usePlan ? planWeeks(d, planner.result) : null
-    return pw ? pw[0].tier : tierAfter(d, eff.amount)
-  })
-  const fee = $derived(eff.feeOverride ?? feeOf(tier))
+  const tier = $derived(cur ? cur.w.tier : pw ? pw[0].tier : tierAfter(d, eff.amount))
+  const fee = $derived(cur ? cur.w.fee : eff.feeOverride ?? feeOf(tier))
   const used = $derived(new Set(cur?.route.lines.map(l => l.item.id) ?? []))
 
   let answerSeen = $state(true)
@@ -35,7 +34,7 @@
     if (!REDUCED) gsap.from(grid.children, { y: 22, opacity: 0, duration: 0.7, stagger: 0.07, ease: 'power3.out', clearProps: 'transform,opacity' })
     const el = document.getElementById('eff-answer')
     if (!el || typeof IntersectionObserver === 'undefined') return
-    const io = new IntersectionObserver(([e]) => (answerSeen = e.isIntersecting), { threshold: 0.2 })
+    const io = new IntersectionObserver(([e]) => (answerSeen = e.isIntersecting), { threshold: 0 })
     io.observe(el)
     return () => io.disconnect()
   })
@@ -45,15 +44,16 @@
 <div class="grid" bind:this={grid}>
   <div class="c4"><EffAmount /></div>
   <div class="c4 wide"><EffCash /></div>
-  <div class="c4"><EffMarket {tier} /></div>
+  <div class="c4"><EffMarket {tier} {mode} /></div>
   <div class="c12"><EffItems {fee} {used} /></div>
   <div class="c12"><EffResult {out} bind:sel /></div>
+  <div class="c12"><EffStyles {out} /></div>
 </div>
 
-{#if out?.weeks && !answerSeen}
+{#if out && !answerSeen}
   <button class="dock" onclick={toAnswer}>
-    <span>실제로 나가는 돈</span><b class="mono">{won(out.loss)}원</b>
-    <span>회수율 {(out.back / out.cost * 100).toFixed(1)}% · {out.sales}회</span>
+    <span>{eff.want === 'knee' ? '최적화 루트' : eff.want === 'count' ? '횟수 정하기' : '최저가 루트'}</span><b class="mono">{won(out.sel.loss)}원</b>
+    <span>회수율 {(out.sel.back / out.sel.cost * 100).toFixed(1)}% · {out.sel.sales}회</span>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
   </button>
 {/if}

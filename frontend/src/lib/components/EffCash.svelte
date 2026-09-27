@@ -1,5 +1,5 @@
 <script lang="ts">
-  /** 2. 캐시는 얼마에 — 이미 충전한 캐시, 상품권 할인과 남은 한도, 바코드(이벤트 때만) */
+  /** 2. 캐시는 얼마에 — 캐시 잔액, 상품권 할인과 남은 한도, 바코드(이벤트 때만) */
   import NumBox from './NumBox.svelte'
   import { SHOP, eff, saveEff, thisMonth } from '../eff.svelte'
   import { rateOf } from '../core/efficiency'
@@ -14,35 +14,26 @@
     if (disc <= 100) return `5만원권 ${won(50000 * r)}원`
     return `${((1 - r) * 100).toFixed(1).replace(/\.0$/, '')}% 할인`
   }
-  const heldRate = $derived(eff.held.cash > 0 && eff.held.won > 0 ? eff.held.won / eff.held.cash : 0)
 </script>
 
 <article class="card">
   <h3 class="card-title"><span class="n">2</span>캐시는 얼마에</h3>
 
-  <div class="two">
-    <div class="ef-field">
-      <label for="eff-held-cash">이미 충전한 캐시</label>
-      <NumBox id="eff-held-cash" label="이미 충전한 캐시" unit="캐시" placeholder="없으면 비움" value={eff.held.cash} set={v => { eff.held.cash = v; saveEff() }} />
-    </div>
-    <div class="ef-field">
-      <label for="eff-held-won">그때 쓴 현금</label>
-      <NumBox id="eff-held-won" label="그때 쓴 현금" unit="원" placeholder="없으면 비움" value={eff.held.won} set={v => { eff.held.won = v; saveEff() }} />
-    </div>
+  <div class="ef-field">
+    <label for="eff-balance">캐시 잔액</label>
+    <NumBox id="eff-balance" label="캐시 잔액" unit="캐시" placeholder="없으면 비움" value={eff.balance} set={v => { eff.balance = v; saveEff() }} />
+    <span class="ef-hint">{eff.balance ? '잔액부터 먼저 써요. 이미 충전한 돈이라 1:1로 계산해요.' : '넥슨 캐시 잔액이 있으면 넣어 주세요. 먼저 써요.'}</span>
   </div>
-  <p class="ef-hint">
-    {#if heldRate}<b>{(heldRate * 100).toFixed(1)}%</b>에 충전한 셈이에요. 이 캐시를 먼저 써요.{:else}미리 충전해 둔 게 있으면 넣어 주세요. 몇 %에 충전했는지 알려 드려요.{/if}
-  </p>
 
   <div class="or">모자라는 캐시는 이렇게 충전</div>
 
   <div class="pay">
-    <div class="row head"><span></span><span>상품권 (달마다 20만)</span><span>할인율 또는 권 가격</span><span>{month}월 남은 한도</span></div>
+    <div class="row head"><span></span><span>상품권 (달마다 20만)</span><span>할인율(%) 또는 5만원권 가격</span><span>{month}월 남은 한도</span></div>
     {#each eff.cards as c, i (c.key)}
       <div class="row" class:off={!c.on}>
         <input type="checkbox" id="eff-card-{c.key}" bind:checked={c.on} onchange={saveEff} />
         <label for="eff-card-{c.key}">{c.name}<small>{note(c.disc)}</small></label>
-        <NumBox id="eff-disc-{c.key}" label="{c.name} 할인율 또는 권 가격" size="sm" placeholder="8" unit={c.disc && c.disc <= 100 ? '%' : ''}
+        <NumBox id="eff-disc-{c.key}" label="{c.name} 할인율 또는 5만원권 가격" size="sm" decimal placeholder="8" unit={c.disc && c.disc <= 100 ? '%' : ''}
           value={c.disc} set={v => { eff.cards[i].disc = v; saveEff() }} disabled={!c.on} />
         <NumBox id="eff-left-{c.key}" label="{c.name} {month}월 남은 한도" size="sm"
           value={eff.leftNow[c.key] ?? 0} set={v => { eff.leftNow[c.key] = v; saveEff() }} disabled={!c.on} />
@@ -68,11 +59,10 @@
 <style>
   .card { display: grid; gap: 12px; align-content: start; }
   .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 7px; background: var(--color-panel3); font-family: var(--font-mono); font-size: 11px; color: var(--color-lav); }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .or { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--color-tx3); }
   .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--color-line); }
   .pay { display: grid; gap: 6px; }
-  .row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 104px 104px; gap: 8px; align-items: center; font-size: 13px; }
+  .row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 112px 104px; gap: 8px; align-items: center; font-size: 13px; }
   .row.head { font-size: 11px; color: var(--color-tx3); }
   .row.head span:nth-child(n+3) { text-align: right; }
   .row.off label { opacity: .55; }

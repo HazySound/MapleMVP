@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, planAll, type BarcodeEvent, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, fund, knee, planAll, type BarcodeEvent, type Funding, type Route, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
 export const SHOP = shop as { updated: string; barcode: BarcodeEvent; items: ShopItem[] }
@@ -21,10 +21,13 @@ const CARDS = [
   { key: 'book', name: '도서문화상품권' },
 ]
 
+export type Want = 'best' | 'knee' | 'count'
+
 interface Saved {
   usePlan: boolean
   amount: number
-  held: { cash: number; won: number }
+  /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
+  balance: number
   cards: { key: string; name: string; disc: number; on: boolean }[]
   leftNow: Record<string, number>
   leftMonth: string
@@ -36,18 +39,21 @@ interface Saved {
   /** 값마다 마지막으로 넣은 때(ms). 오래된 시세로 계산하고 있는지 보여 준다 */
   at: Record<string, number>
   prices: Record<string, number>
+  /** 수수료를 직접 정한 값. null이면 자동(계획을 따를 때만) */
   feeOverride: number | null
-  want: 'best' | 'count'
+  want: Want
   salesN: number
+  /** 플가 대비를 개수로 볼지(1.04플가), 플가 가격으로 볼지(3.12억) */
+  pgView: 'ratio' | 'price'
 }
 
 function fresh(): Saved {
   return {
-    usePlan: true, amount: 0, held: { cash: 0, won: 0 },
+    usePlan: true, amount: 0, balance: 0,
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })),
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10,
+    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio',
   }
 }
 
@@ -56,7 +62,10 @@ function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return base
-    const s = { ...base, ...JSON.parse(raw) } as Saved
+    const s = { ...base, ...JSON.parse(raw) } as Saved & { held?: { cash: number } }
+    // 예전 '이미 충전한 캐시'는 캐시 잔액으로 옮긴다
+    if (s.held && !s.balance) s.balance = s.held.cash ?? 0
+    delete s.held
     // 상품권 한도는 달마다 새로 생긴다. 지난달에 적어 둔 남은 한도는 버린다
     if (s.leftMonth !== thisMonth()) { s.leftNow = base.leftNow; s.leftMonth = base.leftMonth }
     return s
@@ -92,6 +101,9 @@ export const shopItems = () => SHOP.items.filter(x => !x.until || x.until >= new
 
 export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0 }))
 
+/** 한 번에 큰 금액을 채우는 아이템. 사는 사람이 적어 오래 걸릴 수 있다. 기간제는 오래 들고 있을 수 없어 뺀다 */
+export const isBig = (x: ShopItem) => x.cash >= 40_000 && !x.timed
+
 /** 지금 13주 합계로 이 금액을 결제하면 오를 등급 */
 export function tierAfter(d: State, amount: number): TierKey | null {
   const sum = d.weeks.reduce((a, w) => a + w.amount, 0) + d.carry + amount
@@ -100,23 +112,37 @@ export function tierAfter(d: State, amount: number): TierKey | null {
   return t
 }
 
-export interface EffOut {
-  mode: 'plan' | 'amount'
-  weeks: WeekResult[] | null
-  /** 합계 */
+/** 한 주에 고른 조합과 그 충전 내역 */
+export interface WeekPick { w: WeekResult; route: Route; funding: Funding }
+/** 루트 하나: 주마다 판매 n회까지(null이면 제한 없음) */
+export interface Pick {
+  n: number | null
+  weeks: WeekPick[]
   cost: number
   back: number
   loss: number
   sales: number
-  bestLoss: number
-  bestSales: number
-  target: number
   pay: number
-  /** 판매 횟수 막대의 끝. 가장 많이 남는 방법에서 한 주에 가장 많이 파는 횟수 */
-  maxSales: number
-  /** 비교: 플가만 팔았을 때, 전부 메소마켓으로 했을 때 */
-  pgOnly: { loss: number; sales: number } | null
-  mkOnly: { loss: number; sales: number } | null
+}
+export interface Summary { loss: number; sales: number }
+
+export interface EffOut {
+  mode: 'plan' | 'amount'
+  target: number
+  weeks: WeekResult[]
+  /** curve[n] = 주마다 판매 n회까지로 할 때 전체 잃는 돈 (n은 lo..hi) */
+  curve: number[]
+  lo: number
+  hi: number
+  best: Pick
+  knee: Pick
+  count: Pick
+  /** 지금 고른 루트 */
+  sel: Pick
+  pgOnly: Summary | null
+  mkOnly: Summary | null
+  timedOnly: Summary | null
+  bigOnly: Summary | null
 }
 
 /** 계획을 따를 수 있으면 계획대로, 아니면 정한 금액 한 번 */
@@ -128,31 +154,55 @@ export function planWeeks(d: State, plan: PlanResult | null) {
   return ws.map(w => ({ start: w.start, amount: w.amount, tier: w.tier as TierKey | null, month: w.offset === 0 ? now : w.start.slice(0, 7) }))
 }
 
+/** 판매 횟수 제한(주마다 n회)으로 루트를 고른다 */
+function pickAt(weeks: WeekResult[], n: number | null): Pick {
+  const ps = weeks.map(w => {
+    const route = n == null ? w.solved.best : w.solved.routeAt(n)
+    return { w, route, funding: fund(route.pay, w.ctx) }
+  })
+  const sum = (f: (p: WeekPick) => number) => ps.reduce((a, p) => a + f(p), 0)
+  return { n, weeks: ps, cost: sum(p => p.route.cost), back: sum(p => p.route.back), loss: sum(p => p.route.loss), sales: sum(p => p.route.sales), pay: sum(p => p.route.pay) }
+}
+
 export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const pw = eff.usePlan ? planWeeks(d, plan) : null
   const mode = pw ? 'plan' : 'amount'
   const weeks = pw ?? (eff.amount > 0 ? [{ start: d.thisWeek, amount: eff.amount, tier: tierAfter(d, eff.amount), month: thisMonth() }] : null)
-  if (!weeks) return null
+  if (!weeks || !eff.um) return null
+  // 금액 직접일 때는 수수료를 사용자가 정한다. 안 건드렸으면 오를 등급으로 먼저 채워 둔다
+  const fee = mode === 'amount' ? (eff.feeOverride ?? (weeks[0].tier && weeks[0].tier !== 'bronze' ? 0.03 : 0.05)) : eff.feeOverride
   const all = sellables()
-  const run = (items: Sellable[], maxSales?: number) => planAll({
-    weeks, held: eff.held, cards: eff.cards, leftNow: eff.leftNow, thisMonth: thisMonth(),
+  const run = (items: Sellable[]) => planAll({
+    weeks, balance: eff.balance, cards: eff.cards, leftNow: eff.leftNow, thisMonth: thisMonth(),
     barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: eff.weekBarcode,
-    um: eff.um, mk: eff.mk, items, feeOverride: eff.feeOverride, exact: mode === 'plan', maxSales,
+    um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan',
   })
-  const res = eff.um > 0 ? run(all, eff.want === 'count' ? eff.salesN : undefined) : null
-  if (!res) return { mode, weeks: null, cost: 0, back: 0, loss: 0, sales: 0, bestLoss: 0, bestSales: 0, target: 0, pay: 0, maxSales: 1, pgOnly: null, mkOnly: null }
-  const sum = (f: (w: WeekResult) => number) => res.reduce((a, w) => a + f(w), 0)
-  const alt = (items: Sellable[]) => {
+  const res = run(all)
+  if (!res) return null
+
+  // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
+  const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
+  const curve: number[] = [Infinity]
+  for (let n = 1; n <= hi; n++) curve.push(res.reduce((a, w) => a + w.solved.lossAt[Math.min(n, w.solved.lossAt.length - 1)], 0))
+  let lo = 1
+  while (lo < hi && !Number.isFinite(curve[lo])) lo++
+  const kn = knee(curve, lo, hi)
+  const n = Math.max(lo, Math.min(eff.salesN, hi))
+  const best = pickAt(res, null), kp = pickAt(res, kn), cp = pickAt(res, n)
+
+  const alt = (items: Sellable[]): Summary | null => {
+    if (!items.some(x => x.price > 0) && !eff.mk) return null
     const r = run(items)
-    return r ? { loss: r.reduce((a, w) => a + w.best.loss, 0), sales: r.reduce((a, w) => a + w.best.sales, 0) } : null
+    return r ? { loss: r.reduce((a, w) => a + w.solved.best.loss, 0), sales: r.reduce((a, w) => a + w.solved.best.sales, 0) } : null
   }
+  const priced = all.filter(x => x.price > 0)
+  const timed = priced.filter(x => x.timed), big = priced.filter(isBig)
   return {
-    mode, weeks: res,
-    cost: sum(w => w.route.cost), back: sum(w => w.route.back), loss: sum(w => w.route.loss), sales: sum(w => w.route.sales),
-    bestLoss: sum(w => w.best.loss), bestSales: sum(w => w.best.sales),
-    target: sum(w => w.amount), pay: sum(w => w.route.pay),
-    maxSales: Math.max(1, ...res.map(w => w.best.sales)),
-    pgOnly: all.some(x => x.id === PG_ID && x.price > 0) ? alt(all.filter(x => x.id === PG_ID)) : null,
+    mode, target: weeks.reduce((a, w) => a + w.amount, 0), weeks: res, curve, lo, hi,
+    best, knee: kp, count: cp, sel: eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best,
+    pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID)) : null,
     mkOnly: eff.mk > 0 ? alt([]) : null,
+    timedOnly: timed.length ? alt(timed) : null,
+    bigOnly: big.length ? alt(big) : null,
   }
 }

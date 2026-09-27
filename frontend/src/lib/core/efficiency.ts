@@ -21,13 +21,14 @@ export const SMALL = 3_000
 /** 계산 단위. 캐시템 값이 모두 100원 단위다 */
 const U = 100
 
-export interface ShopItem { id: string; name: string; set: number; cash: number; bundle?: boolean; until?: string }
+/** timed: 받은 뒤 쓸 수 있는 기간이 있어 오래 들고 버틸 수 없는 아이템 */
+export interface ShopItem { id: string; name: string; set: number; cash: number; bundle?: boolean; until?: string; timed?: boolean }
 export interface BarcodeEvent { on: boolean; bonus: number; cap: number; until?: string }
 
 /** '로얄스타일 쿠폰(45개)'. 묶음이 여럿인 아이템은 1개짜리도 개수를 붙여 구분한다 */
 export const itemLabel = (x: Pick<ShopItem, 'name' | 'set' | 'bundle'>) => x.set > 1 || x.bundle ? `${x.name}(${x.set}개)` : x.name
 /** 묶음은 세트, 낱개는 개 */
-export const countLabel = (x: Pick<ShopItem, 'set' | 'bundle'>, n: number) => x.set > 1 || x.bundle ? `${n}세트` : `${n}개`
+export const countLabel = (x: Pick<ShopItem, 'set'>, n: number) => x.set > 1 ? `${n}세트` : `${n}개`
 
 /** 플가 가격(억)일 때 이 아이템이 플가와 같은 효율이 되는 가격(억) */
 export const minPrice = (pg: number, cash: number) => pg * cash / 5900
@@ -139,12 +140,21 @@ export interface SolveIn {
   items: Sellable[]
   /** 계획을 따를 때는 결제액을 목표와 똑같이 맞춘다 */
   exact: boolean
-  /** 경매장 판매 횟수 상한. 없으면 가장 많이 남는 조합 */
-  maxSales?: number
 }
 
-/** 가장 많이 남는 조합(best)과, 판매 횟수를 정했으면 그 안에서 가장 많이 남는 조합(route) */
-export function solve(o: SolveIn): { best: Route; route: Route } | null {
+export interface Solved {
+  /** 가장 많이 남는 조합(최저가 루트) */
+  best: Route
+  /** lossAt[k] = 경매장 판매 k회 이하로 할 때 가장 적게 잃는 돈. 안 되면 Infinity. k는 0..best.sales */
+  lossAt: number[]
+  /** 판매 k회 이하에서 가장 적게 잃는 조합 */
+  routeAt: (k: number) => Route
+}
+
+/** 판매 횟수를 이만큼까지만 층으로 쌓는다. 그 위는 최저가 루트와 같다고 본다 */
+const MAX_LAYERS = 600
+
+export function solve(o: SolveIn): Solved | null {
   const keep = (1 - o.fee) * o.um
   const usable = o.items.filter(x => x.price > 0).map(x => ({ x, u: Math.round(x.cash / U), back: x.price * keep }))
   const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
@@ -171,7 +181,7 @@ export function solve(o: SolveIn): { best: Route; route: Route } | null {
     return { pay, cost: c, back, loss: c - back, sales, lines, market, fee: o.fee, meso }
   }
 
-  // 가장 많이 남게. 판매 한 번마다 아주 작은 값을 빼서, 남는 돈이 같으면 적게 파는 쪽을 고른다
+  // 최저가 루트. 판매 한 번마다 아주 작은 값을 빼서, 남는 돈이 같으면 적게 파는 쪽을 고른다
   const EPS = 0.01, NEG = -1e18
   const best1 = () => {
     const v = new Float64Array(A + 1).fill(NEG), how = new Int16Array(A + 1).fill(-3), mkIn = new Uint8Array(A + 1)
@@ -198,28 +208,26 @@ export function solve(o: SolveIn): { best: Route; route: Route } | null {
   let best = best1()
   if (!best && o.exact) { ({ A, cost } = run(false)); best = best1() }
   if (!best) return null
-  if (o.maxSales == null || o.maxSales >= best.sales) return { best, route: best }
+  const K = best.sales
 
-  // 판매 횟수 정하기: 경매장 k번으로 정확히 a를 만들 때 가장 많이 돌려받는 값을 층층이 쌓는다.
-  // 값은 두 층만 들고, 되짚을 선택만 층마다 남긴다
-  const N = Math.max(1, o.maxSales)
-  let prev = new Float64Array(A + 1).fill(NEG); prev[0] = 0
+  // 판매 횟수별: 경매장 k번으로 정확히 a를 만들 때 가장 많이 돌려받는 값을 층층이 쌓는다.
+  // 값은 두 층만 들고, 되짚을 선택만 층마다 남긴다. 메소마켓을 쓰면 판매가 1회 늘어난다
+  type At = { k: number; a: number; m: number; tot: number }
+  const L = Math.min(K, MAX_LAYERS)
+  const top = new Array<number>(L + 1).fill(-Infinity)
+  const atS = new Array<At | null>(L + 1).fill(null)
   const hows: Int8Array[] = []
-  let top = -Infinity, at: { k: number; a: number; m: number; tot: number } | null = null
-  const consider = (L: Float64Array, k: number) => {
+  const put = (s: number, val: number, at: At) => { if (s <= L && val > top[s] + 0.5) { top[s] = val; atS[s] = at } }
+  const consider = (row: Float64Array, k: number) => {
     for (let a = 0; a <= A; a++) {
-      if (L[a] <= NEG) continue
-      if (a >= need) {
-        const val = L[a] - cost[a]
-        if (val > top + 0.5) { top = val; at = { k, a, m: 0, tot: a } }
-      } else if (mk1 && k + 1 <= N && A >= need) {
-        const val = L[a] + (need - a) * mk1 - cost[need]
-        if (val > top + 0.5) { top = val; at = { k, a, m: need - a, tot: need } }
-      }
+      if (row[a] <= NEG) continue
+      if (a >= need) put(k, row[a] - cost[a], { k, a, m: 0, tot: a })
+      else if (mk1) put(k + 1, row[a] + (need - a) * mk1 - cost[need], { k, a, m: need - a, tot: need })
     }
   }
+  let prev = new Float64Array(A + 1).fill(NEG); prev[0] = 0
   consider(prev, 0)
-  for (let k = 1; k <= N; k++) {
+  for (let k = 1; k <= L; k++) {
     const cur = new Float64Array(A + 1).fill(NEG), h = new Int8Array(A + 1).fill(-1)
     for (let a = 1; a <= A; a++) for (let j = 0; j < usable.length; j++) {
       const q = usable[j]
@@ -229,14 +237,50 @@ export function solve(o: SolveIn): { best: Route; route: Route } | null {
     }
     hows.push(h); consider(cur, k); prev = cur
   }
-  if (!at) return { best, route: best }
-  const pos = at as { k: number; a: number; m: number; tot: number }
-  const counts = new Map<number, number>()
-  for (let k = pos.k, a = pos.a; k > 0; k--) {
-    const j = hows[k - 1][a]
-    counts.set(j, (counts.get(j) ?? 0) + 1); a -= usable[j].u
+  // k회 이하로 바꾼다
+  const lossAt: number[] = [], pickAt: (At | null)[] = []
+  let bv = -Infinity, ba: At | null = null
+  for (let s = 0; s <= L; s++) {
+    if (top[s] > bv) { bv = top[s]; ba = atS[s] }
+    lossAt.push(-bv); pickAt.push(ba)
   }
-  return { best, route: finish(counts, pos.m * U, pos.tot * U) }
+  lossAt[L] = Math.min(lossAt[L], best.loss)
+  const built = new Map<number, Route>()
+  const routeAt = (k: number): Route => {
+    if (k >= L) return best!
+    const at = pickAt[Math.max(0, k)]
+    if (!at) return best!
+    if (built.has(k)) return built.get(k)!
+    const counts = new Map<number, number>()
+    for (let i = at.k, a = at.a; i > 0; i--) {
+      const j = hows[i - 1][a]
+      counts.set(j, (counts.get(j) ?? 0) + 1); a -= usable[j].u
+    }
+    const r = finish(counts, at.m * U, at.tot * U)
+    built.set(k, r)
+    return r
+  }
+  return { best, lossAt, routeAt }
+}
+
+/**
+ * 판매 횟수 대비 가장 효율적인 지점.
+ *
+ * 횟수가 늘수록 잃는 돈은 줄지만, 어느 지점부터는 더 팔아도 아끼는 돈이 얼마 안 된다.
+ * 양 끝(가장 적게 파는 곳, 최저가 루트)을 이은 직선에서 곡선이 가장 멀리 떨어진 곳을 고른다.
+ * 기준선 숫자를 따로 정하지 않고 곡선 모양만 본다. 곡선이 곧으면 꺾이는 곳이 없어 최저가를 돌려준다.
+ */
+export function knee(loss: number[], lo: number, hi: number): number {
+  if (hi <= lo) return hi
+  const y0 = loss[lo], y1 = loss[hi]
+  if (!(y0 > y1)) return lo
+  let pick = hi, far = 1e-9
+  for (let k = lo + 1; k < hi; k++) {
+    const x = (k - lo) / (hi - lo), y = (loss[k] - y1) / (y0 - y1)
+    const d = 1 - x - y
+    if (d > far) { far = d; pick = k }
+  }
+  return pick
 }
 
 // ---- 여러 주(계획) 또는 한 번(금액) ----
@@ -245,7 +289,8 @@ export interface CardSetting { key: string; name: string; disc: number; on: bool
 export interface Plan {
   /** 결제할 주. 계획이 없으면 한 줄 */
   weeks: { start: string; amount: number; tier: TierKey | null; month: string }[]
-  held: { cash: number; won: number }
+  /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
+  balance: number
   cards: CardSetting[]
   /** 이번 달에 남은 상품권 한도. 다음 달부터는 각 20만 원 */
   leftNow: Record<string, number>
@@ -258,9 +303,9 @@ export interface Plan {
   um: number
   mk: number
   items: Sellable[]
-  feeOverride: number | null
+  /** 수수료를 직접 정했으면 그 값. 아니면 주마다 오를 등급으로 */
+  fee: number | null
   exact: boolean
-  maxSales?: number
 }
 
 export interface WeekResult {
@@ -268,10 +313,10 @@ export interface WeekResult {
   month: string
   amount: number
   tier: TierKey | null
-  best: Route
-  route: Route
-  funding: Funding
-  barcodeWant: number | null
+  fee: number
+  solved: Solved
+  /** 이 주에 쓸 수 있던 잔액·한도. 어떤 루트든 이것으로 충전 내역을 만든다 */
+  ctx: FundCtx
 }
 
 export function planAll(p: Plan): WeekResult[] | null {
@@ -282,28 +327,26 @@ export function planAll(p: Plan): WeekResult[] | null {
   const monthLeft: Record<string, Record<string, number>> = {}
   const limitsOf = (m: string) => (monthLeft[m] ??= Object.fromEntries(
     p.cards.map(c => [c.key, m === p.thisMonth ? (p.leftNow[c.key] ?? MONTHLY) : MONTHLY])))
-  let held = { ...p.held }, capLeft = p.barcode.cap
+  let balance = p.balance, capLeft = p.barcode.cap
   const out: WeekResult[] = []
   for (const w of p.weeks) {
     const limits = limitsOf(w.month)
     const want = w.start in p.weekBarcode ? p.weekBarcode[w.start] : p.barcodeWant
-    const ctx = (): FundCtx => ({
-      held, limits, cards,
+    // 이 주의 사정을 떠 둔다. 뒤 주가 한도를 깎아도 이 주 계산은 그대로여야 한다
+    const ctx: FundCtx = {
+      held: { cash: balance, won: balance }, limits: { ...limits }, cards,
       barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft, want } : null,
-    })
-    const c0 = ctx()
-    const r = solve({
-      target: w.amount, costOf: c => fund(c, c0).cost, fee: p.feeOverride ?? feeOf(w.tier),
-      um: p.um, mk: p.mk, items: p.items, exact: p.exact, maxSales: p.maxSales,
-    })
-    if (!r) return null
-    const f = fund(r.route.pay, c0)
+    }
+    const fee = p.fee ?? feeOf(w.tier)
+    const solved = solve({ target: w.amount, costOf: c => fund(c, ctx).cost, fee, um: p.um, mk: p.mk, items: p.items, exact: p.exact })
+    if (!solved) return null
+    const f = fund(solved.best.pay, ctx)
     for (const q of f.parts) {
       if (q.card) limits[p.cards.find(c => c.name === q.name)!.key] -= q.cash
       if (q.bonus) capLeft -= q.bonus
-      if (q.held) held = { cash: held.cash - q.cash, won: held.won - q.won }
+      if (q.held) balance -= q.cash
     }
-    out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, best: r.best, route: r.route, funding: f, barcodeWant: want })
+    out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, fee, solved, ctx })
   }
   return out
 }

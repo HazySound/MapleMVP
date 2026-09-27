@@ -16,7 +16,9 @@
     disabled?: boolean
   } = $props()
 
-  const fmt = (v: number) => !v ? '' : decimal ? String(v) : Math.round(v).toLocaleString('ko-KR')
+  // 소수도 정수 부분에는 쉼표를 붙인다 (46,000 / 7.5)
+  const comma = (s: string) => { const [i, f] = s.split('.'); return (i ? Number(i).toLocaleString('ko-KR') : '0') + (f !== undefined ? '.' + f : '') }
+  const fmt = (v: number) => !v ? '' : decimal ? comma(String(v)) : Math.round(v).toLocaleString('ko-KR')
   let text = $state('')
   let focused = $state(false)
   // 밖에서 값이 바뀌면(다른 칸, 불러오기) 따라간다. 치는 중에는 건드리지 않는다
@@ -26,7 +28,7 @@
     const raw = (e.currentTarget as HTMLInputElement).value
     let clean = decimal ? raw.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : raw.replace(/[^\d]/g, '')
     const n = Number(clean) || 0
-    text = decimal ? clean : clean ? n.toLocaleString('ko-KR') : ''
+    text = !clean ? '' : decimal ? comma(clean) : n.toLocaleString('ko-KR')
     set(n)
   }
 </script>
