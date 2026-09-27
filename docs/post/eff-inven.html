@@ -1,114 +1,48 @@
-<div style="font-size:16px; line-height:1.75; color:#22252b;">
-
-<div style="background:#1b1c21; border-radius:12px; padding:22px; margin:0 0 26px; text-align:center;">
-<a href="https://maple-mvp.com" target="_blank" style="font-size:29px; font-weight:700; color:#b8a8ff; letter-spacing:-0.5px; text-decoration:none;">maple-mvp.com</a>
-<div style="margin-top:6px; font-size:14px; color:#9a9cab;">위쪽 탭에서 <b style="color:#ecebf2;">효율표</b>를 누르세요</div>
-</div>
-
-<div style="margin-bottom:16px;">안녕하세요. 지난번에 올렸던 MVP 현황/목표 계산기에 <b>MVP작 효율표</b>를 붙였습니다.</div>
-<div style="margin-bottom:16px; padding:12px 16px; background:#f4f2fb; border-radius:10px;">MVP 현황·목표 계획 등 기존 웹페이지 소개는 이전 글을 참고해 주세요.<br><a href="https://www.inven.co.kr/board/maple/2304/48302" target="_blank" style="color:#6a4fd6; font-weight:700; text-decoration:none;">이전 글: MVP 현황/목표 계산기 소개 →</a></div>
-<div style="margin-bottom:20px;">MVP작 계산기들이 회수율 %는 알려 주는데, 막상 "그래서 실제로 얼마가 나가는데? 뭘 몇 개 사서 어떻게 팔아야 하는데?"는 직접 조합해 봐야 하더라고요. 그걸 한 화면에서 끝내 주는 탭입니다.</div>
-
-<ul style="margin:0 0 20px; padding-left:22px;">
-<li style="margin-bottom:6px;"><b>플가 가격 하나만 넣으면</b> 다른 아이템마다 "이 가격 넘으면 플가보다 이득"인 기준가가 붙어요</li>
-<li style="margin-bottom:6px;">가장 적게 잃는 <b>최저가 루트</b>, 판매 횟수까지 따진 <b>최적화 루트</b>, 직접 정하는 <b>횟수 정하기</b></li>
-<li style="margin-bottom:6px;">상품권은 <b>실제로 사는 대로</b> 계산 (5만원권 먼저, 3천 원 단위, 달마다 20만 원 한도)</li>
-<li style="margin-bottom:6px;"><b>메이플 크레딧</b>으로 큐브 사서 파는 것까지 포함</li>
-<li style="margin-bottom:6px;"><b>목표 계획과 연동</b>하면 주마다 무엇을 얼마나 충전하고 사서 팔지 주별로</li>
-</ul>
-
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">1. 입력은 위쪽 세 칸</div>
-<div style="margin-bottom:14px;">얼마나 결제할지, 캐시는 얼마에 충전하는지, 시세. 이 세 가지만 넣으면 돼요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1631366723847134.png?MW=800" alt="입력 칸" style="width:100%; max-width:800px;">
-<ul style="margin:14px 0 0; padding-left:22px;">
-<li style="margin-bottom:6px;">목표 계획이 있으면 <b>목표 계획대로</b>, 없으면 <b>금액 직접</b>. 내 13주 합계 기준으로 "다이아까지 / 레드까지 / 블랙까지" 버튼도 있어요.</li>
-<li style="margin-bottom:6px;">상품권 할인은 <b>6</b>처럼 %로 넣어도, <b>47,000</b>처럼 5만원권 가격으로 넣어도 돼요.</li>
-<li style="margin-bottom:6px;">경매장 수수료는 계획대로일 땐 <b>자동</b>(사는 순간 오를 등급 기준, 실버 이상 3%), 금액 직접일 땐 3%/5% 중에 골라요.</li>
-</ul>
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">2. 플가 가격 하나로 기준가</div>
-<div style="margin-bottom:14px;">왼쪽에 플가 가격만 넣으면, 아이템마다 흐린 숫자로 <b>이 가격 넘으면 플가보다 이득</b>인 기준가가 들어가요. 경매장에서 그보다 비싸게 올라온 것만 가격을 넣으면 됩니다.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1571533039848315.png?MW=800" alt="플가 기준 가격표" style="width:100%; max-width:800px;">
-<ul style="margin:14px 0 0; padding-left:22px;">
-<li style="margin-bottom:6px;">플가 줄을 경계로 위는 <b style="color:#1f8f67;">이득(초록)</b>, 아래는 <b style="color:#c26a32;">손해(주황)</b>. 플가 가격을 바꾸면 바로 다시 줄 서요.</li>
-<li style="margin-bottom:6px;"><b>플가 가격으로</b> 버튼을 누르면 "이 가격이면 플가를 몇 억에 판 셈인지"로 바꿔 볼 수 있어요.</li>
-<li style="margin-bottom:6px;">7일 / 14일 / 30일 / 무기한 사용 기간도 같이 보여요. 손해 보는 아이템은 숨길 수 있어요.</li>
-</ul>
-<div style="margin-top:14px;"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1979432786507916.png?MW=800" alt="손해 아이템 숨기기" style="width:100%; max-width:740px;"></div>
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">3. 메이플 크레딧까지</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1460556109482854.png?MW=800" alt="메이플 크레딧" style="width:100%; max-width:800px;">
-<ul style="margin:14px 0 0; padding-left:22px;">
-<li style="margin-bottom:6px;">캐시샵에서 쓴 캐시의 5%가 크레딧으로 쌓여요. 캐시템도, 메소마켓에 팔 <b>메이플포인트를 살 때도</b> 똑같이 쌓여요. 남아 있던 크레딧도 합쳐서 계산해요.</li>
-<li style="margin-bottom:6px;">큐브 경매장 가격을 넣으면 크레딧당 효율이 가장 좋은 걸로 사서 파는 것까지 결과에 들어가요.</li>
-<li style="margin-bottom:6px;">끝에 남는 크레딧은 <b>다 털기 / 모아 두기</b> 중에 골라요. 모아 두면 에디셔널 큐브만 사고, 나머지는 다음 작 때 합쳐요.</li>
-</ul>
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">4. 결론: 실제로 나가는 돈과 루트 3개</div>
-<div style="margin-bottom:14px;">가장 크게 보이는 숫자가 <b>실제로 나가는 돈</b>(넣은 현금 − 돌려받는 돈)이에요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1607489423356147.png?MW=800" alt="결론" style="width:100%; max-width:800px;">
-<ul style="margin:14px 0 0; padding-left:22px;">
-<li style="margin-bottom:6px;"><b>최저가 루트</b>: 판매 횟수는 따지지 않고 가장 적게 잃는 조합</li>
-<li style="margin-bottom:6px;"><b>최적화 루트</b>: 판매를 한 번 줄일 때 더 드는 돈이 <b>판매 1회 수고비(기본 2,000원)</b> 이하일 때만 줄인 조합. 수고비는 직접 바꿀 수 있어요.</li>
-<li style="margin-bottom:6px;">그래프로 판매 횟수를 줄이면 얼마나 비싸지는지 한눈에 보여요.</li>
-</ul>
-<div style="font-size:18px; font-weight:700; margin:26px 0 10px;">예시로 보면</div>
-<div style="margin-bottom:10px;">플가가 3억이라 효율 1, 2등을 다투고, 전승 스크롤·원더베리 11개가 바로 뒤(0.99플가)에 있는 흔한 상황이에요. 25만 원 결제, 수수료 3%, 크레딧 큐브까지 넣은 결과예요.</div>
-<table style="width:100%; max-width:800px; border-collapse:collapse; font-size:15px; margin-bottom:12px;">
-<tr><th style="padding:8px 10px; background:#f1eefc; text-align:left;">루트</th><th style="padding:8px 10px; background:#f1eefc; text-align:left;">무엇을 사서 파나</th><th style="padding:8px 10px; background:#f1eefc; text-align:right;">판매</th><th style="padding:8px 10px; background:#f1eefc; text-align:right;">실제로 나가는 돈</th></tr>
-<tr><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea;"><b>최저가</b></td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea;">플가 42개 + 로얄 1개</td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea; text-align:right; white-space:nowrap;">43회</td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea; text-align:right; white-space:nowrap;"><b>41,340원</b></td></tr>
-<tr><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea;"><b style="color:#6a4fd6;">최적화</b></td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea;">전승 스크롤 2개 + 원더베리(11개) 1세트</td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea; text-align:right; white-space:nowrap;">3회</td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea; text-align:right; white-space:nowrap;"><b>44,358원</b> <span style="color:#7b7c8a;">(+3,019원)</span></td></tr>
-<tr><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea;"><b>횟수 정하기</b></td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea;">최대 5회로 정했을 때</td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea; text-align:right; white-space:nowrap;">5회</td><td style="padding:8px 10px; border-bottom:1px solid #e3e3ea; text-align:right; white-space:nowrap;"><b>44,019원</b> <span style="color:#7b7c8a;">(+2,679원)</span></td></tr>
-</table>
-<div style="margin-bottom:10px;">최저가는 가장 싸지만 경매장에 <b>43번</b> 올려야 해요. 최적화는 <b>3,019원</b>만 더 내고 판매를 <b>40번</b> 줄여요. 한 번 줄일 때 평균 <b>75원</b>이라 수고비 2,000원보다 훨씬 싸니 줄이는 게 이득이에요.</div>
-<div style="margin-bottom:10px;">반대로 한 번 줄이는 데 2,000원 넘게 드는 구간이면 최적화는 거기서 멈춰요.</div>
-<div style="margin-bottom:14px;">목표 계획(블랙까지 8주)으로 넓히면 차이가 더 커요. 최저가 <b>350,816원 · 368회</b>, 최적화 <b>375,957원 · 32회</b>. 25,141원 더 내고 경매장에 336번 덜 올려요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1296999429189567.png?MW=800" alt="최저가 루트" style="width:100%; max-width:800px;">
-
-<div style="margin:18px 0 14px;">그 아래에 <b>그대로 따라 하면 되는 순서</b>가 나와요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1110943402106249.png?MW=800" alt="따라 할 순서" style="width:100%; max-width:800px;">
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">5. 목표 계획과 이으면 주별로</div>
-<div style="margin-bottom:14px;">"11월 18일까지 블랙" 같은 계획이 있으면, 계획의 주별 금액 그대로 주마다 무엇을 얼마나 충전하고 사서 팔지 나눠 줘요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1112446077518376.png?MW=800" alt="계획 결론" style="width:100%; max-width:800px;">
-<div style="margin-top:14px;"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1485633467191820.png?MW=800" alt="주별 표" style="width:100%; max-width:800px;"></div>
-<ul style="margin:14px 0 0; padding-left:22px;">
-<li style="margin-bottom:6px;">상품권은 할인이 큰 것부터, 그 달 한도가 남은 주에 써요. 달이 바뀌면 한도가 새로 생겨요.</li>
-<li style="margin-bottom:6px;">크레딧은 주마다 모아 가며 가장 효율적으로 털어요.</li>
-<li style="margin-bottom:6px;">줄을 누르면 그 주에 할 일(충전 → 구매 → 판매)이 아래에 나와요.</li>
-</ul>
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">6. 판매 횟수 정하기</div>
-<div style="margin-bottom:14px;">"경매장에 몇십 번 올리긴 귀찮다" 하시면 판매 횟수를 정해 두고 그 안에서 가장 많이 남는 조합을 볼 수 있어요. 최저가보다 얼마 더 드는지도 같이 나와요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1955770482189997.png?MW=800" alt="판매 횟수 정하기" style="width:100%; max-width:800px;">
-<div style="margin-top:14px;"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1161682730829242.png?MW=800" alt="주의 문구" style="width:100%; max-width:800px;"></div>
-<div style="font-size:14px; color:#7b7c8a; margin-top:10px;">판매 횟수는 경매장에 올리는 횟수만 세요. 얼마나 빨리 팔리는지(회전율)는 계산에 없으니 실제로 팔리는 속도를 보고 고르세요.<br>플가·원더베리처럼 낱개로 많이 파는 루트는 MVP작이 몰리는 주 초반·월초에 시세가 떨어질 수 있어요.</div>
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">7. 나에게 맞는 방법</div>
-<div style="margin-bottom:14px;">천천히 기다릴 수 있는지, 빨리 메소로 바꾸고 싶은지, 판매 횟수를 줄이고 싶은지에 따라 맞는 아이템과 그때 얼마가 나가는지 보여 줘요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1407422074719638.png?MW=800" alt="나에게 맞는 방법" style="width:100%; max-width:800px;">
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">8. 목록에 없는 아이템은 직접 추가</div>
-<div style="margin-bottom:14px;">이름, 캐시 가격, 묶음 개수, 사용 기간만 넣으면 플가 기준가가 자동으로 붙고 계산에 들어가요.</div>
-<img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1073647736429908.png?MW=800" alt="직접 추가" style="width:100%; max-width:740px;">
-
-
-<div style="font-size:22px; font-weight:700; border-left:4px solid #6a4fd6; padding-left:11px; margin:38px 0 14px;">알아 두실 것</div>
-<ul style="margin:0; padding-left:22px;">
-<li style="margin-bottom:6px;">넣은 값은 이 브라우저에 저장되고, <b>로그인하면 계정에도 저장</b>돼서 다른 기기에서도 이어서 쓸 수 있어요.</li>
-<li style="margin-bottom:6px;">메이플포인트는 1,000원 단위로만 살 수 있어서, 계획대로 결제할 때 딱 못 맞추면 1,000원 안쪽으로 조금 더 결제하는 루트가 나올 수 있어요.</li>
-<li style="margin-bottom:6px;">위 그림의 숫자는 예시예요.</li>
-</ul>
-
-<div style="margin-top:28px;">써 보시고 이상한 점이나 추가됐으면 하는 아이템 있으면 댓글로 알려 주세요!</div>
-
-</div>
+<div style="margin:0 0 26px;padding:22px;border-radius:12px;background:#1b1c21;text-align:center;"><a href="https://maple-mvp.com" target="_blank" style="font-size:29px;font-weight:700;color:#b8a8ff;text-decoration:none;">maple-mvp.com</a><div style="margin-top:6px;font-size:14px;color:#9a9cab;">위쪽 탭에서 <b style="color:#ecebf2;">효율표</b>를 누르세요</div></div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">안녕하세요. 지난번에 올렸던 MVP 현황/목표 계산기에 <b>MVP작 효율표</b>를 붙였습니다.</div>
+<div style="margin:12px 0 0;padding:12px 16px;border-radius:10px;background:#f4f2fb;font-size:16px;line-height:1.7;color:#22252b;">MVP 현황·목표 계획 등 기존 웹페이지 소개는 이전 글을 참고해 주세요.<br><a href="https://www.inven.co.kr/board/maple/2304/48302" target="_blank" style="color:#6a4fd6;font-weight:700;text-decoration:none;">이전 글: MVP 현황/목표 계산기 소개 →</a></div>
+<div style="margin:12px 0 0;font-size:16px;line-height:1.75;color:#22252b;">MVP작 계산기들이 회수율 %는 알려 주는데, 막상 "그래서 실제로 얼마가 나가는데? 뭘 몇 개 사서 어떻게 팔아야 하는데?"는 직접 조합해 봐야 하더라고요. 그걸 한 화면에서 끝내 주는 탭입니다.</div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;"><b>플가 가격 하나만 넣으면</b> 다른 아이템마다 "이 가격 넘으면 플가보다 이득"인 기준가가 붙어요</li><li style="margin:0 0 8px;line-height:1.7;">가장 적게 잃는 <b>최저가 루트</b>, 판매 횟수까지 따진 <b>최적화 루트</b>, 직접 정하는 <b>횟수 정하기</b></li><li style="margin:0 0 8px;line-height:1.7;">상품권은 <b>실제로 사는 대로</b> 계산 (5만원권 먼저, 3천 원 단위, 달마다 20만 원 한도)</li><li style="margin:0 0 8px;line-height:1.7;"><b>메이플 크레딧</b>으로 큐브 사서 파는 것까지 포함</li><li style="margin:0 0 8px;line-height:1.7;"><b>목표 계획과 연동</b>하면 주마다 무엇을 얼마나 충전하고 사서 팔지 주별로</li></ul>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">1. 입력은 위쪽 세 칸</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">얼마나 결제할지, 캐시는 얼마에 충전하는지, 시세. 이 세 가지만 넣으면 돼요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1631366723847134.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1631366723847134.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;">목표 계획이 있으면 <b>목표 계획대로</b>, 없으면 <b>금액 직접</b>. 내 13주 합계 기준으로 "다이아까지 / 레드까지 / 블랙까지" 버튼도 있어요.</li><li style="margin:0 0 8px;line-height:1.7;">상품권 할인은 <b>6</b>처럼 %로 넣어도, <b>47,000</b>처럼 5만원권 가격으로 넣어도 돼요.</li><li style="margin:0 0 8px;line-height:1.7;">경매장 수수료는 계획대로일 땐 <b>자동</b>(사는 순간 오를 등급 기준, 실버 이상 3%), 금액 직접일 땐 3%/5% 중에 골라요.</li></ul>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">2. 플가 가격 하나로 기준가</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">왼쪽에 플가 가격만 넣으면, 아이템마다 흐린 숫자로 <b>이 가격 넘으면 플가보다 이득</b>인 기준가가 들어가요. 경매장에서 그보다 비싸게 올라온 것만 가격을 넣으면 됩니다.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1571533039848315.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1571533039848315.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;">플가 줄을 경계로 위는 <b style="color:#1f8f67;">이득(초록)</b>, 아래는 <b style="color:#c26a32;">손해(주황)</b>. 플가 가격을 바꾸면 바로 다시 줄 서요.</li><li style="margin:0 0 8px;line-height:1.7;"><b>플가 가격으로</b> 버튼을 누르면 "이 가격이면 플가를 몇 억에 판 셈인지"로 바꿔 볼 수 있어요.</li><li style="margin:0 0 8px;line-height:1.7;">7일 / 14일 / 30일 / 무기한 사용 기간도 같이 보여요. 손해 보는 아이템은 숨길 수 있어요.</li></ul>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1979432786507916.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1979432786507916.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">3. 메이플 크레딧까지</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1460556109482854.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1460556109482854.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;">캐시샵에서 쓴 캐시의 5%가 크레딧으로 쌓여요. 캐시템도, 메소마켓에 팔 <b>메이플포인트를 살 때도</b> 똑같이 쌓여요. 남아 있던 크레딧도 합쳐서 계산해요.</li><li style="margin:0 0 8px;line-height:1.7;">큐브 경매장 가격을 넣으면 크레딧당 효율이 가장 좋은 걸로 사서 파는 것까지 결과에 들어가요.</li><li style="margin:0 0 8px;line-height:1.7;">끝에 남는 크레딧은 <b>다 털기 / 모아 두기</b> 중에 골라요. 모아 두면 에디셔널 큐브만 사고, 나머지는 다음 작 때 합쳐요.</li></ul>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">4. 결론: 실제로 나가는 돈과 루트 3개</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">가장 크게 보이는 숫자가 <b>실제로 나가는 돈</b>(넣은 현금 − 돌려받는 돈)이에요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1607489423356147.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1607489423356147.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;"><b>최저가 루트</b>: 판매 횟수는 따지지 않고 가장 적게 잃는 조합</li><li style="margin:0 0 8px;line-height:1.7;"><b>최적화 루트</b>: 판매를 한 번 줄일 때 더 드는 돈이 <b>판매 1회 수고비(기본 2,000원)</b> 이하일 때만 줄인 조합. 수고비는 직접 바꿀 수 있어요.</li><li style="margin:0 0 8px;line-height:1.7;">그래프로 판매 횟수를 줄이면 얼마나 비싸지는지 한눈에 보여요.</li></ul>
+<div style="margin:26px 0 0;font-size:18px;font-weight:700;color:#22252b;">예시로 보면</div>
+<div style="margin:8px 0 0;font-size:16px;line-height:1.75;color:#22252b;">플가가 3억이라 효율 1, 2등을 다투고, 전승 스크롤·원더베리 11개가 바로 뒤(0.99플가)에 있는 흔한 상황이에요. 25만 원 결제, 수수료 3%, 크레딧 큐브까지 넣은 결과예요.</div>
+<table style="width:100%;border-collapse:collapse;margin:14px 0 0;font-size:15px;color:#22252b;"><tr><th style="padding:8px 10px;background:#f1eefc;text-align:left;">루트</th><th style="padding:8px 10px;background:#f1eefc;text-align:left;">무엇을 사서 파나</th><th style="padding:8px 10px;background:#f1eefc;text-align:right;">판매</th><th style="padding:8px 10px;background:#f1eefc;text-align:right;">실제로 나가는 돈</th></tr><tr><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;"><b>최저가</b></td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;">플가 42개 + 로얄 1개</td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;text-align:right;white-space:nowrap;">43회</td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;text-align:right;white-space:nowrap;"><b>41,340원</b></td></tr><tr><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;"><b style="color:#6a4fd6;">최적화</b></td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;">전승 스크롤 2개 + 원더베리(11개) 1세트</td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;text-align:right;white-space:nowrap;">3회</td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;text-align:right;white-space:nowrap;"><b>44,358원</b> <span style="color:#7b7c8a;">(+3,019원)</span></td></tr><tr><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;"><b>횟수 정하기</b></td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;">최대 5회로 정했을 때</td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;text-align:right;white-space:nowrap;">5회</td><td style="padding:8px 10px;border-bottom:1px solid #e3e3ea;text-align:right;white-space:nowrap;"><b>44,019원</b> <span style="color:#7b7c8a;">(+2,679원)</span></td></tr></table>
+<div style="margin:12px 0 0;font-size:16px;line-height:1.75;color:#22252b;">최저가는 가장 싸지만 경매장에 <b>43번</b> 올려야 해요. 최적화는 <b>3,019원</b>만 더 내고 판매를 <b>40번</b> 줄여요. 한 번 줄일 때 평균 <b>75원</b>이라 수고비 2,000원보다 훨씬 싸니 줄이는 게 이득이에요. 반대로 한 번 줄이는 데 2,000원 넘게 드는 구간이면 최적화는 거기서 멈춰요.</div>
+<div style="margin:8px 0 0;font-size:16px;line-height:1.75;color:#22252b;">목표 계획(블랙까지 8주)으로 넓히면 차이가 더 커요. 최저가 <b>350,816원 · 368회</b>, 최적화 <b>375,957원 · 32회</b>. 25,141원 더 내고 경매장에 336번 덜 올려요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1296999429189567.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1296999429189567.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:18px 0 0;font-size:16px;line-height:1.75;color:#22252b;">그 아래에 <b>그대로 따라 하면 되는 순서</b>가 나와요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1110943402106249.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1110943402106249.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">5. 목표 계획과 이으면 주별로</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">"11월 18일까지 블랙" 같은 계획이 있으면, 계획의 주별 금액 그대로 주마다 무엇을 얼마나 충전하고 사서 팔지 나눠 줘요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1112446077518376.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1112446077518376.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1485633467191820.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1485633467191820.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;">상품권은 할인이 큰 것부터, 그 달 한도가 남은 주에 써요. 달이 바뀌면 한도가 새로 생겨요.</li><li style="margin:0 0 8px;line-height:1.7;">크레딧은 주마다 모아 가며 가장 효율적으로 털어요.</li><li style="margin:0 0 8px;line-height:1.7;">줄을 누르면 그 주에 할 일(충전 → 구매 → 판매)이 아래에 나와요.</li></ul>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">6. 판매 횟수 정하기</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">"경매장에 몇십 번 올리긴 귀찮다" 하시면 판매 횟수를 정해 두고 그 안에서 가장 많이 남는 조합을 볼 수 있어요. 최저가보다 얼마 더 드는지도 같이 나와요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1955770482189997.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1955770482189997.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1161682730829242.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1161682730829242.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:7px 0 0;font-size:14px;line-height:1.7;color:#5a6070;">판매 횟수는 경매장에 올리는 횟수만 세요. 얼마나 빨리 팔리는지(회전율)는 계산에 없으니 실제로 팔리는 속도를 보고 고르세요.<br>플가·원더베리처럼 낱개로 많이 파는 루트는 MVP작이 몰리는 주 초반·월초에 시세가 떨어질 수 있어요.</div>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">7. 나에게 맞는 방법</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">천천히 기다릴 수 있는지, 빨리 메소로 바꾸고 싶은지, 판매 횟수를 줄이고 싶은지에 따라 맞는 아이템과 그때 얼마가 나가는지 보여 줘요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1407422074719638.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1407422074719638.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">8. 목록에 없는 아이템은 직접 추가</div>
+<div style="margin:0px 0 0;font-size:16px;line-height:1.75;color:#22252b;">이름, 캐시 가격, 묶음 개수, 사용 기간만 넣으면 플가 기준가가 자동으로 붙고 계산에 들어가요.</div>
+<div style="margin:14px 0 0;text-align:center;"><a href="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1073647736429908.png" target="_blank"><img src="https://upload3.inven.co.kr/upload/2026/09/28/bbs/i1073647736429908.png?MW=800" style="max-width:100%;border-radius:8px;"></a></div>
+<div style="margin:38px 0 14px;padding-left:11px;border-left:4px solid #6a4fd6;font-size:22px;font-weight:700;color:#22252b;">알아 두실 것</div>
+<ul style="margin:10px 0 0;padding-left:22px;font-size:16px;color:#22252b;"><li style="margin:0 0 8px;line-height:1.7;">넣은 값은 이 브라우저에 저장되고, <b>로그인하면 계정에도 저장</b>돼서 다른 기기에서도 이어서 쓸 수 있어요.</li><li style="margin:0 0 8px;line-height:1.7;">메이플포인트는 1,000원 단위로만 살 수 있어서, 계획대로 결제할 때 딱 못 맞추면 1,000원 안쪽으로 조금 더 결제하는 루트가 나올 수 있어요.</li><li style="margin:0 0 8px;line-height:1.7;">위 그림의 숫자는 예시예요.</li></ul>
+<div style="margin:34px 0 0;padding:17px 19px;border-radius:10px;background:#f4f5f8;border:1px solid #e3e6ec;font-size:16px;line-height:1.75;color:#5a6070;">써 보시고 이상한 점이나 추가됐으면 하는 아이템 있으면 댓글로 알려 주세요!</div>
