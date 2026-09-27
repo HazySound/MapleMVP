@@ -58,7 +58,8 @@
     <nav class="tabs" aria-label="화면">
       <button aria-pressed={app.view === 'dash'} onclick={() => (app.view = 'dash')}>현황</button>
       <button aria-pressed={app.view === 'plan'} onclick={() => (app.view = 'plan')}>목표 계획</button>
-      <span class="ind" class:right={app.view === 'plan'}></span>
+      <button aria-pressed={app.view === 'eff'} onclick={() => (app.view = 'eff')}>효율표</button>
+      <span class="ind" style="--i:{['dash', 'plan', 'eff'].indexOf(app.view)}"></span>
     </nav>
   {/if}
 
@@ -152,11 +153,10 @@
   .ttl { font-family: var(--font-display); font-size: 14px; letter-spacing: .03em; }
   .tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--color-panel3); color: var(--color-tx3); }
   .drag { flex: 1; align-self: stretch; }
-  .tabs { position: relative; flex: none; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; margin-left: 14px; padding: 3px; border-radius: 12px; background: var(--color-panel); border: 1px solid var(--color-line); }
+  .tabs { position: relative; flex: none; min-width: 0; display: grid; grid-template-columns: repeat(3, 1fr); margin-left: 14px; padding: 3px; border-radius: 12px; background: var(--color-panel); border: 1px solid var(--color-line); }
   .tabs button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--color-tx3); padding: 5px 16px; white-space: nowrap; transition: color .25s; }
   .tabs button[aria-pressed="true"] { color: var(--color-tx); }
-  .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
-  .ind.right { transform: translateX(100%); }
+  .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); transform: translateX(calc(100% * var(--i, 0))); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
   .sync { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--color-tx3); }
   .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--color-mint); animation: ping 2.4s infinite; }
   .dot.busy { background: var(--color-lav); }

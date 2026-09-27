@@ -1,0 +1,17 @@
+{
+  "updated": "2026-09-27",
+  "barcode": { "on": false, "bonus": 0.05, "cap": 500000, "until": "" },
+  "items": [
+    { "id": "karma", "name": "플래티넘 카르마의 가위", "set": 1, "cash": 5900 },
+    { "id": "potential", "name": "잠재옵션 전승 스크롤", "set": 1, "cash": 99000 },
+    { "id": "additional", "name": "추가옵션 전승 스크롤", "set": 1, "cash": 49000 },
+    { "id": "wonder1", "name": "위습의 원더베리", "set": 1, "bundle": true, "cash": 5400 },
+    { "id": "wonder11", "name": "위습의 원더베리", "set": 11, "cash": 54000 },
+    { "id": "royal1", "name": "로얄스타일 쿠폰", "set": 1, "bundle": true, "cash": 2200 },
+    { "id": "royal10", "name": "로얄스타일 쿠폰", "set": 10, "cash": 22000 },
+    { "id": "royal20", "name": "로얄스타일 쿠폰", "set": 20, "cash": 44000 },
+    { "id": "royal45", "name": "로얄스타일 쿠폰", "set": 45, "cash": 99000 },
+    { "id": "hair", "name": "프리미엄 헤어 쿠폰", "set": 1, "cash": 5500 },
+    { "id": "face", "name": "프리미엄 성형 쿠폰", "set": 1, "cash": 3500 }
+  ]
+}

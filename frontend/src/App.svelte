@@ -3,6 +3,7 @@
   import { onMount } from 'svelte'
   import Aurora from './lib/components/Aurora.svelte'
   import DeadlineCard from './lib/components/DeadlineCard.svelte'
+  import EffView from './lib/components/EffView.svelte'
   import DecayChart from './lib/components/DecayChart.svelte'
   import GradeCard from './lib/components/GradeCard.svelte'
   import HistoryModal from './lib/components/HistoryModal.svelte'
@@ -61,6 +62,8 @@
           <div class="c12"><PlanChart /></div>
         </div>
       {/if}
+    {:else if app.data && app.view === 'eff'}
+      {#if planner.input}<EffView />{/if}
     {:else if app.data}
       <div class="grid" use:intro>
         <div class="c5"><GradeCard /></div>

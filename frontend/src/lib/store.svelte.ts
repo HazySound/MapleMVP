@@ -10,7 +10,7 @@ import type { Bare, HistoryPage, HistoryQuery, Progress, Raw, Sim, State, TierKe
 export type Overlay = null | 'boot' | 'first-sync' | 'login' | 'first-error'
 
 export const app = $state({
-  view: 'dash' as 'dash' | 'plan',
+  view: 'dash' as 'dash' | 'plan' | 'eff',
   data: null as State | null,
   sim: null as Sim | null,
   extra: 0,
