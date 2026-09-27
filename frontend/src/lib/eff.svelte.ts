@@ -45,6 +45,8 @@ interface Saved {
   salesN: number
   /** 플가 대비를 개수로 볼지(1.04플가), 플가 가격으로 볼지(3.12억) */
   pgView: 'ratio' | 'price'
+  /** 사용자가 직접 추가한 아이템. 기본 목록에 없는 걸로 작하는 사람을 위해 */
+  custom: ShopItem[]
 }
 
 function fresh(): Saved {
@@ -53,7 +55,7 @@ function fresh(): Saved {
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })),
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio',
+    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', custom: [],
   }
 }
 
@@ -96,8 +98,27 @@ export function ageOf(k: string, now = Date.now()): string {
   return d <= 0 ? '오늘 넣은 값' : d === 1 ? '어제 넣은 값' : `${d}일 전에 넣은 값`
 }
 
-/** 판매 기간이 끝난 상품은 살 수 없으니 뺀다 */
-export const shopItems = () => SHOP.items.filter(x => !x.until || x.until >= new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10))
+/** 기본 목록 + 직접 추가한 것. 판매 기간이 끝난 상품은 살 수 없으니 뺀다 */
+export const shopItems = (): ShopItem[] => [
+  ...SHOP.items.filter(x => !x.until || x.until >= new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10)),
+  ...eff.custom,
+]
+
+/** 직접 추가한 아이템을 넣거나 고친다 */
+export function saveCustom(x: Omit<ShopItem, 'id' | 'custom'>, id?: string) {
+  const item: ShopItem = { ...x, id: id ?? `c${Date.now().toString(36)}`, custom: true }
+  const i = eff.custom.findIndex(c => c.id === item.id)
+  if (i >= 0) eff.custom[i] = item
+  else eff.custom.push(item)
+  saveEff()
+  return item.id
+}
+
+export function removeCustom(id: string) {
+  eff.custom = eff.custom.filter(c => c.id !== id)
+  delete eff.prices[id]
+  saveEff()
+}
 
 export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0 }))
 

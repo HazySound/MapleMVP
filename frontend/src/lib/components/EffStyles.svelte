@@ -12,7 +12,7 @@
 
   let { out }: { out: EffOut | null } = $props()
 
-  const items = shopItems()
+  const items = $derived(shopItems())
   const names = (f: (x: (typeof items)[number]) => boolean) => [...new Set(items.filter(f).map(x => x.id === PG_ID ? '플가' : itemLabel(x)))]
 
   const styles = $derived([

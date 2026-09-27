@@ -10,16 +10,16 @@
    * 플가 가격은 기준이라 왼쪽에서만 넣는다.
    */
   import NumBox from './NumBox.svelte'
-  import { ageOf, eff, saveEff, shopItems, touch } from '../eff.svelte'
+  import { ageOf, eff, removeCustom, saveCustom, saveEff, shopItems, touch } from '../eff.svelte'
   import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
   import { won } from '../format'
   import { tip } from '../tip'
 
   let { fee, used }: { fee: number; used: Set<string> } = $props()
 
-  const items = shopItems()
-  const pgItem = items.find(x => x.id === PG_ID)!
-  const others = items.filter(x => x.id !== PG_ID)
+  const items = $derived(shopItems())
+  const pgItem = $derived(items.find(x => x.id === PG_ID)!)
+  const others = $derived(items.filter(x => x.id !== PG_ID))
   const pg = $derived(eff.prices[PG_ID] ?? 0)
 
   const effOf = (x: ShopItem) => {
@@ -36,7 +36,27 @@
   }
   let order = $state(sorted())
   const resort = () => { order = sorted() }
-  const rows = $derived(order.map(id => items.find(x => x.id === id)!))
+  // 새로 추가한 아이템은 줄 세우기 전까지 맨 아래에 붙인다. 지운 것은 빠진다
+  const rows = $derived([...order, ...items.map(x => x.id).filter(id => !order.includes(id))]
+    .map(id => items.find(x => x.id === id)).filter(x => !!x))
+
+  // ---- 직접 추가 ----
+  let adding = $state(false)
+  let editing = $state<string | null>(null)
+  let form = $state({ name: '', cash: 0, set: 1, days: 0 })
+  const openAdd = () => { editing = null; form = { name: '', cash: 0, set: 1, days: 0 }; adding = true }
+  const openEdit = (x: ShopItem) => { editing = x.id; form = { name: x.name, cash: x.cash, set: x.set, days: x.days ?? 0 }; adding = true }
+  const canSave = $derived(form.name.trim().length > 0 && form.cash > 0 && form.set >= 1)
+  function submit(e: Event) {
+    e.preventDefault()
+    if (!canSave) return
+    // 캐시가나 묶음 개수가 바뀌면 전에 넣은 경매장 가격은 다른 물건 값이라 비운다
+    const old = editing ? items.find(x => x.id === editing) : null
+    if (old && (old.cash !== Math.round(form.cash) || old.set !== Math.max(1, Math.round(form.set)))) delete eff.prices[old.id]
+    saveCustom({ name: form.name.trim(), cash: Math.round(form.cash), set: Math.max(1, Math.round(form.set)), ...(form.days ? { days: form.days } : {}) }, editing ?? undefined)
+    adding = false; editing = null
+    resort()
+  }
   const zone = (x: ShopItem) => x.id === PG_ID ? 'base' : !effOf(x) ? 'none' : effOf(x) >= 1 ? 'up' : 'down'
 
   // 메소마켓도 같은 잣대로: 캐시 1원당 메소를 플가와 견준다
@@ -90,7 +110,18 @@
                     <em class="tag" class:short={isShort(x)} class:forever={!x.days}
                       use:tip={x.days ? `받은 뒤 ${x.days}일 안에 써야 해요. ${isShort(x) ? '오래 들고 기다리기 어려워요' : '조금은 기다려 볼 수 있어요'}` : '기간이 없어서 값이 오를 때까지 들고 있을 수 있어요'}>{daysLabel(x)}</em>
                     {#if x.until}<em class="tag" use:tip={`캐시샵 판매는 ${Number(x.until.slice(5, 7))}월 ${Number(x.until.slice(8))}일까지`}>~{Number(x.until.slice(5, 7))}/{Number(x.until.slice(8))}</em>{/if}
+                    {#if x.custom}<em class="tag mine">내가 추가</em>{/if}
                     {#if used.has(x.id)}<em class="buy">구매</em>{/if}
+                    {#if x.custom}
+                      <span class="acts">
+                        <button type="button" onclick={() => openEdit(x)} aria-label="{itemLabel(x)} 고치기" use:tip={'고치기'}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                        </button>
+                        <button type="button" onclick={() => removeCustom(x.id)} aria-label="{itemLabel(x)} 지우기" use:tip={'지우기'}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                        </button>
+                      </span>
+                    {/if}
                   </span>
                 </td>
                 <td class="mono">{won(x.cash)}</td>
@@ -119,6 +150,44 @@
           </tbody>
         </table>
       </div>
+
+      {#if adding}
+        <form class="add" onsubmit={submit}>
+          <b class="at">{editing ? '추가한 아이템 고치기' : '아이템 직접 추가'}</b>
+          <div class="ef-field nm2">
+            <label for="eff-add-name">이름</label>
+            <input id="eff-add-name" class="txt" type="text" placeholder="예: 골드 애플" bind:value={form.name} maxlength="40" />
+          </div>
+          <div class="ef-field">
+            <label for="eff-add-cash">캐시 가격 <span class="u">묶음이면 묶음 전체</span></label>
+            <NumBox id="eff-add-cash" label="캐시 가격" unit="캐시" placeholder="예: 5,900" value={form.cash} set={v => (form.cash = v)} />
+          </div>
+          <div class="ef-field">
+            <label for="eff-add-set">묶음 개수</label>
+            <NumBox id="eff-add-set" label="묶음 개수" unit="개" placeholder="1" value={form.set} set={v => (form.set = v)} />
+          </div>
+          <div class="ef-field">
+            <span class="lbl">사용 기간</span>
+            <div class="ef-seg" role="group" aria-label="사용 기간">
+              {#each [[0, '무기한'], [7, '7일'], [14, '14일'], [30, '30일']] as [v, t] (v)}
+                <button type="button" aria-pressed={form.days === v} onclick={() => (form.days = v as number)}>{t}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="btns">
+            <button type="button" class="btn" onclick={() => { adding = false; editing = null }}>취소</button>
+            <button type="submit" class="btn primary" disabled={!canSave}>{editing ? '고치기' : '추가'}</button>
+          </div>
+          <p class="ef-hint wide">
+            {#if canSave && pg}이 가격이면 플가 기준가는 <b>{fx(minPrice(pg, form.cash))}억</b>이에요. 추가한 뒤 경매장 실제 가격을 넣으면 계산에 들어가요.{:else}이름과 캐시 가격을 넣으면 플가 기준가가 자동으로 붙어요. 이 브라우저에만 저장돼요.{/if}
+          </p>
+        </form>
+      {:else}
+        <button class="addbtn" onclick={openAdd}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          목록에 없는 아이템 직접 추가
+        </button>
+      {/if}
     </div>
   </div>
   <p class="ef-hint">흐린 숫자가 기준이에요. 경매장에서 확인한 실제 가격을 넣으면(기준보다 높아도, 낮아도) 그 값으로 계산하고, 칸을 벗어나면 효율 순으로 다시 줄 서요. 비워 둔 아이템은 계산에서 빠져요. 효율 칸에 마우스를 올리면 플가를 얼마에 판 셈인지(또는 몇 플가인지) 나와요.</p>
@@ -155,6 +224,7 @@
   .tag { font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 6px; background: var(--color-panel3); color: var(--color-tx3); cursor: default; }
   .tag.short { background: color-mix(in oklab, var(--color-sky) 20%, transparent); color: var(--color-sky); }
   .tag.forever { background: color-mix(in oklab, var(--color-mint) 16%, transparent); color: var(--color-mint); }
+  .tag.mine { background: color-mix(in oklab, var(--color-butter) 20%, transparent); color: var(--color-butter); }
   .tag.pgt { background: color-mix(in oklab, var(--color-lav) 25%, transparent); color: var(--color-lav); }
   .buy { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 6px; background: var(--color-mint); color: var(--color-on-accent); }
   .min { color: var(--color-tx); }
@@ -178,4 +248,31 @@
   .mk .eff.up { color: var(--color-mint); }
   .mk .eff.down { color: var(--color-peach); }
   .r { text-align: right; }
+
+  .acts { display: inline-flex; gap: 2px; margin-left: 2px; }
+  .acts button { appearance: none; border: 0; background: none; cursor: pointer; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--color-tx3); }
+  .acts button:hover { background: var(--color-panel3); color: var(--color-tx); }
+  .acts svg { width: 13px; height: 13px; }
+  .addbtn {
+    appearance: none; cursor: pointer; font: inherit; font-size: 13px; color: var(--color-tx2);
+    display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: var(--radius-md);
+    background: transparent; border: 1px dashed var(--color-line2); transition: border-color .2s, color .2s, background .2s;
+  }
+  .addbtn:hover { border-color: var(--color-lav); color: var(--color-tx); background: color-mix(in oklab, var(--color-lav) 6%, transparent); }
+  .addbtn svg { width: 15px; height: 15px; }
+  .add {
+    display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 110px auto; gap: 10px 12px; align-items: end;
+    padding: 14px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid color-mix(in oklab, var(--color-lav) 40%, var(--color-line));
+  }
+  .add .at { grid-column: 1 / -1; font-size: 13px; }
+  .add .btns { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+  .add .wide { grid-column: 1 / -1; margin: 0; }
+  .add .u { font-size: 11px; opacity: .8; }
+  .add input.txt {
+    all: unset; box-sizing: border-box; width: 100%; padding: 6px 10px; border-radius: 10px; font-size: 14px; color: var(--color-tx);
+    background: var(--color-panel); border: 1px solid var(--color-line); user-select: text;
+  }
+  .add input.txt:focus { border-color: var(--color-lav); }
+  .add input.txt::placeholder { color: var(--color-tx3); }
+  @media (max-width: 912px) { .add { grid-template-columns: 1fr 1fr; } .add .nm2 { grid-column: 1 / -1; } }
 </style>

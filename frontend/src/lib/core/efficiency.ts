@@ -26,7 +26,7 @@ const U = 100
  * days: 받은 뒤 써야 하는 기간(일). 없으면 무기한. 기간이 짧으면 값이 오를 때까지 들고 버틸 수 없다.
  * until: 캐시샵 판매가 끝나는 날. 지나면 살 수 없어 목록에서 뺀다.
  */
-export interface ShopItem { id: string; name: string; set: number; cash: number; bundle?: boolean; until?: string; days?: number }
+export interface ShopItem { id: string; name: string; set: number; cash: number; bundle?: boolean; until?: string; days?: number; custom?: boolean }
 
 /** 7일 안에 써야 하는 아이템. 오래 들고 기다릴 수 없어 빨리 팔아야 한다 */
 export const isShort = (x: Pick<ShopItem, 'days'>) => !!x.days && x.days <= 7

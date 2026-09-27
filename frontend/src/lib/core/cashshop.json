@@ -21,7 +21,6 @@
     { "id": "tiniping1", "name": "캐치! 티니핑 굿즈 컬렉션", "set": 1, "bundle": true, "cash": 9900, "days": 7, "until": "2026-10-21" },
     { "id": "tiniping10", "name": "캐치! 티니핑 굿즈 컬렉션", "set": 10, "cash": 99000, "days": 7, "until": "2026-10-21" },
     { "id": "prism", "name": "컬러링 프리즘", "set": 1, "cash": 5900, "days": 30 },
-    { "id": "prismpro", "name": "컬러링 프리즘 프로", "set": 1, "cash": 25000 },
-    { "id": "weaponprism", "name": "무기 이펙트 프리즘", "set": 1, "cash": 15000 }
+    { "id": "prismpro", "name": "컬러링 프리즘 프로", "set": 1, "cash": 25000 }
   ]
 }
