@@ -141,7 +141,7 @@
         </svg>
         <div class="ef-hint cost">
           <span><b>최적화</b>는 판매를 한 번 줄일 때 더 내는 돈이</span>
-          <span class="box"><NumBox id="eff-sale-cost" label="판매 1회 수고비" size="sm" unit="원" placeholder="1,000" value={eff.saleCost} set={v => { eff.saleCost = v; saveEff() }} /></span>
+          <span class="box"><NumBox id="eff-sale-cost" label="판매 1회 수고비" size="sm" unit="원" placeholder="2,000" value={eff.sellCost} set={v => { eff.sellCost = v; saveEff() }} /></span>
           <span>이하일 때만 줄여요.</span>
           {#if out.knee.sales < out.best.sales}
             <span>지금은 한 번 줄일 때 평균 <b>{won((out.knee.loss - out.best.loss) / (out.best.sales - out.knee.sales))}원</b>이라 {out.best.sales - out.knee.sales}회 줄였어요.</span>

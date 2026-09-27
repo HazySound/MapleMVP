@@ -57,8 +57,11 @@ interface Saved {
   creditCustom: Omit<CreditItem, 'price'>[]
   /** 끝에 남는 크레딧을 털지 않고 모아 둘지 */
   creditKeep: boolean
-  /** 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
-  saleCost: number
+  /**
+   * 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다.
+   * 기본값을 1,000원에서 2,000원으로 바꾸며 이름도 바꿨다. 옛 이름에 남은 1,000원은 버리고 새 기본값에서 시작한다
+   */
+  sellCost: number
 }
 
 function fresh(): Saved {
@@ -68,7 +71,7 @@ function fresh(): Saved {
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', custom: [], hideLoss: false,
-    creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, saleCost: 1000,
+    creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000,
   }
 }
 
@@ -77,7 +80,8 @@ function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return base
-    const s = { ...base, ...JSON.parse(raw) } as Saved & { held?: { cash: number } }
+    const s = { ...base, ...JSON.parse(raw) } as Saved & { held?: { cash: number }; saleCost?: number }
+    delete s.saleCost
     // 크레딧이 생기기 전에 저장한 값에는 큐브 가격이 없다. 기본값을 채워 둔다
     s.creditPrices = { ...base.creditPrices, ...s.creditPrices }
     // 예전 '이미 충전한 캐시'는 캐시 잔액으로 옮긴다
@@ -245,7 +249,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   if (!res) return null
 
   // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
-  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.saleCost)
+  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.sellCost)
 
   const alt = (items: Sellable[]): Summary | null => {
     if (!items.some(x => x.price > 0) && !eff.mk) return null

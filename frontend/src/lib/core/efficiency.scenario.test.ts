@@ -108,8 +108,8 @@ function run(c: Case) {
   near(r.knee.loss, r.curve[r.knee.n!], 1)
   near(r.count.loss, r.curve[r.count.n!], 1)
   expect(r.knee.sales).toBeLessThanOrEqual(r.best.sales)
-  // 최적화: 최저가보다 더 내는 돈이 줄인 판매 횟수 × 수고비(1,000원) 이하
-  expect(r.knee.loss - r.best.loss).toBeLessThanOrEqual((r.best.sales - r.knee.sales) * 1000 + 0.5)
+  // 최적화: 최저가보다 더 내는 돈이 줄인 판매 횟수 × 수고비(기본 2,000원) 이하
+  expect(r.knee.loss - r.best.loss).toBeLessThanOrEqual((r.best.sales - r.knee.sales) * 2000 + 0.5)
   // 주마다 판매 n회 제한을 지킨다
   for (const { route } of r.count.weeks) expect(route.sales).toBeLessThanOrEqual(Math.max(r.count.n!, r.lo))
   return { p, res: res!, r }

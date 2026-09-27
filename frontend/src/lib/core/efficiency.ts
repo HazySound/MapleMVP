@@ -475,7 +475,7 @@ export function pickAt(weeks: WeekResult[], n: number | null, credit: CreditUse 
  * curve[n] = 주마다 판매 n회까지로 할 때 전체 잃는 돈 (n은 lo..hi)
  */
 /** perSale: 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
-export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 1000) {
+export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 2000) {
   const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
   // 크레딧을 쓰면 조합은 크레딧 어림값으로 골랐어도, 곡선은 큐브를 실제로 살 수 있는 만큼 산 값으로 그린다.
   // 그래야 그래프와 루트 카드의 숫자가 같다
