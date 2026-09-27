@@ -43,7 +43,8 @@
   // 그래프는 칸 너비에 맞춰 그린다. 늘려 그리면 글자까지 커진다
   let cw = $state(600)
   const W = $derived(Math.max(280, cw - 28))
-  const H = 150, PX = 48, PY = 16
+  // PX: 왼쪽에 세로 축 이름과 눈금, 아래에 가로 눈금과 축 이름이 들어갈 자리
+  const H = 150, PX = 66, PY = 16
   const chart = $derived.by(() => {
     if (!out || out.hi <= out.lo) return null
     const xs: number[] = [], ys: number[] = []
@@ -54,7 +55,7 @@
     const line = xs.map((n, i) => `${i ? 'L' : 'M'}${X(n).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join('')
     const area = `${line}L${X(xs.at(-1)!).toFixed(1)},${H - PY}L${X(xs[0]).toFixed(1)},${H - PY}Z`
     const dot = (n: number) => ({ x: X(n), y: Y(out.curve[n]) })
-    return { line, area, X, Y, y0, y1, best: dot(out.hi), knee: dot(out.knee.n ?? out.hi), count: dot(out.count.n ?? out.hi) }
+    return { line, area, X, Y, y0, y1, best: dot(out.best.n ?? out.hi), knee: dot(out.knee.n ?? out.hi), count: dot(out.count.n ?? out.hi) }
   })
 
   // 싼 낱개(1만 원 미만)를 여러 번 파는 루트면 주 초반·월초 시세 경고. 보통 플가·원더베리가 이렇게 된다
@@ -114,7 +115,7 @@
     <div class="headline">
       <div class="big mono">{won(pick.loss)}<small>원</small></div>
       <p class="flow">
-        현금 <b class="mono">{won(pick.cost)}원</b> 넣고 <b class="mono up">{won(pick.back)}원</b> 돌려받음
+        현금 <b class="mono">{won(pick.cost)}원</b> 넣고 <b class="mono up">{won(pick.back)}원</b> 돌려받음{#if pick.creditBack}<span class="cr">(크레딧 큐브 {won(pick.creditBack)}원 포함)</span>{/if}
         <span class="dot">·</span> 회수율 <b class="mono">{rate(pick).toFixed(1)}%</b>
         <span class="dot">·</span> 경매장 판매 <b class="mono">{pick.sales}회</b>
       </p>
@@ -122,8 +123,10 @@
 
     {#if chart}
       <figure class="chart" bind:clientWidth={cw}>
-        <figcaption>판매 횟수를 줄이면 얼마나 더 나가나 <span>{out.mode === 'plan' ? '가로: 주마다 최대 판매 횟수' : '가로: 판매 횟수'} · 세로: 실제로 나가는 돈</span></figcaption>
-        <svg viewBox="0 0 {W} {H + 18}" role="img" aria-label="판매 횟수별 실제로 나가는 돈">
+        <figcaption>판매 횟수를 줄이면 얼마나 비싸지나</figcaption>
+        <svg viewBox="0 0 {W} {H + 38}" role="img" aria-label="판매 횟수별 실제로 나가는 돈">
+          <text x="12" y={H / 2} class="at" text-anchor="middle" transform="rotate(-90 12 {H / 2})">실제로 나가는 돈</text>
+          <text x={PX + (W - 12 - PX) / 2} y={H + 32} class="at" text-anchor="middle">{out.mode === 'plan' ? '주마다 최대 판매 횟수' : '경매장 판매 횟수'}</text>
           <line x1={PX} x2={W - 12} y1={H - PY} y2={H - PY} class="axis" />
           <text x={PX - 6} y={PY + 4} class="yl" text-anchor="end">{won(Math.round(chart.y1 / 1000))}천</text>
           <text x={PX - 6} y={H - PY} class="yl" text-anchor="end">{won(Math.round(chart.y0 / 1000))}천</text>
@@ -137,7 +140,7 @@
           <text x={chart.knee.x} y={chart.knee.y - 10} class="kl" text-anchor="middle">최적화 {out.knee.n}회</text>
         </svg>
         <p class="ef-hint">
-          {#if out.knee.n != null && out.knee.n < out.hi}
+          {#if out.knee.n != null && out.knee.n < (out.best.n ?? out.hi)}
             <b>최적화</b>는 곡선이 가장 크게 꺾이는 곳이에요. 여기서부터는 더 팔아도 아끼는 돈이 얼마 안 돼요.
           {:else}
             판매 횟수를 줄이면 손해가 바로 커져서 최저가 루트가 가장 효율적이에요.
@@ -187,11 +190,11 @@
         <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 상품권은 <b>할인이 큰 것부터</b> 그 달 한도가 남은 주에 쓰고, 5만원권으로 먼저, 5만 원이 안 되는 부분은 3천 원 단위로 충전해요. 권으로 딱 맞지 않는 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 채워요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
         <div class="tbl">
           <table>
-            <thead><tr><th>주</th><th>결제</th><th>충전</th>{#if SHOP.barcode.on}<th>바코드로 받을 캐시</th>{/if}<th>할인 받음</th><th>판매</th><th>낸 현금</th><th>실제로 나감</th></tr></thead>
+            <thead><tr><th>주</th><th>결제</th><th>충전</th>{#if SHOP.barcode.on}<th>바코드로 받을 캐시</th>{/if}<th>할인 받음</th><th>판매</th>{#if out.credit}<th>크레딧</th>{/if}<th>낸 현금</th><th>실제로 나감</th></tr></thead>
             <tbody>
               {#each pick.weeks as w, i (w.w.start)}
                 {#if firstOfMonth(i)}
-                  <tr class="month"><td colspan={SHOP.barcode.on ? 8 : 7}><b>{Number(w.w.month.slice(5))}월 상품권 한도</b> ({i === 0 ? '2번에 넣은 남은 한도' : '각 200,000원 새로'}) — {monthLine(w.w.month)}</td></tr>
+                  <tr class="month"><td colspan={7 + (SHOP.barcode.on ? 1 : 0) + (out.credit ? 1 : 0)}><b>{Number(w.w.month.slice(5))}월 상품권 한도</b> ({i === 0 ? '2번에 넣은 남은 한도' : '각 200,000원 새로'}) — {monthLine(w.w.month)}</td></tr>
                 {/if}
                 <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
                   <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}</td>
@@ -205,8 +208,11 @@
                   {/if}
                   <td class="mono good">{discount(w) > 0 ? won(discount(w)) : '—'}</td>
                   <td class="mono">{w.route.sales}회</td>
+                  {#if out.credit}
+                    <td class="crd">{#if w.credit?.buys.length}{w.credit.buys.map(b => `${b.item.name.replace('프라임 ', '')} ${b.n}`).join(' + ')}{:else if w.credit?.earned}<span class="dim">모으는 중 {won(w.credit.left)}</span>{:else}—{/if}</td>
+                  {/if}
                   <td class="mono">{won(w.route.cost)}</td>
-                  <td class="mono bad">{won(w.route.loss)}</td>
+                  <td class="mono bad">{won(w.loss)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -239,8 +245,20 @@
             <div class="dd">{(cur.route.market / eff.mk).toFixed(2)}억 메소{cur.route.lines.length ? ' · 아이템으로 채우지 않은 금액' : ''}</div>
           </li>
         {/if}
+        {#if cur.credit && (cur.credit.buys.length || cur.credit.earned)}
+          <li>
+            {#if cur.credit.buys.length}
+              <div class="t">크레딧 {won(cur.credit.have)}으로 크레딧샵에서 사서 팔기 → {cur.credit.meso.toFixed(1)}억 메소</div>
+              <div class="chips">{#each cur.credit.buys as b (b.item.id)}<span class="ef-chip">{b.item.name} <b>{b.n}개</b> · {b.item.price}억</span>{/each}</div>
+              <div class="dd">이번에 쌓인 크레딧 {won(cur.credit.earned)}{cur.credit.have > cur.credit.earned ? ` + 남아 있던 ${won(cur.credit.have - cur.credit.earned)}` : ''} · 남는 크레딧 {won(cur.credit.left)}</div>
+            {:else}
+              <div class="t">크레딧 {won(cur.credit.earned)} 쌓임 → 모아 뒀다가 다음에 사요</div>
+              <div class="dd">지금 {won(cur.credit.left)}크레딧. 큐브를 살 만큼 모이면 그 주에 사서 팔아요</div>
+            {/if}
+          </li>
+        {/if}
         <li>
-          <div class="t">메소 {(cur.route.meso + (cur.route.market && eff.mk ? cur.route.market / eff.mk : 0)).toFixed(1)}억 → 엄 시세로 {won(cur.route.back)}원</div>
+          <div class="t">메소 {(cur.route.meso + (cur.route.market && eff.mk ? cur.route.market / eff.mk : 0) + (cur.credit?.meso ?? 0)).toFixed(1)}억 → 엄 시세로 {won(cur.route.back + (cur.credit?.back ?? 0))}원</div>
         </li>
       </ol>
     </section>
@@ -292,11 +310,13 @@
   .flow b { color: var(--color-tx); font-weight: 500; }
   .flow .up { color: var(--color-mint); }
   .dot { margin: 0 6px; color: var(--color-tx3); }
+  .cr { font-size: 12px; color: var(--color-tx3); margin-left: 4px; }
+  .crd { font-size: 12px; color: var(--color-butter); }
+  .crd .dim { color: var(--color-tx3); }
 
   .chart { margin: 0; padding: 12px 14px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid var(--color-line); display: grid; gap: 6px; }
   .chart figcaption { font-size: 12.5px; font-weight: 600; color: var(--color-tx2); }
-  .chart figcaption span { font-weight: 400; font-size: 11px; color: var(--color-tx3); margin-left: 6px; }
-  .chart svg { width: 100%; height: 168px; display: block; }
+  .chart svg { width: 100%; height: 188px; display: block; }
   .axis { stroke: var(--color-line2); stroke-width: 1; }
   .area { fill: color-mix(in oklab, var(--color-lav) 14%, transparent); }
   .line { fill: none; stroke: var(--color-lav); stroke-width: 2; }
@@ -305,6 +325,7 @@
   .m.knee { fill: var(--color-lav); }
   .m.count { fill: var(--color-peach); }
   .yl, .xl { font-family: var(--font-mono); font-size: 10.5px; fill: var(--color-tx3); }
+  .at { font-family: var(--font-sans); font-size: 11px; fill: var(--color-tx3); }
   .kl { font-family: var(--font-sans); font-size: 11px; fill: var(--color-lav); font-weight: 600; }
 
   .sales { display: grid; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid var(--color-line); }
@@ -334,7 +355,7 @@
   table { width: 100%; min-width: 800px; border-collapse: collapse; font-size: 13px; }
   th { font-weight: 500; font-size: 11.5px; color: var(--color-tx3); text-align: right; padding: 8px 10px; background: var(--color-bg2); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
-  td { padding: 7px 10px; border-top: 1px solid var(--color-line); text-align: right; white-space: nowrap; vertical-align: middle; }
+  td { padding: 7px 10px; box-shadow: inset 0 1px 0 var(--color-line); text-align: right; white-space: nowrap; vertical-align: middle; }
   .month td { background: var(--color-bg2); color: var(--color-tx3); font-size: 11.5px; padding: 5px 10px; white-space: normal; text-align: left; }
   .month b { color: var(--color-tx2); font-weight: 600; }
   .wk { cursor: pointer; transition: background .15s; }

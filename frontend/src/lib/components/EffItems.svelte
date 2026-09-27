@@ -231,7 +231,8 @@
   table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13px; }
   th { font-weight: 500; font-size: 11.5px; color: var(--color-tx3); text-align: right; padding: 8px 10px; background: var(--color-bg2); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
-  td { padding: 6px 10px; border-top: 1px solid var(--color-line); text-align: right; white-space: nowrap; }
+  /* 화면 배율(1.2) 때문에 1px 테두리가 칸마다 다르게 반올림돼 끊겨 보인다. 그림자로 그어 칸마다 똑같이 보이게 한다 */
+  td { --sep: inset 0 1px 0 var(--color-line); padding: 6px 10px; box-shadow: var(--sep); text-align: right; white-space: nowrap; }
   td.in { width: 128px; }
   .name { display: inline-flex; align-items: center; gap: 6px; }
   .name small { display: block; font-size: 11px; color: var(--color-tx3); }
@@ -248,10 +249,10 @@
 
   /* 위는 이득, 아래는 손해. 기준인 플가 줄이 경계선이다 */
   tr.up td { background: color-mix(in oklab, var(--color-mint) 7%, transparent); }
-  tr.up td:first-child { box-shadow: inset 3px 0 0 var(--color-mint); }
+  tr.up td:first-child { box-shadow: var(--sep), inset 3px 0 0 var(--color-mint); }
   tr.up .eff { color: var(--color-mint); }
   tr.down td { background: color-mix(in oklab, var(--color-peach) 6%, transparent); }
-  tr.down td:first-child { box-shadow: inset 3px 0 0 var(--color-peach); }
+  tr.down td:first-child { box-shadow: var(--sep), inset 3px 0 0 var(--color-peach); }
   tr.down .eff { color: var(--color-peach); }
   tr.base td { background: color-mix(in oklab, var(--color-lav) 12%, transparent); border-top: 2px solid var(--color-lav); border-bottom: 2px solid var(--color-lav); }
   tr.base td:first-child { box-shadow: inset 3px 0 0 var(--color-lav); font-weight: 600; }

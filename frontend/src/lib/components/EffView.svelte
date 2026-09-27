@@ -7,6 +7,7 @@
   import gsap from 'gsap'
   import EffAmount from './EffAmount.svelte'
   import EffCash from './EffCash.svelte'
+  import EffCredit from './EffCredit.svelte'
   import EffItems from './EffItems.svelte'
   import EffMarket from './EffMarket.svelte'
   import EffResult from './EffResult.svelte'
@@ -46,6 +47,7 @@
   <div class="c4 wide"><EffCash /></div>
   <div class="c4"><EffMarket {tier} {mode} /></div>
   <div class="c12"><EffItems {fee} {used} /></div>
+  <div class="c12"><EffCredit {out} {fee} /></div>
   <div class="c12"><EffResult {out} bind:sel /></div>
   <div class="c12"><EffStyles {out} /></div>
 </div>

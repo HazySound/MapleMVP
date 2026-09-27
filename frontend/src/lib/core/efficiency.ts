@@ -117,6 +117,56 @@ export function fund(c: number, x: FundCtx): Funding {
   return { cost, parts }
 }
 
+// ---- 메이플 크레딧 ----
+
+/** 캐시템을 사면 산 금액의 5%가 메이플 크레딧으로 쌓인다(메이플포인트로 사는 메소마켓 몫은 넣지 않는다) */
+export const CREDIT_RATE = 0.05
+
+/** 크레딧샵 물건. price는 경매장 한 번 판매 가격(억) */
+export interface CreditItem { id: string; name: string; credits: number; price: number; days?: number; custom?: boolean }
+
+/** 크레딧 1개가 돈으로 얼마인지. 크레딧당 가장 많이 받는 물건 기준 */
+export function creditWonPer(items: CreditItem[], fee: number, um: number): number {
+  return Math.max(0, ...items.filter(x => x.price > 0 && x.credits > 0).map(x => x.price * (1 - fee) * um / x.credits))
+}
+
+export interface CreditSpend {
+  /** 이번에 쌓인 것, 쓰기 전 전부(남아 있던 것 포함) */
+  earned: number
+  have: number
+  buys: { item: CreditItem; n: number }[]
+  used: number
+  left: number
+  /** 산 물건을 경매장에 팔아 받는 돈과 메소(억) */
+  back: number
+  meso: number
+  sales: number
+}
+
+/** 가진 크레딧으로 가장 많이 돌려받는 조합. 딱 안 떨어지는 크레딧은 남긴다 */
+export function spendCredits(have: number, earned: number, items: CreditItem[], fee: number, um: number): CreditSpend {
+  const list = items.filter(x => x.price > 0 && x.credits > 0)
+  const none = { earned, have, buys: [], used: 0, left: have, back: 0, meso: 0, sales: 0 }
+  if (!list.length || have <= 0) return none
+  const g = list.reduce((a, x) => gcd(a, Math.round(x.credits)), 0) || 1
+  const T = Math.floor(have / g)
+  const v = new Float64Array(T + 1), how = new Int16Array(T + 1).fill(-1)
+  for (let t = 1; t <= T; t++) {
+    v[t] = v[t - 1]; how[t] = -1
+    list.forEach((x, j) => {
+      const c = Math.round(x.credits) / g
+      if (c <= t && v[t - c] + x.price > v[t]) { v[t] = v[t - c] + x.price; how[t] = j }
+    })
+  }
+  const count = new Map<number, number>()
+  for (let t = T; t > 0;) { const j = how[t]; if (j < 0) t--; else { count.set(j, (count.get(j) ?? 0) + 1); t -= Math.round(list[j].credits) / g } }
+  const buys = [...count].map(([j, n]) => ({ item: list[j], n })).sort((a, b) => b.item.credits - a.item.credits)
+  const used = buys.reduce((a, b) => a + b.n * b.item.credits, 0)
+  const meso = buys.reduce((a, b) => a + b.n * b.item.price, 0) * (1 - fee)
+  return { earned, have, buys, used, left: have - used, back: meso * um, meso, sales: buys.reduce((a, b) => a + b.n, 0) }
+}
+const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a)
+
 /** 팔 수 있는 것. price는 경매장 한 번 판매 가격(억, 묶음이면 묶음 전체). 0이면 계산에서 뺀다 */
 export interface Sellable extends ShopItem { price: number }
 export interface Line { item: Sellable; n: number }
@@ -136,6 +186,10 @@ export interface Route {
   fee: number
   /** 경매장에서 받는 메소(억, 수수료 뺀 것) */
   meso: number
+  /** 캐시템을 사서 쌓이는 메이플 크레딧 */
+  credits: number
+  /** 그 크레딧의 값(원). 조합을 고를 때 쓰는 어림값이고, 실제로 큐브를 사서 판 값은 루트 단계에서 다시 센다 */
+  creditEst: number
 }
 
 export interface SolveIn {
@@ -149,6 +203,8 @@ export interface SolveIn {
   items: Sellable[]
   /** 계획을 따를 때는 결제액을 목표와 똑같이 맞춘다 */
   exact: boolean
+  /** 크레딧 1개의 값(원). 캐시템을 살 때 쌓이는 크레딧만큼 그 아이템이 더 이득이 된다 */
+  creditPer?: number
 }
 
 export interface Solved {
@@ -165,7 +221,9 @@ const MAX_LAYERS = 600
 
 export function solve(o: SolveIn): Solved | null {
   const keep = (1 - o.fee) * o.um
-  const usable = o.items.filter(x => x.price > 0).map(x => ({ x, u: Math.round(x.cash / U), back: x.price * keep }))
+  const cp = o.creditPer ?? 0
+  // back: 경매장에서 돌려받는 돈, val: 거기에 쌓이는 크레딧 값까지 더한 것(조합 고르기용)
+  const usable = o.items.filter(x => x.price > 0).map(x => ({ x, u: Math.round(x.cash / U), back: x.price * keep, val: x.price * keep + x.cash * CREDIT_RATE * cp }))
   const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
   const need = Math.ceil(o.target / U)
   if (need <= 0) return null
@@ -179,15 +237,16 @@ export function solve(o: SolveIn): Solved | null {
   let { A, cost } = run(o.exact)
 
   const finish = (counts: Map<number, number>, market: number, pay: number): Route => {
-    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0
+    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = 0
     const lines: Line[] = []
     for (const [j, n] of counts) {
       back += n * usable[j].back; sales += n; meso += n * usable[j].x.price * (1 - o.fee)
+      credits += n * usable[j].x.cash * CREDIT_RATE
       lines.push({ item: usable[j].x, n })
     }
     lines.sort((a, b) => b.n * b.item.cash - a.n * a.item.cash)
-    const c = cost[pay / U]
-    return { pay, cost: c, back, loss: c - back, sales, lines, market, fee: o.fee, meso }
+    const c = cost[pay / U], creditEst = credits * cp
+    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market, fee: o.fee, meso, credits, creditEst }
   }
 
   // 최저가 루트. 판매 한 번마다 아주 작은 값을 빼서, 남는 돈이 같으면 적게 파는 쪽을 고른다
@@ -200,7 +259,7 @@ export function solve(o: SolveIn): Solved | null {
       for (let j = 0; j < usable.length; j++) {
         const q = usable[j]
         if (q.u > a || v[a - q.u] <= NEG) continue
-        const val = v[a - q.u] + q.back - EPS
+        const val = v[a - q.u] + q.val - EPS
         if (val > v[a]) { v[a] = val; how[a] = j; mkIn[a] = mkIn[a - q.u] }
       }
     }
@@ -241,7 +300,7 @@ export function solve(o: SolveIn): Solved | null {
     for (let a = 1; a <= A; a++) for (let j = 0; j < usable.length; j++) {
       const q = usable[j]
       if (q.u > a || prev[a - q.u] <= NEG) continue
-      const val = prev[a - q.u] + q.back
+      const val = prev[a - q.u] + q.val
       if (val > cur[a]) { cur[a] = val; h[a] = j }
     }
     hows.push(h); consider(cur, k); prev = cur
@@ -315,6 +374,8 @@ export interface Plan {
   /** 수수료를 직접 정했으면 그 값. 아니면 주마다 오를 등급으로 */
   fee: number | null
   exact: boolean
+  /** 크레딧을 쓸지와 크레딧샵 물건. 없으면 크레딧은 계산에 넣지 않는다 */
+  credit?: { items: CreditItem[] } | null
 }
 
 export interface WeekResult {
@@ -323,6 +384,7 @@ export interface WeekResult {
   amount: number
   tier: TierKey | null
   fee: number
+  um: number
   solved: Solved
   /** 이 주에 쓸 수 있던 잔액·한도. 어떤 루트든 이것으로 충전 내역을 만든다 */
   ctx: FundCtx
@@ -347,7 +409,8 @@ export function planAll(p: Plan): WeekResult[] | null {
       barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft, want } : null,
     }
     const fee = p.fee ?? feeOf(w.tier)
-    const solved = solve({ target: w.amount, costOf: c => fund(c, ctx).cost, fee, um: p.um, mk: p.mk, items: p.items, exact: p.exact })
+    const creditPer = p.credit ? creditWonPer(p.credit.items, fee, p.um) : 0
+    const solved = solve({ target: w.amount, costOf: c => fund(c, ctx).cost, fee, um: p.um, mk: p.mk, items: p.items, exact: p.exact, creditPer })
     if (!solved) return null
     const f = fund(solved.best.pay, ctx)
     for (const q of f.parts) {
@@ -355,7 +418,83 @@ export function planAll(p: Plan): WeekResult[] | null {
       if (q.bonus) capLeft -= q.bonus
       if (q.held) balance -= q.cash
     }
-    out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, fee, solved, ctx })
+    out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, fee, um: p.um, solved, ctx })
   }
   return out
+}
+
+// ---- 결론: 루트 셋 ----
+
+/** 한 주에 고른 조합과 그 충전 내역. credit은 그 주에 턴 크레딧, loss는 크레딧까지 실제로 센 값 */
+export interface WeekPick { w: WeekResult; route: Route; funding: Funding; credit: CreditSpend | null; loss: number }
+/** 루트 하나: 주마다 판매 n회까지(null이면 제한 없음) */
+export interface RoutePick {
+  n: number | null
+  weeks: WeekPick[]
+  cost: number
+  back: number
+  loss: number
+  sales: number
+  pay: number
+  /** 크레딧: 큐브를 팔아 받은 돈, 끝에 남는 크레딧, 큐브 판매 횟수(경매장 판매 횟수와 따로 센다) */
+  creditBack: number
+  creditLeft: number
+  creditSales: number
+}
+
+/** keepRest: 끝에 남는 크레딧을 털지 않고 모아 둔다(마지막에도 가장 효율 좋은 물건만 산다) */
+export interface CreditUse { balance: number; items: CreditItem[]; keepRest?: boolean }
+
+/**
+ * 판매 횟수 제한(주마다 n회)으로 루트를 고른다.
+ * 크레딧은 주마다 쌓인 만큼(남아 있던 것 포함) 가장 많이 돌려받게 털고, 남는 건 다음 주로 넘긴다.
+ */
+export function pickAt(weeks: WeekResult[], n: number | null, credit: CreditUse | null = null): RoutePick {
+  let carry = credit?.balance ?? 0
+  // 중간 주에는 크레딧당 가장 많이 받는 물건만 산다. 모자라면 모아 둔다.
+  // 마지막 주에 남은 것으로 가장 많이 받는 조합을 사면, 계획 전체를 한 번에 턴 것과 같다
+  const top = credit ? [...credit.items].filter(x => x.price > 0 && x.credits > 0).sort((a, b) => b.price / b.credits - a.price / a.credits).slice(0, 1) : []
+  const ps: WeekPick[] = weeks.map((w, i) => {
+    const route = n == null ? w.solved.best : w.solved.routeAt(n)
+    let spend: CreditSpend | null = null
+    if (credit) {
+      carry += route.credits
+      spend = spendCredits(carry, route.credits, i === weeks.length - 1 && !credit.keepRest ? credit.items : top, w.fee, w.um)
+      carry = spend.left
+    }
+    return { w, route, funding: fund(route.pay, w.ctx), credit: spend, loss: route.cost - route.back - (spend?.back ?? 0) }
+  })
+  const sum = (f: (p: WeekPick) => number) => ps.reduce((a, p) => a + f(p), 0)
+  const creditBack = sum(p => p.credit?.back ?? 0)
+  return {
+    n, weeks: ps, cost: sum(p => p.route.cost), back: sum(p => p.route.back) + creditBack, loss: sum(p => p.loss),
+    sales: sum(p => p.route.sales), pay: sum(p => p.route.pay),
+    creditBack, creditLeft: carry, creditSales: sum(p => p.credit?.sales ?? 0),
+  }
+}
+
+/**
+ * 최저가·최적화·횟수 정하기 세 루트와 판매 횟수별 곡선.
+ * curve[n] = 주마다 판매 n회까지로 할 때 전체 잃는 돈 (n은 lo..hi)
+ */
+export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null) {
+  const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
+  // 크레딧을 쓰면 조합은 크레딧 어림값으로 골랐어도, 곡선은 큐브를 실제로 살 수 있는 만큼 산 값으로 그린다.
+  // 그래야 그래프와 루트 카드의 숫자가 같다
+  const picks: (RoutePick | null)[] = [null]
+  const curve: number[] = [Infinity]
+  for (let n = 1; n <= hi; n++) {
+    const finite = res.every(w => Number.isFinite(w.solved.lossAt[Math.min(n, w.solved.lossAt.length - 1)]))
+    const p = finite ? { ...pickAt(res, n >= hi ? null : n, credit), n } : null
+    picks.push(p); curve.push(p ? p.loss : Infinity)
+  }
+  let lo = 1
+  while (lo < hi && !Number.isFinite(curve[lo])) lo++
+  // 최저가: 실제로 가장 적게 잃는 횟수. 같으면 적게 파는 쪽
+  let bn = hi
+  for (let k = lo; k <= hi; k++) if (curve[k] < curve[bn] - 0.5) bn = k
+  for (let k = lo; k < bn; k++) if (curve[k] <= curve[bn] + 0.5) { bn = k; break }
+  const kn = Math.min(knee(curve, lo, bn), bn)
+  const n = Math.max(lo, Math.min(salesN, hi))
+  return { curve, lo, hi, best: picks[bn]!, knee: picks[kn]!, count: picks[n]! }
 }

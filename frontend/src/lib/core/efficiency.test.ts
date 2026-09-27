@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { fund, knee, minPrice, planAll, rateOf, solve, type FundCtx, type Sellable } from './efficiency'
+import { creditWonPer, fund, knee, minPrice, pickAt, planAll, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
+
+const near = (a: number, b: number, eps = 0.5) => expect(Math.abs(a - b)).toBeLessThanOrEqual(eps)
 
 const nx = { key: 'nexon', name: '넥슨카드', rate: 0.9 }
 const ctx = (over: Partial<FundCtx> = {}): FundCtx => ({
@@ -107,5 +109,128 @@ describe('주별 상품권 한도', () => {
     expect(cash(1)).toEqual([['넥슨카드', 200_000], ['컬쳐랜드', 50_000]])
     expect(cash(2)).toEqual([['컬쳐랜드', 150_000], ['일반 충전', 100_000]])
     for (const w of res) expect(w.solved.best.pay).toBe(250_000)
+  })
+})
+
+describe('모든 조합을 다 따져 본 답과 같다', () => {
+  // 작은 문제를 무작위로 만들어, 살 수 있는 개수를 전부 대입해 본 답과 맞춰 본다
+  let seed = 7
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31
+  const pickInt = (a: number, b: number) => a + Math.floor(rnd() * (b - a + 1))
+
+  it('최저가 손실과 판매 횟수별 손실', () => {
+    for (let t = 0; t < 250; t++) {
+      const n = pickInt(1, 3)
+      const items: Sellable[] = Array.from({ length: n }, (_, i) => {
+        const cash = pickInt(10, 90) * 100
+        return { id: `i${i}`, name: `i${i}`, set: 1, cash, price: Math.round(cash / 5900 * 3 * (0.8 + rnd() * 0.4) * 100) / 100 }
+      })
+      const mk = rnd() < 0.2 ? 0 : pickInt(2000, 2600)
+      const rate = [1, 0.95, 0.9][pickInt(0, 2)]
+      const target = pickInt(5, 250) * 100
+      const exact = rnd() < 0.5
+      const o = { target, costOf: (c: number) => c * rate, fee: 0.03, um: 1500, mk, items, exact }
+      const r = solve(o)
+
+      // 다 대입: 아이템 개수 조합 + 남는 금액은 메소마켓(있으면 1회)
+      const keep = 0.97 * 1500, mk1 = mk ? 1500 / mk : 0
+      const top = Math.ceil(target / 100) * 100 + Math.max(...items.map(x => x.cash))
+      let bySales = new Map<number, number>()
+      let bestLoss = Infinity
+      let strict = exact
+      const walk = (j: number, cash: number, back: number, sales: number) => {
+        if (j === items.length) {
+          const cands: [number, number, number][] = []
+          if (cash >= target && (!strict || cash === Math.ceil(target / 100) * 100)) cands.push([cash, back, sales])
+          if (mk1 && cash < target) { const pay = Math.ceil(target / 100) * 100; cands.push([pay, back + (pay - cash) * mk1, sales + 1]) }
+          for (const [pay, b, s] of cands) {
+            const loss = pay * rate - b
+            bestLoss = Math.min(bestLoss, loss)
+            bySales.set(s, Math.min(bySales.get(s) ?? Infinity, loss))
+          }
+          return
+        }
+        for (let k = 0; cash + k * items[j].cash <= top; k++) walk(j + 1, cash + k * items[j].cash, back + k * items[j].price * keep, sales + k)
+      }
+      walk(0, 0, 0, 0)
+      // 계획처럼 딱 맞춰야 하는데 안 되면 앱은 넘겨 사는 쪽으로 물러선다. 정답도 똑같이 다시 구한다
+      if (!Number.isFinite(bestLoss) && strict) { strict = false; bySales = new Map(); walk(0, 0, 0, 0) }
+      if (!Number.isFinite(bestLoss)) { expect(r).toBeNull(); continue }
+      expect(r).not.toBeNull()
+      if (!r) continue
+      expect(r.best.loss).toBeCloseTo(bestLoss, 0)
+      // k회 이하에서 가장 적게 잃는 값
+      let run = Infinity
+      for (let k = 0; k < r.lossAt.length; k++) {
+        run = Math.min(run, bySales.get(k) ?? Infinity)
+        if (Number.isFinite(run)) expect(r.lossAt[k]).toBeCloseTo(run, 0)
+        const route = r.routeAt(k)
+        if (Number.isFinite(run) && k < r.lossAt.length - 1) {
+          expect(route.sales).toBeLessThanOrEqual(k)
+          expect(route.loss).toBeCloseTo(run, 0)
+        }
+      }
+    }
+  })
+})
+
+describe('메이플 크레딧', () => {
+  const prime: CreditItem = { id: 'prime', name: '프라임 큐브', credits: 10_000, price: 6, days: 30 }
+  const add: CreditItem = { id: 'primeadd', name: '프라임 에디셔널 큐브', credits: 20_000, price: 16, days: 30 }
+
+  it('가진 크레딧으로 가장 많이 받는 조합, 딱 안 떨어지면 남긴다', () => {
+    const a = spendCredits(50_000, 50_000, [prime, add], 0.03, 1500)
+    expect(a.buys.map(b => [b.item.id, b.n])).toEqual([['primeadd', 2], ['prime', 1]])
+    expect(a.left).toBe(0)
+    near(a.back, (2 * 16 + 6) * 0.97 * 1500)
+    const b = spendCredits(35_000, 35_000, [prime, add], 0.03, 1500)
+    expect(b.buys.map(x => [x.item.id, x.n])).toEqual([['primeadd', 1], ['prime', 1]])
+    expect(b.left).toBe(5_000)
+    expect(spendCredits(9_000, 9_000, [prime, add], 0.03, 1500).buys).toEqual([])
+  })
+
+  it('크레딧 1개의 값은 크레딧당 가장 많이 받는 물건 기준', () => {
+    near(creditWonPer([prime, add], 0.03, 1500), 16 * 0.97 * 1500 / 20_000, 1e-9)
+  })
+
+  it('크레딧이 쌓이면 메소마켓보다 조금 못한 캐시템도 사는 게 낫다', () => {
+    const scroll: Sellable = { id: 'potential', name: '잠재옵션 전승 스크롤', set: 1, cash: 99_000, price: 45 }
+    const base = { target: 99_000, costOf: (c: number) => c, fee: 0.03, um: 1500, mk: 2250, items: [scroll], exact: true }
+    expect(solve(base)!.best.lines).toEqual([])
+    const withCredit = solve({ ...base, creditPer: creditWonPer([prime, add], 0.03, 1500) })!.best
+    expect(withCredit.lines).toEqual([{ item: scroll, n: 1 }])
+    expect(withCredit.credits).toBe(4_950)
+  })
+
+  it('계획: 중간 주에는 효율 좋은 큐브만, 모자라면 모아 뒀다가 마지막에 턴다', () => {
+    const res = planAll({
+      weeks: [
+        { start: '2026-10-01', amount: 250_000, tier: 'gold', month: '2026-10' },
+        { start: '2026-10-08', amount: 250_000, tier: 'gold', month: '2026-10' },
+      ],
+      balance: 0, cards: [], leftNow: {}, thisMonth: '2026-10',
+      barcode: { on: false, bonus: 0.05, cap: 0 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+      um: 1500, mk: 2250, items: [karma], fee: 0.03, exact: true, credit: { items: [prime, add] },
+    })!
+    const p = pickAt(res, null, { balance: 0, items: [prime, add] })
+    // 한 주에 플가 42개 = 12,390크레딧: 첫 주에는 에디(2만)를 못 사서 모아 두고, 둘째 주에 에디 1개
+    expect(p.weeks[0].credit!.buys).toEqual([])
+    expect(p.weeks[1].credit!.buys.map(b => [b.item.id, b.n])).toEqual([['primeadd', 1]])
+    expect(p.creditLeft).toBe(2 * 42 * 5900 * 0.05 - 20_000)
+    near(p.creditBack, 16 * 0.97 * 1500)
+    near(p.loss, p.cost - p.back)
+  })
+
+  it('남아 있던 크레딧도 같이 턴다', () => {
+    const res = planAll({
+      weeks: [{ start: '2026-10-01', amount: 5_900, tier: 'gold', month: '2026-10' }],
+      balance: 0, cards: [], leftNow: {}, thisMonth: '2026-10',
+      barcode: { on: false, bonus: 0.05, cap: 0 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+      um: 1500, mk: 2250, items: [karma], fee: 0.03, exact: true, credit: { items: [prime, add] },
+    })!
+    const p = pickAt(res, null, { balance: 19_800, items: [prime, add] })
+    // 19,800 + 295 = 20,095 → 에디 1개
+    expect(p.weeks[0].credit!.buys.map(b => [b.item.id, b.n])).toEqual([['primeadd', 1]])
+    near(p.creditLeft, 95)
   })
 })

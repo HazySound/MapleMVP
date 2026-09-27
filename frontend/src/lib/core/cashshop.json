@@ -1,6 +1,10 @@
 {
   "updated": "2026-09-27",
   "barcode": { "on": false, "bonus": 0.05, "cap": 500000, "until": "" },
+  "credit": [
+    { "id": "prime", "name": "프라임 큐브", "credits": 10000, "days": 30 },
+    { "id": "primeadd", "name": "프라임 에디셔널 큐브", "credits": 20000, "days": 30 }
+  ],
   "items": [
     { "id": "karma", "name": "플래티넘 카르마의 가위", "set": 1, "cash": 5900 },
     { "id": "potential", "name": "잠재옵션 전승 스크롤", "set": 1, "cash": 99000, "days": 30 },
