@@ -2,7 +2,7 @@
   /**
    * 결론. 루트 셋 중 하나를 골라 가장 크게 '실제로 나가는 돈', 그 아래 따라 할 순서.
    *   최저가 루트: 가장 적게 잃는 조합 (판매 횟수는 따지지 않는다)
-   *   최적화 루트: 판매 횟수 대비 가장 효율적인 지점 (core/efficiency의 knee)
+   *   최적화 루트: 판매를 한 번 줄일 때 더 내는 돈이 '판매 1회 수고비' 이하인 한도에서 가장 적게 파는 조합
    *   횟수 정하기: 주마다 판매 n회까지
    * 계획을 따르면 주별 표가 붙고, 줄을 누르면 순서가 그 주로 바뀐다.
    */
@@ -103,7 +103,7 @@
       <button class:on={eff.want === 'knee'} onclick={() => choose('knee')}>
         <span class="rn">최적화 루트 <em>추천</em></span>
         <b class="mono">{won(out.knee.loss)}원</b>
-        <span class="rs">판매 {out.knee.sales}회{out.knee.sales < out.best.sales ? ` · 최저가보다 ${out.best.sales - out.knee.sales}회 적게, +${won(out.knee.loss - out.best.loss)}원` : ' · 최저가와 같아요'}</span>
+        <span class="rs">판매 {out.knee.sales}회{out.knee.sales < out.best.sales ? ` · 최저가보다 ${out.best.sales - out.knee.sales}회 적게, +${won(out.knee.loss - out.best.loss)}원` : ' · 최저가가 가장 효율적이에요'}</span>
       </button>
       <button class:on={eff.want === 'count'} onclick={() => choose('count')}>
         <span class="rn">횟수 정하기</span>
@@ -139,13 +139,16 @@
           <text x={W - 12} y={H + 12} class="xl" text-anchor="end">{out.hi}회</text>
           <text x={chart.knee.x} y={chart.knee.y - 10} class="kl" text-anchor="middle">최적화 {out.knee.n}회</text>
         </svg>
-        <p class="ef-hint">
-          {#if out.knee.n != null && out.knee.n < (out.best.n ?? out.hi)}
-            <b>최적화</b>는 곡선이 가장 크게 꺾이는 곳이에요. 여기서부터는 더 팔아도 아끼는 돈이 얼마 안 돼요.
+        <div class="ef-hint cost">
+          <span><b>최적화</b>는 판매를 한 번 줄일 때 더 내는 돈이</span>
+          <span class="box"><NumBox id="eff-sale-cost" label="판매 1회 수고비" size="sm" unit="원" placeholder="1,000" value={eff.saleCost} set={v => { eff.saleCost = v; saveEff() }} /></span>
+          <span>이하일 때만 줄여요.</span>
+          {#if out.knee.sales < out.best.sales}
+            <span>지금은 한 번 줄일 때 평균 <b>{won((out.knee.loss - out.best.loss) / (out.best.sales - out.knee.sales))}원</b>이라 {out.best.sales - out.knee.sales}회 줄였어요.</span>
           {:else}
-            판매 횟수를 줄이면 손해가 바로 커져서 최저가 루트가 가장 효율적이에요.
+            <span>판매를 줄이면 한 번에 이보다 더 들어서, 최저가 루트가 가장 효율적이에요.</span>
           {/if}
-        </p>
+        </div>
       </figure>
     {/if}
 
@@ -323,6 +326,8 @@
   .m { stroke: var(--color-bg2); stroke-width: 2; }
   .m.best { fill: var(--color-mint); }
   .m.knee { fill: var(--color-lav); }
+  .cost { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .cost .box { width: 110px; }
   .m.count { fill: var(--color-peach); }
   .yl, .xl { font-family: var(--font-mono); font-size: 10.5px; fill: var(--color-tx3); }
   .at { font-family: var(--font-sans); font-size: 11px; fill: var(--color-tx3); }

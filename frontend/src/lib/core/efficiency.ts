@@ -332,21 +332,18 @@ export function solve(o: SolveIn): Solved | null {
 }
 
 /**
- * 판매 횟수 대비 가장 효율적인 지점.
+ * 최적화 지점: 판매를 한 번 줄일 때 더 내는 돈이 판매 1회 수고비(perSale) 이하일 때만 줄인다.
+ * 곧 '잃는 돈 + 판매 횟수 × 수고비'가 가장 작은 곳이다. 같으면 적게 파는 쪽.
  *
- * 횟수가 늘수록 잃는 돈은 줄지만, 어느 지점부터는 더 팔아도 아끼는 돈이 얼마 안 된다.
- * 양 끝(가장 적게 파는 곳, 최저가 루트)을 이은 직선에서 곡선이 가장 멀리 떨어진 곳을 고른다.
- * 기준선 숫자를 따로 정하지 않고 곡선 모양만 본다. 곡선이 곧으면 꺾이는 곳이 없어 최저가를 돌려준다.
+ * 전에는 곡선 모양(가장 크게 꺾이는 곳)만 봤다. 그러면 한 번 덜 팔려고 몇천 원씩 더 내는 쪽을
+ * 추천하게 된다. 돈으로 따져야 한다.
  */
-export function knee(loss: number[], lo: number, hi: number): number {
-  if (hi <= lo) return hi
-  const y0 = loss[lo], y1 = loss[hi]
-  if (!(y0 > y1)) return lo
-  let pick = hi, far = 1e-9
-  for (let k = lo + 1; k < hi; k++) {
-    const x = (k - lo) / (hi - lo), y = (loss[k] - y1) / (y0 - y1)
-    const d = 1 - x - y
-    if (d > far) { far = d; pick = k }
+export function balancePoint(loss: number[], sales: number[], lo: number, hi: number, perSale: number): number {
+  let pick = hi, score = Infinity
+  for (let k = lo; k <= hi; k++) {
+    if (!Number.isFinite(loss[k])) continue
+    const v = loss[k] + sales[k] * perSale
+    if (v < score - 0.5) { score = v; pick = k }
   }
   return pick
 }
@@ -477,7 +474,8 @@ export function pickAt(weeks: WeekResult[], n: number | null, credit: CreditUse 
  * 최저가·최적화·횟수 정하기 세 루트와 판매 횟수별 곡선.
  * curve[n] = 주마다 판매 n회까지로 할 때 전체 잃는 돈 (n은 lo..hi)
  */
-export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null) {
+/** perSale: 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
+export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 1000) {
   const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
   // 크레딧을 쓰면 조합은 크레딧 어림값으로 골랐어도, 곡선은 큐브를 실제로 살 수 있는 만큼 산 값으로 그린다.
   // 그래야 그래프와 루트 카드의 숫자가 같다
@@ -494,7 +492,7 @@ export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | 
   let bn = hi
   for (let k = lo; k <= hi; k++) if (curve[k] < curve[bn] - 0.5) bn = k
   for (let k = lo; k < bn; k++) if (curve[k] <= curve[bn] + 0.5) { bn = k; break }
-  const kn = Math.min(knee(curve, lo, bn), bn)
+  const kn = balancePoint(curve, picks.map(p => p?.sales ?? 0), lo, bn, perSale)
   const n = Math.max(lo, Math.min(salesN, hi))
   return { curve, lo, hi, best: picks[bn]!, knee: picks[kn]!, count: picks[n]! }
 }

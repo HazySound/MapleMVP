@@ -57,6 +57,8 @@ interface Saved {
   creditCustom: Omit<CreditItem, 'price'>[]
   /** 끝에 남는 크레딧을 털지 않고 모아 둘지 */
   creditKeep: boolean
+  /** 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
+  saleCost: number
 }
 
 function fresh(): Saved {
@@ -66,7 +68,7 @@ function fresh(): Saved {
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', custom: [], hideLoss: false,
-    creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false,
+    creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, saleCost: 1000,
   }
 }
 
@@ -243,7 +245,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   if (!res) return null
 
   // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
-  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit)
+  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.saleCost)
 
   const alt = (items: Sellable[]): Summary | null => {
     if (!items.some(x => x.price > 0) && !eff.mk) return null

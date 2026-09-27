@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { creditWonPer, fund, knee, minPrice, pickAt, planAll, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
+import { balancePoint, creditWonPer, fund, minPrice, pickAt, planAll, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
 
 const near = (a: number, b: number, eps = 0.5) => expect(Math.abs(a - b)).toBeLessThanOrEqual(eps)
 
@@ -76,10 +76,17 @@ describe('조합', () => {
     expect(r.lossAt.at(-1)).toBeCloseTo(r.best.loss)
   })
 
-  it('최적화 지점: 곡선이 꺾이는 곳, 곧으면 최저가', () => {
-    expect(knee([Infinity, 100, 40, 30, 25, 22], 1, 5)).toBe(2)
-    expect(knee([0, 50, 40, 30, 20], 1, 4)).toBe(4)
-    expect(knee([0, 10, 10, 10], 1, 3)).toBe(1)
+  it('최적화 지점: 한 번 덜 팔 때 수고비보다 더 들면 줄이지 않는다', () => {
+    const idx = [0, 1, 2, 3, 4, 5, 6, 7]
+    // 한 번 줄일 때마다 5~6천 원씩 더 든다 → 수고비 1,000원이면 최저가(7회) 그대로
+    expect(balancePoint([Infinity, 68_000, 41_504, 36_000, 30_000, 24_000, 19_000, 15_222], idx, 1, 7, 1000)).toBe(7)
+    // 40회를 10회로 줄이는 데 2만 원(한 번에 약 670원) → 수고비 1,000원이면 10회
+    const sales = [0, 10, 20, 30, 40], loss = [Infinity, 50_000, 43_000, 36_500, 30_000]
+    expect(balancePoint(loss, sales, 1, 4, 1000)).toBe(1)
+    // 수고비 0이면 최저가
+    expect(balancePoint(loss, sales, 1, 4, 0)).toBe(4)
+    // 잃는 돈이 같으면 적게 파는 쪽
+    expect(balancePoint([Infinity, 10, 10, 10], [0, 1, 2, 3], 1, 3, 0)).toBe(1)
   })
 
   it('계획이 없으면 조금 넘겨 사는 게 더 남을 때 그렇게 한다', () => {
