@@ -11,7 +11,7 @@
    */
   import NumBox from './NumBox.svelte'
   import { ageOf, eff, saveEff, shopItems, touch } from '../eff.svelte'
-  import { PG_ID, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
+  import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
   import { won } from '../format'
   import { tip } from '../tip'
 
@@ -55,7 +55,7 @@
   <div class="wrap">
     <div class="pg">
       <span class="nm">플래티넘 카르마의 가위</span>
-      <span class="ef-hint">{won(pgItem.cash)}캐시 · 기간 없음 · 경매장 1개 가격</span>
+      <span class="ef-hint">{won(pgItem.cash)}캐시 · 무기한 · 경매장 1개 가격</span>
       <NumBox id="eff-pg" label="플가 경매장 가격(억)" size="lg" decimal unit="억" placeholder="예: 3.0" value={pg}
         set={v => setPrice(PG_ID, v)} onblur={resort} />
       <span class="ef-hint">
@@ -87,7 +87,9 @@
                   <span class="name">
                     {itemLabel(x)}
                     {#if x.id === PG_ID}<em class="tag pgt">기준</em>{/if}
-                    {#if x.timed}<em class="tag" use:tip={'받은 뒤 쓸 수 있는 기간이 있어 오래 들고 기다리기 어려워요'}>기간제</em>{/if}
+                    <em class="tag" class:short={isShort(x)} class:forever={!x.days}
+                      use:tip={x.days ? `받은 뒤 ${x.days}일 안에 써야 해요. ${isShort(x) ? '오래 들고 기다리기 어려워요' : '조금은 기다려 볼 수 있어요'}` : '기간이 없어서 값이 오를 때까지 들고 있을 수 있어요'}>{daysLabel(x)}</em>
+                    {#if x.until}<em class="tag" use:tip={`캐시샵 판매는 ${Number(x.until.slice(5, 7))}월 ${Number(x.until.slice(8))}일까지`}>~{Number(x.until.slice(5, 7))}/{Number(x.until.slice(8))}</em>{/if}
                     {#if used.has(x.id)}<em class="buy">구매</em>{/if}
                   </span>
                 </td>
@@ -151,6 +153,8 @@
   .name small { display: block; font-size: 11px; color: var(--color-tx3); }
   .mkn { display: grid; gap: 0; }
   .tag { font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 6px; background: var(--color-panel3); color: var(--color-tx3); cursor: default; }
+  .tag.short { background: color-mix(in oklab, var(--color-sky) 20%, transparent); color: var(--color-sky); }
+  .tag.forever { background: color-mix(in oklab, var(--color-mint) 16%, transparent); color: var(--color-mint); }
   .tag.pgt { background: color-mix(in oklab, var(--color-lav) 25%, transparent); color: var(--color-lav); }
   .buy { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 6px; background: var(--color-mint); color: var(--color-on-accent); }
   .min { color: var(--color-tx); }

@@ -21,8 +21,17 @@ export const SMALL = 3_000
 /** 계산 단위. 캐시템 값이 모두 100원 단위다 */
 const U = 100
 
-/** timed: 받은 뒤 쓸 수 있는 기간이 있어 오래 들고 버틸 수 없는 아이템 */
-export interface ShopItem { id: string; name: string; set: number; cash: number; bundle?: boolean; until?: string; timed?: boolean }
+/**
+ * 캐시샵 아이템.
+ * days: 받은 뒤 써야 하는 기간(일). 없으면 무기한. 기간이 짧으면 값이 오를 때까지 들고 버틸 수 없다.
+ * until: 캐시샵 판매가 끝나는 날. 지나면 살 수 없어 목록에서 뺀다.
+ */
+export interface ShopItem { id: string; name: string; set: number; cash: number; bundle?: boolean; until?: string; days?: number }
+
+/** 7일 안에 써야 하는 아이템. 오래 들고 기다릴 수 없어 빨리 팔아야 한다 */
+export const isShort = (x: Pick<ShopItem, 'days'>) => !!x.days && x.days <= 7
+/** '7일', '무기한' */
+export const daysLabel = (x: Pick<ShopItem, 'days'>) => x.days ? `${x.days}일` : '무기한'
 export interface BarcodeEvent { on: boolean; bonus: number; cap: number; until?: string }
 
 /** '로얄스타일 쿠폰(45개)'. 묶음이 여럿인 아이템은 1개짜리도 개수를 붙여 구분한다 */

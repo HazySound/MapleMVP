@@ -11,6 +11,7 @@
   import { planner } from '../plan.svelte'
   import { SHOP, eff, saveEff, type EffOut, type Pick, type Want, type WeekPick } from '../eff.svelte'
   import { PG_ID, countLabel, itemLabel, type Part } from '../core/efficiency'
+  import { eul, eun } from '../format'
   import { won } from '../format'
 
   let { out, sel = $bindable(0) }: { out: EffOut | null; sel?: number } = $props()
@@ -56,14 +57,20 @@
     return { line, area, X, Y, y0, y1, best: dot(out.hi), knee: dot(out.knee.n ?? out.hi), count: dot(out.count.n ?? out.hi) }
   })
 
-  // 낱개로 여러 번 파는 싼 아이템(플가, 원더베리 1개)이 섞이면 주 초반·월초 시세 경고
+  // 싼 낱개(1만 원 미만)를 여러 번 파는 루트면 주 초반·월초 시세 경고. 보통 플가·원더베리가 이렇게 된다
   const cheapSingles = $derived.by(() => {
     if (!pick) return [] as string[]
     const m = new Map<string, number>()
-    for (const w of pick.weeks) for (const l of w.route.lines) if (l.item.id === PG_ID || l.item.id === 'wonder1') m.set(itemLabel(l.item), (m.get(itemLabel(l.item)) ?? 0) + l.n)
+    for (const w of pick.weeks) for (const l of w.route.lines) if (l.item.set === 1 && l.item.cash < 10_000) m.set(itemLabel(l.item), (m.get(itemLabel(l.item)) ?? 0) + l.n)
     return [...m].filter(([, n]) => n >= 2).map(([k, n]) => `${k} ${n}개`)
   })
-  const timedIn = $derived(pick ? [...new Set(pick.weeks.flatMap(w => w.route.lines.filter(l => l.item.timed).map(l => itemLabel(l.item))))] : [])
+  // 기간 안에 써야 하는 아이템. 짧은 것부터
+  const timedIn = $derived.by(() => {
+    if (!pick) return [] as string[]
+    const m = new Map<string, number>()
+    for (const w of pick.weeks) for (const l of w.route.lines) if (l.item.days) m.set(itemLabel(l.item), l.item.days)
+    return [...m].sort((a, b) => a[1] - b[1]).map(([k, d]) => `${k}(${d}일)`)
+  })
 
   const cardDetail = (q: Part) => q.card ? [q.big ? `5만원권 ${q.big}장` : '', q.small ? `3천 원 단위 ${won(q.small)}` : ''].filter(Boolean).join(' + ') : ''
   const discount = (w: WeekPick) => w.funding.parts.filter(q => !q.held).reduce((a, q) => a + q.cash - q.won, 0)
@@ -159,13 +166,13 @@
     {#if cheapSingles.length}
       <div class="caution">
         <i aria-hidden="true">!</i>
-        <span><b>{cheapSingles.join(', ')}를 낱개로 파는 루트예요.</b> 같은 걸 파는 사람이 많아서, 엠작이 몰리는 주 초반(목요일 갱신 직후)과 월초에는 시세가 평소보다 많이 떨어질 수 있어요. 넣은 가격보다 싸게 팔리면 실제로 나가는 돈이 늘어나요.</span>
+        <span><b>{cheapSingles.join(', ')}{eul(cheapSingles.at(-1)!)} 낱개로 파는 루트예요.</b> 같은 걸 파는 사람이 많아서, 엠작이 몰리는 주 초반(목요일 갱신 직후)과 월초에는 시세가 평소보다 많이 떨어질 수 있어요. 넣은 가격보다 싸게 팔리면 실제로 나가는 돈이 늘어나요.</span>
       </div>
     {/if}
     {#if timedIn.length}
       <div class="caution soft">
         <i aria-hidden="true">i</i>
-        <span><b>{timedIn.join(', ')}는 기간제예요.</b> 받은 뒤 쓸 수 있는 기간이 있어서, 값이 오를 때까지 오래 들고 기다리기 어려워요. 기간 안에 다 팔 수 있는 만큼만 사세요.</span>
+        <span><b>{timedIn.join(', ')}{eun(timedIn.at(-1)!)} 받은 뒤 그 기간 안에 써야 해요.</b> 값이 오를 때까지 오래 들고 기다리기 어려우니, 기간 안에 다 팔 수 있는 만큼만 사세요.</span>
       </div>
     {/if}
 

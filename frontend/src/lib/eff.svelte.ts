@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, fund, knee, planAll, type BarcodeEvent, type Funding, type Route, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, fund, isShort, knee, planAll, type BarcodeEvent, type Funding, type Route, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
 export const SHOP = shop as { updated: string; barcode: BarcodeEvent; items: ShopItem[] }
@@ -101,8 +101,8 @@ export const shopItems = () => SHOP.items.filter(x => !x.until || x.until >= new
 
 export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0 }))
 
-/** 한 번에 큰 금액을 채우는 아이템. 사는 사람이 적어 오래 걸릴 수 있다. 기간제는 오래 들고 있을 수 없어 뺀다 */
-export const isBig = (x: ShopItem) => x.cash >= 40_000 && !x.timed
+/** 한 번에 큰 금액을 채우는 아이템. 사는 사람이 적어 오래 걸릴 수 있으니, 들고 기다릴 수 있는 것(30일 이상·무기한)만 */
+export const isBig = (x: ShopItem) => x.cash >= 40_000 && (!x.days || x.days >= 30)
 
 /** 지금 13주 합계로 이 금액을 결제하면 오를 등급 */
 export function tierAfter(d: State, amount: number): TierKey | null {
@@ -141,7 +141,9 @@ export interface EffOut {
   sel: Pick
   pgOnly: Summary | null
   mkOnly: Summary | null
-  timedOnly: Summary | null
+  /** 성향별: 무기한 아이템만, 7일 아이템만, 비싼 아이템만 */
+  waitOnly: Summary | null
+  fastOnly: Summary | null
   bigOnly: Summary | null
 }
 
@@ -196,13 +198,14 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     return r ? { loss: r.reduce((a, w) => a + w.solved.best.loss, 0), sales: r.reduce((a, w) => a + w.solved.best.sales, 0) } : null
   }
   const priced = all.filter(x => x.price > 0)
-  const timed = priced.filter(x => x.timed), big = priced.filter(isBig)
+  const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
   return {
     mode, target: weeks.reduce((a, w) => a + w.amount, 0), weeks: res, curve, lo, hi,
     best, knee: kp, count: cp, sel: eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best,
     pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID)) : null,
     mkOnly: eff.mk > 0 ? alt([]) : null,
-    timedOnly: timed.length ? alt(timed) : null,
+    waitOnly: wait.length ? alt(wait) : null,
+    fastOnly: fast.length ? alt(fast) : null,
     bigOnly: big.length ? alt(big) : null,
   }
 }
