@@ -50,7 +50,9 @@ function checkPick(p: RoutePick, res: WeekResult[], c: Plan) {
   for (const { w, route, funding } of p.weeks) {
     const target = Math.ceil(w.amount / 100) * 100
     expect(route.pay).toBeGreaterThanOrEqual(target)
-    if (c.exact && c.mk > 0) expect(route.pay).toBe(target)
+    // 계획이면 계획 금액 그대로. 메포가 1,000원 단위라 딱 못 맞추면 1,000원 안쪽으로만 넘긴다
+    if (c.exact && c.mk > 0) expect(route.pay).toBeLessThan(target + 1000)
+    expect(route.market % 1000).toBe(0)
     // 충전: 합이 결제액, 상품권은 5만원권 + 3천 원 단위, 그 주 한도 안
     near(funding.parts.reduce((a, q) => a + q.cash, 0), route.pay)
     for (const q of funding.parts) {
@@ -220,8 +222,8 @@ describe('시세·아이템', () => {
     const x = run({ weeks: once(250_000), exact: true, items: sell({ karma: 3.1 }) })
     const l = x.r.best.weeks[0].route
     expect(l.lines.map(v => v.item.id)).toEqual([PG_ID])
-    expect(l.lines[0].n).toBe(Math.floor(250_000 / 5900))
-    expect(l.market).toBe(250_000 - l.lines[0].n * 5900)
+    expect(l.market % 1000).toBe(0)
+    expect(l.pay).toBe(l.lines[0].n * 5900 + l.market)
   })
 
   it('메소마켓 시세를 비우면 끝자리를 못 맞춰 조금 넘겨 산다', () => {
@@ -288,9 +290,9 @@ describe('메이플 크레딧까지 넣었을 때', () => {
     const res = planAll(p)!
     const r = routesOf(res, c.salesN ?? 10, { balance, items })
     for (const pick of [r.best, r.knee, r.count]) {
-      // 쌓인 크레딧 = 산 캐시템 금액의 5%, 쓴 것 + 남은 것 = 남아 있던 것 + 쌓인 것
+      // 쌓인 크레딧 = 캐시샵에서 쓴 캐시(캐시템 + 메이플포인트)의 5%, 쓴 것 + 남은 것 = 남아 있던 것 + 쌓인 것
       const earned = pick.weeks.reduce((a, w) => a + w.credit!.earned, 0)
-      near(earned, pick.weeks.reduce((a, w) => a + w.route.lines.reduce((s, l) => s + l.n * l.item.cash, 0) * 0.05, 0), 1e-6)
+      near(earned, pick.weeks.reduce((a, w) => a + w.route.pay * 0.05, 0), 1e-6)
       const used = pick.weeks.reduce((a, w) => a + w.credit!.used, 0)
       near(used + pick.creditLeft, balance + earned, 1e-6)
       expect(pick.creditLeft).toBeGreaterThanOrEqual(0)

@@ -56,12 +56,24 @@ describe('조합', () => {
     expect(minPrice(3, 99_000)).toBeCloseTo(50.339, 2)
   })
 
-  it('가장 많이 남게: 플가로 채우고 끝자리는 메소마켓', () => {
+  it('계획: 계획 금액에 딱 맞는 조합 중에서 고른다(메포는 1,000원 단위)', () => {
+    // 99,000원에 딱 맞는 건 전승 1장, 플가 10개 + 메포 4만, 메포 9.9만뿐. 플가 16개 + 메포 4,600원은 메포 단위가 안 맞는다
     const r = solve({ ...base, target: 99_000, items: [karma, potential] })!
-    expect(r.best.lines).toEqual([{ item: karma, n: 16 }])
-    expect(r.best.market).toBe(4_600)
-    expect(r.best.sales).toBe(17)
-    expect(r.best.back).toBeCloseTo(16 * 3 * 0.97 * 1500 + 4600 / 2300 * 1500)
+    expect(r.best.pay).toBe(99_000)
+    expect(r.best.lines).toEqual([{ item: potential, n: 1 }])
+    expect(r.best.market % 1000).toBe(0)
+  })
+
+  it('금액 직접: 조금 넘겨 사는 게 더 남으면 그렇게 한다', () => {
+    const r = solve({ ...base, target: 99_000, items: [karma, potential], exact: false })!
+    expect(r.best.lines).toEqual([{ item: karma, n: 17 }])
+    expect(r.best.pay).toBe(100_300)
+  })
+
+  it('메포로 끝자리를 채울 때는 1,000원 단위로 올려 산다', () => {
+    const r = solve({ ...base, target: 99_000, items: [karma], exact: false })!
+    expect(r.best.market % 1000).toBe(0)
+    expect(r.best.pay).toBe(r.best.lines.reduce((a, l) => a + l.n * l.item.cash, 0) + r.best.market)
   })
 
   it('판매 1회로 정하면 전승 스크롤 한 장이 메소마켓보다 낫다', () => {
@@ -69,7 +81,7 @@ describe('조합', () => {
     const one = r.routeAt(1)
     expect(one.lines).toEqual([{ item: potential, n: 1 }])
     expect(one.sales).toBe(1)
-    expect(one.loss).toBeGreaterThan(r.best.loss)
+    expect(one.loss).toBeGreaterThanOrEqual(r.best.loss)
     expect(r.lossAt[1]).toBeCloseTo(one.loss)
     // 횟수가 늘면 잃는 돈은 줄거나 같다
     for (let k = 2; k < r.lossAt.length; k++) expect(r.lossAt[k]).toBeLessThanOrEqual(r.lossAt[k - 1] + 1e-6)
@@ -141,15 +153,21 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
 
       // 다 대입: 아이템 개수 조합 + 남는 금액은 메소마켓(있으면 1회)
       const keep = 0.97 * 1500, mk1 = mk ? 1500 / mk : 0
-      const top = Math.ceil(target / 100) * 100 + Math.max(...items.map(x => x.cash))
+      const T100 = Math.ceil(target / 100) * 100
+      const top = T100 + Math.max(900, ...items.map(x => x.cash))
       let bySales = new Map<number, number>()
       let bestLoss = Infinity
-      let strict = exact
+      // 앱과 같은 순서: 계획이면 딱 맞게 → 1,000원 안쪽 → 자유롭게
+      let tier = exact ? 0 : 2
       const walk = (j: number, cash: number, back: number, sales: number) => {
         if (j === items.length) {
           const cands: [number, number, number][] = []
-          if (cash >= target && (!strict || cash === Math.ceil(target / 100) * 100)) cands.push([cash, back, sales])
-          if (mk1 && cash < target) { const pay = Math.ceil(target / 100) * 100; cands.push([pay, back + (pay - cash) * mk1, sales + 1]) }
+          const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
+          if (cash >= T100 && cash <= limit) cands.push([cash, back, sales])
+          if (mk1 && cash < T100) {
+            const m = Math.ceil((T100 - cash) / 1000) * 1000
+            if (cash + m <= limit) cands.push([cash + m, back + m * mk1, sales + 1])
+          }
           for (const [pay, b, s] of cands) {
             const loss = pay * rate - b
             bestLoss = Math.min(bestLoss, loss)
@@ -161,7 +179,7 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       }
       walk(0, 0, 0, 0)
       // 계획처럼 딱 맞춰야 하는데 안 되면 앱은 넘겨 사는 쪽으로 물러선다. 정답도 똑같이 다시 구한다
-      if (!Number.isFinite(bestLoss) && strict) { strict = false; bySales = new Map(); walk(0, 0, 0, 0) }
+      while (!Number.isFinite(bestLoss) && tier < 2) { tier++; bySales = new Map(); walk(0, 0, 0, 0) }
       if (!Number.isFinite(bestLoss)) { expect(r).toBeNull(); continue }
       expect(r).not.toBeNull()
       if (!r) continue
@@ -200,13 +218,18 @@ describe('메이플 크레딧', () => {
     near(creditWonPer([prime, add], 0.03, 1500), 16 * 0.97 * 1500 / 20_000, 1e-9)
   })
 
-  it('크레딧이 쌓이면 메소마켓보다 조금 못한 캐시템도 사는 게 낫다', () => {
+  it('메이플포인트를 사서 메소마켓에 팔아도 크레딧이 쌓인다', () => {
+    const base = { target: 99_000, costOf: (c: number) => c, fee: 0.03, um: 1500, mk: 2250, items: [], exact: true }
+    const r = solve({ ...base, creditPer: creditWonPer([prime, add], 0.03, 1500) })!.best
+    expect(r.market).toBe(99_000)
+    expect(r.credits).toBe(4_950)
+  })
+
+  it('크레딧은 캐시템과 메포에 똑같이 붙으니 둘 사이 순서를 바꾸지 않는다', () => {
     const scroll: Sellable = { id: 'potential', name: '잠재옵션 전승 스크롤', set: 1, cash: 99_000, price: 45 }
     const base = { target: 99_000, costOf: (c: number) => c, fee: 0.03, um: 1500, mk: 2250, items: [scroll], exact: true }
     expect(solve(base)!.best.lines).toEqual([])
-    const withCredit = solve({ ...base, creditPer: creditWonPer([prime, add], 0.03, 1500) })!.best
-    expect(withCredit.lines).toEqual([{ item: scroll, n: 1 }])
-    expect(withCredit.credits).toBe(4_950)
+    expect(solve({ ...base, creditPer: creditWonPer([prime, add], 0.03, 1500) })!.best.lines).toEqual([])
   })
 
   it('계획: 중간 주에는 효율 좋은 큐브만, 모자라면 모아 뒀다가 마지막에 턴다', () => {
@@ -220,10 +243,10 @@ describe('메이플 크레딧', () => {
       um: 1500, mk: 2250, items: [karma], fee: 0.03, exact: true, credit: { items: [prime, add] },
     })!
     const p = pickAt(res, null, { balance: 0, items: [prime, add] })
-    // 한 주에 플가 42개 = 12,390크레딧: 첫 주에는 에디(2만)를 못 사서 모아 두고, 둘째 주에 에디 1개
+    // 한 주에 25만 원어치(플가 + 메포) = 12,500크레딧: 첫 주에는 에디(2만)를 못 사서 모아 두고, 둘째 주에 에디 1개
     expect(p.weeks[0].credit!.buys).toEqual([])
     expect(p.weeks[1].credit!.buys.map(b => [b.item.id, b.n])).toEqual([['primeadd', 1]])
-    expect(p.creditLeft).toBe(2 * 42 * 5900 * 0.05 - 20_000)
+    expect(p.creditLeft).toBe(2 * 250_000 * 0.05 - 20_000)
     near(p.creditBack, 16 * 0.97 * 1500)
     near(p.loss, p.cost - p.back)
   })

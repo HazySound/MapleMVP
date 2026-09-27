@@ -119,7 +119,7 @@ export function fund(c: number, x: FundCtx): Funding {
 
 // ---- 메이플 크레딧 ----
 
-/** 캐시템을 사면 산 금액의 5%가 메이플 크레딧으로 쌓인다(메이플포인트로 사는 메소마켓 몫은 넣지 않는다) */
+/** 캐시샵에서 쓴 캐시의 5%가 메이플 크레딧으로 쌓인다. 캐시템도, 메소마켓에 팔 메이플포인트를 사는 것도 똑같다 */
 export const CREDIT_RATE = 0.05
 
 /** 크레딧샵 물건. price는 경매장 한 번 판매 가격(억) */
@@ -218,6 +218,8 @@ export interface Solved {
 
 /** 판매 횟수를 이만큼까지만 층으로 쌓는다. 그 위는 최저가 루트와 같다고 본다 */
 const MAX_LAYERS = 600
+/** 메이플포인트는 1,000원 단위로만 산다(계산 단위 100원의 10배) */
+const MU = 10
 
 export function solve(o: SolveIn): Solved | null {
   const keep = (1 - o.fee) * o.um
@@ -225,19 +227,23 @@ export function solve(o: SolveIn): Solved | null {
   // back: 경매장에서 돌려받는 돈, val: 거기에 쌓이는 크레딧 값까지 더한 것(조합 고르기용)
   const usable = o.items.filter(x => x.price > 0).map(x => ({ x, u: Math.round(x.cash / U), back: x.price * keep, val: x.price * keep + x.cash * CREDIT_RATE * cp }))
   const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
+  // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다. 조합을 고를 때는 그 값까지 본다
+  const mkVal = mk1 ? mk1 + U * CREDIT_RATE * cp : 0
   const need = Math.ceil(o.target / U)
   if (need <= 0) return null
   if (!usable.length && !mk1) return null
-  const run = (exact: boolean) => {
-    const A = exact ? need : need + Math.max(0, ...usable.map(v => v.u))
+  // 계획을 따를 때는 먼저 계획 금액에 딱 맞춰 본다. 메포가 1,000원 단위라 안 맞으면 1,000원 안쪽으로 넘기고,
+  // 그래도 안 되면(메소마켓 시세가 없을 때 등) 필요한 만큼 넘겨 산다
+  const run = (mode: 'tight' | 'near' | 'free') => {
+    const A = mode === 'tight' ? need : mode === 'near' ? need + MU - 1 : need + Math.max(MU - 1, ...usable.map(v => v.u))
     const cost = new Float64Array(A + 1)
     for (let a = 0; a <= A; a++) cost[a] = o.costOf(a * U)
     return { A, cost }
   }
-  let { A, cost } = run(o.exact)
+  let { A, cost } = run(o.exact ? 'tight' : 'free')
 
   const finish = (counts: Map<number, number>, market: number, pay: number): Route => {
-    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = 0
+    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = market * CREDIT_RATE
     const lines: Line[] = []
     for (const [j, n] of counts) {
       back += n * usable[j].back; sales += n; meso += n * usable[j].x.price * (1 - o.fee)
@@ -255,7 +261,7 @@ export function solve(o: SolveIn): Solved | null {
     const v = new Float64Array(A + 1).fill(NEG), how = new Int16Array(A + 1).fill(-3), mkIn = new Uint8Array(A + 1)
     v[0] = 0
     for (let a = 1; a <= A; a++) {
-      if (mk1 && v[a - 1] > NEG) { v[a] = v[a - 1] + mk1 - (mkIn[a - 1] ? 0 : EPS); how[a] = -2; mkIn[a] = 1 }
+      if (mk1 && a >= MU && v[a - MU] > NEG) { v[a] = v[a - MU] + MU * mkVal - (mkIn[a - MU] ? 0 : EPS); how[a] = -2; mkIn[a] = 1 }
       for (let j = 0; j < usable.length; j++) {
         const q = usable[j]
         if (q.u > a || v[a - q.u] <= NEG) continue
@@ -269,12 +275,13 @@ export function solve(o: SolveIn): Solved | null {
     const counts = new Map<number, number>(); let m = 0
     for (let a = pick; a > 0;) {
       const h = how[a]
-      if (h === -2) { m += U; a-- } else { counts.set(h, (counts.get(h) ?? 0) + 1); a -= usable[h].u }
+      if (h === -2) { m += MU * U; a -= MU } else { counts.set(h, (counts.get(h) ?? 0) + 1); a -= usable[h].u }
     }
     return finish(counts, m, pick * U)
   }
   let best = best1()
-  if (!best && o.exact) { ({ A, cost } = run(false)); best = best1() }
+  if (!best && o.exact) { ({ A, cost } = run('near')); best = best1() }
+  if (!best && o.exact) { ({ A, cost } = run('free')); best = best1() }
   if (!best) return null
   const K = best.sales
 
@@ -290,7 +297,11 @@ export function solve(o: SolveIn): Solved | null {
     for (let a = 0; a <= A; a++) {
       if (row[a] <= NEG) continue
       if (a >= need) put(k, row[a] - cost[a], { k, a, m: 0, tot: a })
-      else if (mk1) put(k + 1, row[a] + (need - a) * mk1 - cost[need], { k, a, m: need - a, tot: need })
+      else if (mk1) {
+        // 모자라는 만큼 메포로. 1,000원 단위로 올려 산다
+        const m = Math.ceil((need - a) / MU) * MU, tot = a + m
+        if (tot <= A) put(k + 1, row[a] + m * mkVal - cost[tot], { k, a, m, tot })
+      }
     }
   }
   let prev = new Float64Array(A + 1).fill(NEG); prev[0] = 0

@@ -172,7 +172,7 @@
     {#if cheapSingles.length}
       <div class="caution">
         <i aria-hidden="true">!</i>
-        <span><b>{cheapSingles.join(', ')}{eul(cheapSingles.at(-1)!)} 낱개로 파는 루트예요.</b> 같은 걸 파는 사람이 많아서, 엠작이 몰리는 주 초반(목요일 갱신 직후)과 월초에는 시세가 평소보다 많이 떨어질 수 있어요. 넣은 가격보다 싸게 팔리면 실제로 나가는 돈이 늘어나요.</span>
+        <span><b>{cheapSingles.join(', ')}{eul(cheapSingles.at(-1)!)} 낱개로 파는 루트예요.</b> 같은 걸 파는 사람이 많아서, MVP작이 몰리는 주 초반(목요일 갱신 직후)과 월초에는 시세가 평소보다 많이 떨어질 수 있어요. 넣은 가격보다 싸게 팔리면 실제로 나가는 돈이 늘어나요.</span>
       </div>
     {/if}
     {#if timedIn.length}
@@ -267,7 +267,7 @@
     </section>
 
     <p class="extra">
-      {#if pick.pay > out.target}<span>목표보다 {won(pick.pay - out.target)}원 더 결제하는 게 더 남아서 그렇게 짰어요</span>{/if}
+      {#if pick.pay > out.target}<span>{out.mode === 'plan' ? `메이플포인트를 1,000원 단위로만 살 수 있어서 계획보다 ${won(pick.pay - out.target)}원 더 결제해요` : `목표보다 ${won(pick.pay - out.target)}원 더 결제하는 게 더 남아서 그렇게 짰어요`}</span>{/if}
       <span>엄 시세가 100원 내리면 {won(pick.back / eff.um * 100)}원 더 나가요</span>
     </p>
   {:else}
