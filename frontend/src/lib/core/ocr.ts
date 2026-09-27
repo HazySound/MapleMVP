@@ -22,6 +22,29 @@ const CLUSTER_THRESHOLDS = [200, 220, 235]
  * 찾는 즉시 멈춰서 밝은 화면에서는 예전만큼 빠르다.
  */
 const TABLE_THRESHOLDS = [220, 195, 170, 145]
+/**
+ * 툴팁 줄에서 글자 높이 ÷ 줄 간격. 해상도·창 크기와 상관없이 0.38 안팎이다
+ * (1366×768 창모드 10/26, 1080p 14/36.5). 절대 크기로 거르면 작은 창에서 표를 놓친다
+ */
+const ROW_FILL = [0.25, 0.55] as const
+/** 이보다 작은 줄 간격은 글자가 5px 남짓이라 읽을 수 없다 */
+const MIN_PITCH = 16
+/**
+ * 금액 숫자는 순백이고 뒤에 붙는 '캐시'는 회색이다(가장 밝은 곳의 0.70~0.78배, 쉼표는 숫자만큼 밝다).
+ * 해상도·글꼴·화면공유의 어두워짐과 상관없이 이 차이는 그대로라, 이것으로 숫자만 떼어 낸다.
+ * 굵은 픽셀 글꼴(1366×768 창모드)에서는 '캐시'가 숫자 폭만 한 조각으로 쪼개져 폭으로는 떨굴 수 없었고,
+ * 띄어쓰기 폭은 쉼표가 흐리게 잡히면 숫자 안쪽 틈과 비슷해져 숫자가 잘렸다
+ */
+const UNIT_DIM = 0.87
+
+/** 앞에서부터 밝은 조각(숫자)만 남긴다. 처음 나오는 어두운 조각('캐시')에서 끊는다 */
+function numberPart(segs: [number, number][], peak: (a: number, c: number) => number): [number, number][] {
+  // 작은 화면을 키우면 보간이 밝은 곳에서 255를 넘게 튄다. 눌러 두지 않으면 쉼표가 어둡게 보여 잘린다
+  const ps = segs.map(([a, c]) => Math.min(255, peak(a, c)))
+  const mx = Math.max(0, ...ps)
+  const i = ps.findIndex(p => p < mx * UNIT_DIM)
+  return i < 0 ? segs : segs.slice(0, i)
+}
 
 const BOX_H = templates.height
 const BOX_W = templates.width
@@ -223,8 +246,15 @@ function digitSegs(g: Gray, y0: number, y1: number, x0: number, x1: number,
     for (let y = 0; y < b.height; y++) if (b.data[y * b.width + x] > th) return true
     return false
   }
-  return runs(col, b.width, s(2), s(2)).filter(([a, c]) => c - a <= s(MAX_GLYPH))
+  return runs(col, b.width, bridge(scale), s(2)).filter(([a, c]) => c - a <= s(MAX_GLYPH))
 }
+
+/**
+ * 글자 안의 끊김으로 보고 이어 붙일 틈. 기준 크기에서 2px.
+ * 작은 화면(0.5배 미만)에서는 숫자와 숫자 사이가 딱 1px이라, 그것까지 이으면 숫자 전체가
+ * 한 덩어리가 돼 글자 폭을 넘고 버려진다. 원래 화소로 1px이 안 되는 틈은 잇지 않는다
+ */
+const bridge = (scale: number) => (2 * scale < 1 ? 0 : Math.max(1, Math.round(2 * scale)))
 
 /** 금액 열다운 정도. 오른쪽 정렬이고 글자 수가 그럴듯하면 높다. */
 function score(g: Gray, rows: [number, number][], x0: number, x1: number,
@@ -296,7 +326,9 @@ function tablesAt(g: Gray, th: number, win: number, step: number, limit: number)
     for (let i = 0; i < ROWS - 1; i++) gaps.push(c[i + 1][0] - c[i][0])
     gaps.sort((a, b) => a - b)
     const d = gaps[gaps.length >> 1]
-    if (d / SPACING < 0.5 || d / SPACING > 3) continue
+    const hs = c.map(([a, b]) => b - a).sort((a, b) => a - b)
+    const fill = hs[hs.length >> 1] / d
+    if (d < MIN_PITCH || fill < ROW_FILL[0] || fill > ROW_FILL[1]) continue
     seen.set(`${c[0][0] >> 3}:${d >> 2}`, c)
   }
 
@@ -337,6 +369,9 @@ export function lineGlyphs(g: Gray, y0: number, y1: number, x0: number, x1: numb
                            mergeNarrow = false): Float32Array[] {
   let b: Patch = crop(g, x0, y0, x1, y1)
   if (!b.width || !b.height) return []
+  // 숫자와 '캐시'를 가르는 밝기는 키우기 전 화소로 본다. 얇은 쉼표는 키우면 밝기가 떨어진다
+  const src = b
+  const gap = bridge(scale) ? null : 0
   if (scale < 0.95) {
     const nw = Math.max(1, Math.round(b.width / scale))
     const nh = Math.max(1, Math.round(b.height / scale))
@@ -350,7 +385,7 @@ export function lineGlyphs(g: Gray, y0: number, y1: number, x0: number, x1: numb
     for (let y = 0; y < b.height; y++) if (b.data[y * b.width + x] > th) return true
     return false
   }
-  let segs = runs(colHit, b.width, s(2), s(2)).filter(([a, c]) => c - a <= s(MAX_GLYPH))
+  let segs = runs(colHit, b.width, gap ?? s(2), s(2)).filter(([a, c]) => c - a <= s(MAX_GLYPH))
   // 작게 그려진 화면에서는 '0'의 위아래 곡선이 끊겨 세로 획 두 개로 갈린다.
   // 좁은 조각이 바싹 붙어 있으면 하나로 보는 경우도 후보에 넣는다.
   if (mergeNarrow && segs.length > 1) {
@@ -383,6 +418,14 @@ export function lineGlyphs(g: Gray, y0: number, y1: number, x0: number, x1: numb
     if (on) { if (top < 0) top = y; bot = y }
   }
   if (top < 0) return []
+  const k = src.width / b.width
+  segs = numberPart(segs, (a, c) => {
+    let m = 0
+    const xa = Math.floor(a * k), xc = Math.max(xa + 1, Math.ceil(c * k))
+    for (let y = 0; y < src.height; y++) for (let x = xa; x < Math.min(src.width, xc); x++) m = Math.max(m, src.data[y * src.width + x])
+    return m
+  })
+  if (!segs.length) return []
   top = Math.max(0, top - 2)
   bot = Math.min(b.height, bot + 3)
 
@@ -467,7 +510,12 @@ function digitClusters(g: Gray, scale: number, skip?: Skip,
               && skip.rows.some(([s0, s1]) => a < s1 && s0 < b)) continue
           const lo = Math.max(0, lo0 - s(6))
           const hi = Math.min(W, hi0 + s(7))
-          const n = digitSegs(g, a - s(4), b + s(6), lo, hi, scale, th).length
+          const ya = a - s(4), yb = b + s(6)
+          const n = numberPart(digitSegs(g, ya, yb, lo, hi, scale, th), (p, q) => {
+            let m = 0
+            for (let y = Math.max(0, ya); y < Math.min(H, yb); y++) for (let x = lo + p; x < lo + q; x++) m = Math.max(m, g.data[y * W + x])
+            return m
+          }).length
           const key = `${(a / 6) | 0}:${(lo / 10) | 0}:${th}`
           if (n >= 3 && n <= 9 && !seen.has(key)) {
             seen.add(key)
@@ -553,13 +601,19 @@ function rightColumns(g: Gray, tables: Table[], chosen: Table): number[][] {
 /** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
+  const found = (t: Table, seen: number[][]): ScanResult =>
+    ({ readings: seen, scale: t.scale, carries: rightColumns(g, tables, t),
+       amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }) })
+  // 금액 열은 아래로 갈수록 줄지 않는다. 앞 줄이 '0 캐시'로 짧으면 '1 주차 뒤' 열이 더 표처럼 보여
+  // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다
+  let first: ScanResult | null = null
   for (const t of tables) {
     const seen = readColumn(g, t)
-    if (seen.length) {
-      return { readings: seen, scale: t.scale, carries: rightColumns(g, tables, t),
-               amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }) }
-    }
+    if (!seen.length) continue
+    if (seen.some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))) return found(t, seen)
+    first ??= found(t, seen)
   }
+  if (first) return first
   // 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
   const sc = fallbackScale || 1
   return { readings: [], carries: [], scale: sc, amounts: findAmounts(g, sc) }
