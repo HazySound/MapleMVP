@@ -1,5 +1,5 @@
 /**
- * 계정에 묶어 두는 것: 구매내역과 PC방 보정값.
+ * 계정에 묶어 두는 것: 구매내역과 PC방 보정값, 효율표 입력값.
  *
  * 한 사람당 한 줄이다. 덮어쓰기만 하고 이력을 쌓지 않는다.
  * 합치는 규칙(같은 결제를 두 번 세지 않기)은 브라우저 쪽에 이미 있으므로
@@ -19,10 +19,10 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   await ensure(ctx.env.DB)
 
   const row = await ctx.env.DB
-    .prepare('SELECT rows, pcroom, pcroom_at, synced_at FROM vault WHERE uid = ?')
+    .prepare('SELECT rows, pcroom, pcroom_at, synced_at, eff, eff_at FROM vault WHERE uid = ?')
     .bind(me.uid)
-    .first<{ rows: string; pcroom: string; pcroom_at: string | null; synced_at: string | null }>()
-  if (!row) return json({ rows: [], pcroom: {}, pcroomAt: {}, syncedAt: null })
+    .first<{ rows: string; pcroom: string; pcroom_at: string | null; synced_at: string | null; eff: string | null; eff_at: number | null }>()
+  if (!row) return json({ rows: [], pcroom: {}, pcroomAt: {}, syncedAt: null, eff: null, effAt: 0 })
 
   return json({
     rows: JSON.parse(row.rows),
@@ -30,6 +30,8 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     // 이 열이 생기기 전에 올린 것은 비어 있다. 그때는 시각을 모르는 값으로 친다
     pcroomAt: row.pcroom_at ? JSON.parse(row.pcroom_at) : {},
     syncedAt: row.synced_at,
+    eff: row.eff ? JSON.parse(row.eff) : null,
+    effAt: row.eff_at ?? 0,
   })
 }
 
@@ -43,7 +45,7 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
   const body = await ctx.request.text()
   if (body.length > MAX_BODY) return json({ error: '내용이 너무 커요' }, 413)
 
-  let data: { rows?: unknown; pcroom?: unknown; pcroomAt?: unknown; syncedAt?: unknown }
+  let data: { rows?: unknown; pcroom?: unknown; pcroomAt?: unknown; syncedAt?: unknown; eff?: unknown; effAt?: unknown }
   try {
     data = JSON.parse(body)
   } catch {
@@ -52,14 +54,18 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
   if (!Array.isArray(data.rows)) return json({ error: '구매내역이 없어요' }, 400)
 
   await ensure(ctx.env.DB)
+  // 효율표 입력값은 안 보냈으면(예전 화면) 있던 것을 그대로 둔다
+  const eff = data.eff && typeof data.eff === 'object' ? JSON.stringify(data.eff) : null
+  const effAt = typeof data.effAt === 'number' ? data.effAt : null
   await ctx.env.DB
-    .prepare('INSERT INTO vault (uid, rows, pcroom, pcroom_at, synced_at, saved_at) '
-      + 'VALUES (?, ?, ?, ?, ?, ?) '
+    .prepare('INSERT INTO vault (uid, rows, pcroom, pcroom_at, synced_at, saved_at, eff, eff_at) '
+      + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?) '
       + 'ON CONFLICT(uid) DO UPDATE SET rows = excluded.rows, pcroom = excluded.pcroom, '
-      + 'pcroom_at = excluded.pcroom_at, synced_at = excluded.synced_at, saved_at = excluded.saved_at')
+      + 'pcroom_at = excluded.pcroom_at, synced_at = excluded.synced_at, saved_at = excluded.saved_at, '
+      + 'eff = COALESCE(excluded.eff, vault.eff), eff_at = COALESCE(excluded.eff_at, vault.eff_at)')
     .bind(me.uid, JSON.stringify(data.rows), JSON.stringify(data.pcroom ?? {}),
           JSON.stringify(data.pcroomAt ?? {}),
-          typeof data.syncedAt === 'string' ? data.syncedAt : null, Date.now())
+          typeof data.syncedAt === 'string' ? data.syncedAt : null, Date.now(), eff, effAt)
     .run()
 
   return json({ ok: true })

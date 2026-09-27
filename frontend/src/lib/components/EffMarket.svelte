@@ -8,7 +8,6 @@
   import { app } from '../store.svelte'
   import { ageOf, eff, saveEff, touch } from '../eff.svelte'
   import { feeOf } from '../core/efficiency'
-  import { iga } from '../format'
   import type { TierKey } from '../types'
 
   let { tier, mode }: { tier: TierKey | null; mode: 'plan' | 'amount' } = $props()
@@ -53,7 +52,7 @@
         <button aria-pressed={manual === 0.03} onclick={() => setFee(0.03)}>3%</button>
         <button aria-pressed={manual === 0.05} onclick={() => setFee(0.05)}>5%</button>
       </div>
-      <span class="ef-hint">직접 골라 주세요. MVP 실버 이상이면 3%, 아니면 5%예요. 이 금액을 결제하면 {tierName}{iga(tierName)} 돼요.</span>
+      <span class="ef-hint">직접 골라 주세요. MVP 실버 이상이면 3%, 아니면 5%예요.</span>
     {/if}
   </div>
 </article>

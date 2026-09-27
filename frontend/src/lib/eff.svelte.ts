@@ -47,6 +47,8 @@ interface Saved {
   pgView: 'ratio' | 'price'
   /** 사용자가 직접 추가한 아이템. 기본 목록에 없는 걸로 작하는 사람을 위해 */
   custom: ShopItem[]
+  /** 가격표에서 플가보다 손해인 아이템을 접어 둔다 */
+  hideLoss: boolean
 }
 
 function fresh(): Saved {
@@ -55,7 +57,7 @@ function fresh(): Saved {
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })),
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', custom: [],
+    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', custom: [], hideLoss: false,
   }
 }
 
@@ -78,12 +80,41 @@ function load(): Saved {
 
 export const eff = $state(load())
 
+/** 계정에서 더 새것을 받아 왔을 때 다시 읽는다 */
+export function reloadEff() {
+  Object.assign(eff, load())
+}
+
 let timer: number | undefined
+let upTimer: number | undefined
+/**
+ * 이 브라우저에 저장하고, 로그인해 있으면 계정에도 올린다.
+ * 계정은 쓰기 횟수에 제한이 있어서, 마지막으로 고친 뒤 잠깐 기다렸다가 한 번에 올린다.
+ */
 export function saveEff() {
   clearTimeout(timer)
   timer = window.setTimeout(() => {
-    try { localStorage.setItem(KEY, JSON.stringify($state.snapshot(eff))) } catch { /* 막혀 있으면 이번만 */ }
+    try {
+      localStorage.setItem(KEY, JSON.stringify($state.snapshot(eff)))
+      localStorage.setItem(`${KEY}At`, String(Date.now()))
+    } catch { /* 막혀 있으면 이번만 */ }
+    clearTimeout(upTimer)
+    upTimer = window.setTimeout(pushNow, 15_000)
   }, 300)
+}
+
+async function pushNow() {
+  clearTimeout(upTimer)
+  upTimer = undefined
+  const { app, pushUp } = await import('./store.svelte')
+  if (app.web && app.user) await pushUp()
+}
+
+// 올리기를 기다리는 중에 탭을 떠나면 그때 바로 올린다
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && upTimer !== undefined) void pushNow()
+  })
 }
 
 /** 값을 넣은 때를 적는다 */

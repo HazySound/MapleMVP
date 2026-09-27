@@ -28,15 +28,18 @@
     return p && m ? p / m : 0
   }
   // 가격을 넣은 것(플가 포함) → 효율 높은 순, 그다음 비워 둔 것은 비싼 순.
-  // 치는 도중에 줄이 움직이면 곤란하니 칸을 떠날 때만 다시 줄 세운다
+  // 플가 가격을 바꾸면 곧바로 다시 줄 선다. 표 안의 가격 칸에 치는 동안에만 줄이 움직이지 않게 붙잡아 둔다
   const sorted = () => {
     const known = items.filter(x => effOf(x) > 0).sort((a, b) => effOf(b) - effOf(a) || (a.id === PG_ID ? -1 : b.id === PG_ID ? 1 : 0))
     const rest = others.filter(x => effOf(x) === 0).sort((a, b) => b.cash - a.cash)
     return [...(pg ? [] : [pgItem]), ...known, ...rest].map(x => x.id)
   }
-  let order = $state(sorted())
-  const resort = () => { order = sorted() }
-  // 새로 추가한 아이템은 줄 세우기 전까지 맨 아래에 붙인다. 지운 것은 빠진다
+  const live = $derived(sorted())
+  let frozen = $state<string[] | null>(null)
+  const hold = () => { frozen = [...live] }
+  const release = () => { frozen = null }
+  const order = $derived(frozen ?? live)
+  // 붙잡아 둔 사이에 추가한 아이템은 맨 아래에 붙인다. 지운 것은 빠진다
   const rows = $derived([...order, ...items.map(x => x.id).filter(id => !order.includes(id))]
     .map(id => items.find(x => x.id === id)).filter(x => !!x))
 
@@ -55,8 +58,9 @@
     if (old && (old.cash !== Math.round(form.cash) || old.set !== Math.max(1, Math.round(form.set)))) delete eff.prices[old.id]
     saveCustom({ name: form.name.trim(), cash: Math.round(form.cash), set: Math.max(1, Math.round(form.set)), ...(form.days ? { days: form.days } : {}) }, editing ?? undefined)
     adding = false; editing = null
-    resort()
   }
+  const lossCount = $derived(rows.filter(x => zone(x) === 'down').length)
+  const shown = $derived(eff.hideLoss ? rows.filter(x => zone(x) !== 'down') : rows)
   const zone = (x: ShopItem) => x.id === PG_ID ? 'base' : !effOf(x) ? 'none' : effOf(x) >= 1 ? 'up' : 'down'
 
   // 메소마켓도 같은 잣대로: 캐시 1원당 메소를 플가와 견준다
@@ -77,7 +81,7 @@
       <span class="nm">플래티넘 카르마의 가위</span>
       <span class="ef-hint">{won(pgItem.cash)}캐시 · 무기한 · 경매장 1개 가격</span>
       <NumBox id="eff-pg" label="플가 경매장 가격(억)" size="lg" decimal unit="억" placeholder="예: 3.0" value={pg}
-        set={v => setPrice(PG_ID, v)} onblur={resort} />
+        set={v => setPrice(PG_ID, v)} />
       <span class="ef-hint">
         {#if pg && eff.um}수수료 {Math.round(fee * 100)}% 빼고 1개당 <b>{won(pg * (1 - fee) * eff.um)}원</b> 회수 · 이 효율이 <b>1.00플가</b>{:else}플가 가격을 넣으면 다른 아이템의 기준 가격이 나와요{/if}
       </span>
@@ -90,6 +94,7 @@
         <span><i class="pgk"></i>플가(기준)</span>
         <span><i class="down"></i>플가보다 손해</span>
         <span><em class="buy">구매</em>지금 고른 루트에서 사는 아이템</span>
+        <label class="hide"><input type="checkbox" bind:checked={eff.hideLoss} onchange={saveEff} />플가보다 손해인 것 숨기기{#if lossCount} ({lossCount}){/if}</label>
         <div class="ef-seg view" role="group" aria-label="플가 대비 보기">
           <button aria-pressed={showRatio} onclick={() => { eff.pgView = 'ratio'; saveEff() }}>플가 몇 개</button>
           <button aria-pressed={!showRatio} onclick={() => { eff.pgView = 'price'; saveEff() }}>플가 가격으로</button>
@@ -99,7 +104,7 @@
         <table>
           <thead><tr><th>아이템</th><th>캐시가</th><th>이 가격 넘으면 플가보다 이득</th><th>경매장 실제 가격</th><th>{showRatio ? '플가 대비' : '플가로 치면'}</th></tr></thead>
           <tbody>
-            {#each rows as x (x.id)}
+            {#each shown as x (x.id)}
               {@const e = effOf(x)}
               {@const z = zone(x)}
               <tr class={z}>
@@ -132,7 +137,7 @@
                   {:else}
                     <NumBox id="eff-p-{x.id}" label="{itemLabel(x)} 경매장 가격(억)" size="sm" decimal unit="억"
                       placeholder={pg ? fx(minPrice(pg, x.cash)) : ''} value={eff.prices[x.id] ?? 0}
-                      set={v => setPrice(x.id, v)} onblur={resort} />
+                      set={v => setPrice(x.id, v)} onfocus={hold} onblur={release} />
                   {/if}
                 </td>
                 <td class="mono eff">
@@ -140,6 +145,11 @@
                 </td>
               </tr>
             {/each}
+            {#if eff.hideLoss && lossCount}
+              <tr class="folded"><td colspan="5">
+                <button type="button" onclick={() => { eff.hideLoss = false; saveEff() }}>플가보다 손해인 아이템 {lossCount}개를 접어 뒀어요 · 펼치기</button>
+              </td></tr>
+            {/if}
             <tr class="mk">
               <td><span class="name mkn">메소마켓<small>메이플포인트로 사서 메소마켓에 팔기</small></span></td>
               <td class="mono">—</td><td class="mono">—</td><td class="ef-hint r">3번 칸의 시세로</td>
@@ -212,6 +222,11 @@
   .legend i.down { background: var(--color-peach); }
   .legend i.pgk { background: var(--color-lav); }
   .view { margin-left: auto; }
+  .hide { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--color-tx2); }
+  .hide input { accent-color: var(--color-lav); margin: 0; }
+  .folded td { text-align: center; padding: 4px; background: var(--color-bg2); }
+  .folded button { appearance: none; border: 0; background: none; cursor: pointer; font: inherit; font-size: 12px; color: var(--color-tx3); padding: 4px 10px; border-radius: 8px; }
+  .folded button:hover { color: var(--color-tx); background: var(--color-panel3); }
   .tbl { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--color-line); }
   table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13px; }
   th { font-weight: 500; font-size: 11.5px; color: var(--color-tx3); text-align: right; padding: 8px 10px; background: var(--color-bg2); white-space: nowrap; }

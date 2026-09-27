@@ -3,7 +3,7 @@
    * 숫자 칸. 치는 대로 쉼표를 붙이고, 비우면 0으로 본다.
    * decimal이면 소수점을 받는다(억 단위 가격).
    */
-  let { value, set, unit = '', placeholder = '', decimal = false, id, label, size = 'md', onblur, disabled = false }: {
+  let { value, set, unit = '', placeholder = '', decimal = false, id, label, size = 'md', onblur, onfocus, disabled = false }: {
     value: number
     set: (v: number) => void
     unit?: string
@@ -13,6 +13,7 @@
     label: string
     size?: 'sm' | 'md' | 'lg'
     onblur?: () => void
+    onfocus?: () => void
     disabled?: boolean
   } = $props()
 
@@ -35,7 +36,7 @@
 
 <span class="nb {size}" class:off={disabled}>
   <input {id} type="text" inputmode={decimal ? 'decimal' : 'numeric'} aria-label={label} {placeholder} {disabled}
-    class:txt={/[가-힣]/.test(placeholder)} value={text} {oninput} onfocus={() => (focused = true)} onblur={() => { focused = false; text = fmt(value); onblur?.() }} />
+    class:txt={/[가-힣]/.test(placeholder)} value={text} {oninput} onfocus={() => { focused = true; onfocus?.() }} onblur={() => { focused = false; text = fmt(value); onblur?.() }} />
   {#if unit}<span class="u">{unit}</span>{/if}
 </span>
 

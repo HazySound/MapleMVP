@@ -84,12 +84,21 @@ export function mergeVault(rows: Row[], v: VaultIn): void {
 
   const seen = load<string | null>('maplemvp.syncedAt', null)
   if (v.syncedAt && (!seen || v.syncedAt > seen)) save('maplemvp.syncedAt', v.syncedAt)
+
+  // 효율표 입력값: 나중에 고친 쪽을 남긴다. 이 브라우저에 아예 없으면 계정 것을 받는다
+  const mineEff = load<unknown>('maplemvp.eff', null)
+  if (v.eff && (!mineEff || (v.effAt ?? 0) > load<number>('maplemvp.effAt', 0))) {
+    save('maplemvp.eff', v.eff)
+    save('maplemvp.effAt', v.effAt)
+  }
 }
 
 interface VaultIn {
   pcroom: Record<string, number>
   pcroomAt?: Record<string, number>
   syncedAt: string | null
+  eff?: unknown
+  effAt?: number
 }
 
 /** 지금 이 브라우저가 들고 있는 것 전부. 계정에 올릴 때 쓴다 */
@@ -99,6 +108,8 @@ export function snapshot() {
     pcroom: load<Record<string, number>>(KEY.pcroom, {}),
     pcroomAt: load<Record<string, number>>(KEY.pcroomAt, {}),
     syncedAt: load<string | null>('maplemvp.syncedAt', null),
+    eff: load<unknown>('maplemvp.eff', null) ?? undefined,
+    effAt: load<number>('maplemvp.effAt', 0),
   }
 }
 

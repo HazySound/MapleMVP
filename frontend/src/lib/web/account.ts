@@ -24,6 +24,9 @@ export interface Vault {
   /** 보정값을 고친 시각(주차별). 기기가 어긋났을 때 나중에 고친 쪽을 고르는 데 쓴다 */
   pcroomAt: Record<string, number>
   syncedAt: string | null
+  /** 효율표 입력값과 마지막으로 고친 시각. 이 칸이 생기기 전 계정은 비어 있다 */
+  eff?: unknown
+  effAt?: number
 }
 
 /** 지금 로그인한 사람. 안 했으면 null */
