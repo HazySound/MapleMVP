@@ -21,7 +21,9 @@
   --color-bad: #ff9aa8;
   --font-display: "Orbit", "IBM Plex Sans KR", "Malgun Gothic", sans-serif;
   --font-sans: "IBM Plex Sans KR", "Malgun Gothic", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  /* 숫자 글꼴에는 한글이 없다. '달성'·'블랙'처럼 한글이 섞이면 시스템 글꼴로 넘어가 모양이 튄다.
+     바로 뒤에 본문 한글 글꼴을 두어, 숫자는 고정폭 그대로 두고 한글만 본문과 같게 그린다 */
+  --font-mono: "JetBrains Mono", "IBM Plex Sans KR", "Malgun Gothic", ui-monospace, Consolas, monospace;
   --radius-card: 18px;
   --radius-md: 13px;
 }

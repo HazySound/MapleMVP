@@ -51,7 +51,7 @@ export const C = new Proxy({} as Record<string, string>, {
 })
 export const FONT = {
   sans: '"IBM Plex Sans KR", "Malgun Gothic", sans-serif',
-  mono: '"JetBrains Mono", Consolas, monospace',
+  mono: '"JetBrains Mono", "IBM Plex Sans KR", "Malgun Gothic", Consolas, monospace',
 }
 
 export const won = (n: number) => Math.round(n).toLocaleString('ko-KR')
