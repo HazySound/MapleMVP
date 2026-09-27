@@ -97,3 +97,27 @@ describe.skipIf(!have)('프레임 모으기', () => {
     expect(v.state().frames).toBe(12)
   })
 })
+
+/**
+ * 블랙은 상단 '○○ 등급까지'가 애초에 없어서, 합계를 기다리면 영영 끝나지 않는다.
+ * 12줄이 두 번 같게 나온 시점에 끝나야 한다. (캡처가 필요 없어 늘 돈다)
+ */
+describe('블랙 등급은 합계를 기다리지 않는다', () => {
+  const TIP = [104_568, 771_531, 772_224, 822_024, 822_024, 1_325_364,
+               1_325_364, 1_396_164, 1_396_164, 1_396_164, 2_201_034, 2_476_134]
+  const AMOUNTS = [16_132, 104_568, 88_333]
+  const CARRY = [16_132, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  const SPENT = [300_000, 640_831, 693, 45_800, 0, 500_340, 0, 60_800, 0, 0,
+                 800_870, 270_100, 20_866]
+  const shot: ScanRaw = { readings: [TIP], carries: [CARRY], amounts: AMOUNTS, scale: 1 }
+
+  it('같은 장 두 번이면 결론이 난다', () => {
+    const vote = createVote(SPENT)
+    expect(vote.feed(shot).solved).toBeNull()      // 한 장은 믿지 않는다
+    const st = vote.feed(shot)
+    expect(st.solved).not.toBeNull()
+    expect(st.solved!.tierTh).toBe(2_500_000)
+    expect(st.solved!.carry).toEqual(CARRY)
+    expect(st.solved!.total).toBeNull()
+  })
+})

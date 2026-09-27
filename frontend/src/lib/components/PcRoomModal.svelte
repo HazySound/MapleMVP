@@ -1,7 +1,8 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
-  import { anchor, compare, restore } from '../core/pcroom'
-  import { type Solved, acceptReading, panelFields, solveScan, whyReject } from '../core/scan'
+  import { NO_CARRY, anchor, compare, restore } from '../core/pcroom'
+  import { type Solved, acceptReading, carryFor, isTop as topTier, panelFields, solveScan, usesCarry,
+    whyReject } from '../core/scan'
   import HelpModal from './HelpModal.svelte'
   import { STAGE, type ShareHandle, type ShareStatus, canShare, startShare } from '../web/share'
   import { primeChime } from '../web/chime'
@@ -16,6 +17,11 @@
   let nextIndex = $state(-1)
   let remainText = $state('')
   let keepText = $state('')
+  // 블랙만 있는 칸. 인게임이 '유지까지'에서 미리 빼 두는 금액이라 알아야 표가 풀린다.
+  // 이월은 보통 첫 갱신에서 한꺼번에 쓰여 1주 뒤 줄에만 적히므로 칸은 하나만 둔다.
+  // 드물게 여러 줄에 걸쳐 쓰이는 경우는 읽어 온 값을 그대로 들고 간다
+  let carryText = $state('')
+  let carryRest = $state<number[]>(Array(11).fill(0))
   // 툴팁 12줄 '현재 등급 유지까지' (1주 뒤 → 12주 뒤)
   let needTexts = $state<string[]>(Array(12).fill(''))
 
@@ -30,7 +36,11 @@
   // '레드 등급까지'라고 적혀 있으면 지금 등급은 그 바로 아래(다이아)다
   const curTier = $derived<Tier | null>(nextIndex > 0 ? d.tiers[nextIndex - 1] : null)
   const tierTh = $derived(curTier?.th ?? 0)
-  const filled = $derived(needTexts.every(t => t.trim() !== '') && nextIndex >= 0 && remainText.trim() !== '')
+  // 블랙은 위 등급이 없어 '○○ 등급까지' 줄 자체가 인게임에 없다
+  const isTop = $derived(nextIndex >= d.tiers.length)
+  const carry = $derived(isTop ? [num(carryText), ...carryRest] : NO_CARRY)
+  const filled = $derived(needTexts.every(t => t.trim() !== '') && nextIndex >= 0
+    && (isTop || remainText.trim() !== ''))
 
   // 처음 열었을 때 지금 등급 바로 위를 골라둔다 (보통 그게 화면에 적혀 있다)
   $effect(() => {
@@ -46,9 +56,9 @@
   }
 
   /** 입력한 값으로 '예상 등급'을 되짚는다. 인게임 화면과 다르면 잘못 넣은 것이다. */
-  const predicted = $derived(needTexts.map(t => {
+  const predicted = $derived(needTexts.map((t, i) => {
     if (!t.trim() || !tierTh) return null
-    const sum = tierTh - num(t)
+    const sum = tierTh - num(t) - (carry[i] ?? 0)
     return { sum, tier: sum < 0 ? null : tierOf(sum), bad: sum < 0 }
   }))
 
@@ -64,20 +74,20 @@
     const b = getBase()
     if (!b) return
     const [tierTh, total] = anchor(d.tiers.map(t => t.th), nextIndex, num(remainText))
-    const r = restore(needTexts.map(num), tierTh, total, keepText.trim() ? num(keepText) : null)
+    const r = restore(needTexts.map(num), tierTh, total, keepText.trim() ? num(keepText) : null, carry)
     if (!r.ok) {
       result = null
       error = r.issues.join(' ')
       openInput = true
       return
     }
-    const gaps = compare(r.weeks, b.purchases, b.starts)
+    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown)
     result = {
       ok: gaps.every(g => g.ok),
       issues: gaps.filter(g => g.note).map(g => g.note),
       rows: gaps.map(g => ({ start: g.start, end: addDays(g.start, 6), nexon: g.nexon,
                              spent: g.collected, amount: g.amount, minutes: g.minutes,
-                             note: g.note, warn: g.warn })),
+                             note: g.note, warn: g.warn, unknown: g.unknown })),
       total, tierTh, pcTotal: gaps.reduce((s, g) => s + g.amount, 0),
     }
   }
@@ -86,7 +96,11 @@
     busy = true
     try {
       const weeks: Record<string, number> = {}
-      for (const r of rows) weeks[r.start] = amountOf(r.start, r.amount)
+      // 구할 수 없었던 주를 0원으로 적어 두면 '확인했다'는 뜻이 돼 다시 물어볼 길이 없어진다
+      for (const r of rows) {
+        if (r.unknown && edited[r.start] === undefined) continue
+        weeks[r.start] = amountOf(r.start, r.amount)
+      }
       await pcroomSave(weeks)
       app.showPcRoom = false
     } finally {
@@ -118,7 +132,8 @@
   const doneCount = $derived(needTexts.filter(t => t.trim() !== '').length)
   const summary = $derived(
     doneCount === 0 ? '아직 비어 있어요 · 펼치면 직접 넣을 수 있어요'
-      : `${curTier?.name ?? '등급 미정'} · ${remainText || '?'} 캐시 · ${doneCount}/12줄`)
+      : `${curTier?.name ?? '등급 미정'} · ${(isTop ? carryText && `이월 ${carryText}` : remainText) || '?'} 캐시`
+        + ` · ${doneCount}/12줄`)
 
   async function grab(dataUrl = '') {
     scanning = true
@@ -135,14 +150,15 @@
       if (!s) {
         scanBad = true
         // 왜 실패했는지 말해 주지 않으면 매번 처음부터 원인을 찾게 된다
-        const ok = raw.readings.filter(v => acceptReading(v, b.purchases)).length
+        const ok = raw.readings.filter(
+          v => acceptReading(v, b.purchases, carryFor(v, b.purchases, raw.carries) ?? NO_CARRY)).length
         scanMsg = !raw.readings.length
           ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `
             + `(화면에서 숫자 ${raw.amounts.length}개만 봤어요)`
           : ok
             ? `표는 읽었는데 어느 값이 맞는지 가릴 수 없었어요. `
               + `(후보 ${raw.readings.length}개 중 ${ok}개 통과, 숫자 ${raw.amounts.length}개)`
-            : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases)}`
+            : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, carry)}`
         return
       }
       apply(s)
@@ -157,8 +173,16 @@
     needTexts = s.needs.map(v => v.toLocaleString('ko-KR'))
     const f = panelFields(s)
     nextIndex = f.tierIndex
+    carryText = s.carry[0] ? s.carry[0].toLocaleString('ko-KR') : ''
+    carryRest = s.carry.slice(1)
     if (f.remaining != null) remainText = f.remaining.toLocaleString('ko-KR')
-    if (s.total == null) {
+    if (topTier(s)) {
+      // 블랙은 위 등급이 없어 '○○ 등급까지'가 화면에 없다. 한 장 더 찍어도 나오지 않는다
+      scanPartial = false
+      scanMsg = '블랙이라 13주 합계가 화면에 안 나와요. 가장 오래된 주 하나만 빼고 다 구했어요.'
+        + (usesCarry(s) ? ` (사용 이월 ${s.carry[0].toLocaleString('ko-KR')}원 반영)` : '')
+      calc()
+    } else if (s.total == null) {
       scanPartial = true
       scanMsg = "툴팁 12줄은 읽었어요. 상단 '○○ 등급까지'가 가려져 있어서 가장 오래된 주만 "
         + '알 수 없어요. 마우스를 치우고 한 장 더 찍어 주세요.'
@@ -412,13 +436,17 @@
         <div class="prow">
           <span class="k">
             <select bind:value={nextIndex} aria-label="화면에 적힌 등급">
-              {#each d.tiers as t, i (t.key)}<option value={i}>{t.name}</option>{/each}
+              {#each d.tiers as t, i (t.key)}<option value={i}>{t.name} 등급까지</option>{/each}
+              <option value={d.tiers.length}>블랙 (윗줄이 없어요)</option>
             </select>
-            등급까지
           </span>
-          <input type="text" inputmode="numeric" bind:value={remainText} placeholder="590,330"
-            onblur={() => (remainText = fmt(remainText))} aria-label="남은 금액" />
-          <small>캐시</small>
+          {#if isTop}
+            <small class="none">블랙은 위 등급이 없어 이 줄이 인게임에 없어요</small>
+          {:else}
+            <input type="text" inputmode="numeric" bind:value={remainText} placeholder="590,330"
+              onblur={() => (remainText = fmt(remainText))} aria-label="남은 금액" />
+            <small>캐시</small>
+          {/if}
         </div>
         <div class="prow">
           <span class="k">{curTier?.name ?? ''} 등급 유지까지</span>
@@ -426,6 +454,16 @@
             onblur={() => (keepText = fmt(keepText))} aria-label="유지 필요 금액" />
           <small>캐시 · 선택 (넣으면 1주차와 대조해요)</small>
         </div>
+        {#if isTop}
+          <!-- 블랙은 갱신 때 모자란 만큼 이월에서 자동으로 꺼내 쓴다.
+               그만큼 1주 뒤 줄이 작게 적혀 있어서, 모르면 그 주 금액이 틀린다 -->
+          <div class="prow">
+            <span class="k">1주차 뒤 사용 이월 금액</span>
+            <input type="text" inputmode="numeric" bind:value={carryText} placeholder="16,132"
+              onblur={() => (carryText = fmt(carryText))} aria-label="사용 이월 금액" />
+            <small>캐시 · 표 맨 오른쪽 열의 첫 줄이에요 (없으면 0)</small>
+          </div>
+        {/if}
       </section>
 
       <!-- 인게임 툴팁 표와 같은 4열 구조 -->
@@ -471,9 +509,10 @@
             <div class="r2 head"><span>주</span><span class="n">인게임</span><span class="n">수집한 결제</span><span class="n">PC방</span><span class="n">환산</span></div>
             {#each rows as r (r.start)}
               {@const v = amountOf(r.start, r.amount)}
-              <div class="r2" class:bad={!!r.note} class:warn={!r.note && !!r.warn} class:zero={v === 0}>
+              <div class="r2" class:bad={!!r.note} class:warn={!r.note && !!r.warn}
+                   class:zero={v === 0} class:unsure={!!r.unknown}>
                 <span class="mono wk2">{md(r.start)}–{md(r.end)}</span>
-                <span class="n mono">{won(r.nexon)}</span>
+                <span class="n mono">{r.unknown ? '–' : won(r.nexon)}</span>
                 <span class="n mono dim">{won(r.spent)}</span>
                 <span class="n">
                   <input class="mono" type="text" inputmode="numeric" value={v.toLocaleString('ko-KR')}
@@ -482,7 +521,9 @@
                 </span>
                 <span class="tm">{v ? hm(Math.floor(v / 100) * 6) : '-'}</span>
               </div>
-              {#if r.note || r.warn}
+              {#if r.unknown}
+                <p class="msg">이 주는 인게임 화면에 나오지 않아요. 비워 두면 보정하지 않고 넘어가요.</p>
+              {:else if r.note || r.warn}
                 <p class="msg" class:bad={!!r.note}>{r.note || r.warn}</p>
               {/if}
             {/each}
@@ -490,7 +531,7 @@
 
           <div class="foot">
             <div class="sum">PC방 보정 합계 <b class="mono">{won(pcTotal)}</b>원
-              <small>· 13주 합계가 {won(result?.total ?? 0)}원이 돼요</small>
+              {#if result?.total != null}<small>· 13주 합계가 {won(result.total)}원이 돼요</small>{/if}
             </div>
             <div class="foot-btns">
               {#if Object.keys(d.pcroom.weeks).length}
@@ -509,6 +550,9 @@
 <svelte:window onkeydown={e => e.key === 'Escape' && (app.showPcRoom = false)} onpaste={onPaste} />
 
 <style>
+  .unsure { opacity: .6 }
+  .none { color: var(--color-tx3) }
+
   .back {
     position: absolute; inset: 52px 0 0 0; z-index: 40;
     display: grid; place-items: center; padding: 20px;

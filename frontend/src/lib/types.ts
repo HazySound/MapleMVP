@@ -18,6 +18,8 @@ export interface PcRoomRow {
   minutes: number
   note: string     // 확실히 잘못된 값
   warn: string     // 확인해 볼 값
+  /** 화면에 나오지 않아 구할 수 없는 주 (블랙의 가장 오래된 주) */
+  unknown?: boolean
 }
 
 /** 파이썬 인식기가 뽑아 준 숫자 후보. 어느 것이 맞는지는 core/scan이 고른다 */
@@ -25,6 +27,8 @@ export interface PcRoomScan {
   ok: boolean
   message?: string
   readings: number[][]
+  /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 블랙이 아니면 모두 0이다 */
+  carries?: number[][]
   amounts: number[]
   scale: number
 }
@@ -33,7 +37,8 @@ export interface PcRoomResult {
   ok: boolean
   issues: string[]
   rows: PcRoomRow[]
-  total?: number
+  /** 지금 13주 합계. 블랙은 화면에 안 나와서 null이다 */
+  total?: number | null
   tierTh?: number
   pcTotal?: number
 }

@@ -295,6 +295,36 @@ def read_amounts(g: np.ndarray, table: Table, glyphs: dict, th: int, blur) -> li
     return out if len(out) == ROWS else None
 
 
+def read_column(g: np.ndarray, table: Table, glyphs: dict) -> list[list[int]]:
+    """한 열을 임계값·블러를 바꿔 가며 읽어 서로 다른 답을 모은다."""
+    seen: list[list[int]] = []
+    for th in THRESHOLDS:
+        for blur in BLURS:
+            vals = read_amounts(g, table, glyphs, th, blur)
+            if vals and vals not in seen:
+                seen.append(vals)
+    return seen
+
+
+def right_columns(g: np.ndarray, tables: list[Table], chosen: Table, glyphs: dict) -> list[list[int]]:
+    """금액 열 오른쪽에 붙은 같은 줄의 열을 읽는다.
+
+    인게임 툴팁의 마지막 열이 '사용 이월 금액'이다. 블랙은 갱신 때 모자란 금액을
+    이월에서 자동으로 꺼내 쓰는데, '현재 등급 유지까지'는 그만큼 이미 빼고 적혀 있다.
+    이 열을 같이 읽지 않으면 그 줄이 얼마나 작게 적혔는지 알 길이 없다.
+    화면 숫자 더미에서 이월을 골라내려 해 봤지만, 오독한 값이 같은 끝자리를 달고
+    따라와서 가릴 수 없었다. 자리로 찾는 편이 확실하다.
+    """
+    out: list[list[int]] = []
+    for t in tables:
+        if t.x0 <= chosen.x1 or t.rows != chosen.rows:
+            continue
+        for vals in read_column(g, t, glyphs):
+            if vals not in out:
+                out.append(vals)
+    return out
+
+
 def scan(img: Image.Image, scale: float = 0.0) -> dict:
     """캡처에서 숫자 후보를 뽑는다. 어느 것이 맞는지는 판단하지 않는다.
 
@@ -303,25 +333,23 @@ def scan(img: Image.Image, scale: float = 0.0) -> dict:
     그 규칙은 화면(TS)에 한 벌만 두었으므로 여기서는 후보만 넘긴다.
 
     scale: 툴팁이 없는 두 번째 장을 읽을 때, 첫 장에서 알아낸 UI 배율.
-    반환: {readings: 툴팁 12줄 후보들, amounts: 화면에서 읽은 숫자들, scale}
+    반환: {readings: 툴팁 12줄 후보들, carries: 사용 이월 금액 열 후보들,
+          amounts: 화면에서 읽은 숫자들, scale}
     """
     tpl = _templates()
     if not tpl or not tpl.get("glyphs"):
-        return {"readings": [], "amounts": [], "scale": scale, "error": "templates"}
+        return {"readings": [], "carries": [], "amounts": [], "scale": scale, "error": "templates"}
     glyphs = tpl["glyphs"]
     g = gray(img)
 
-    for table in find_tables(g):
-        seen: list[list[int]] = []
-        for th in THRESHOLDS:
-            for blur in BLURS:
-                vals = read_amounts(g, table, glyphs, th, blur)
-                if vals and vals not in seen:
-                    seen.append(vals)
+    tables = find_tables(g)
+    for table in tables:
+        seen = read_column(g, table, glyphs)
         if seen:
             return {"readings": seen, "scale": table.scale,
+                    "carries": right_columns(g, tables, table, glyphs),
                     "amounts": find_amounts(g, glyphs, table.scale, table.rows)}
 
     # 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
-    return {"readings": [], "scale": scale or 1.0,
+    return {"readings": [], "carries": [], "scale": scale or 1.0,
             "amounts": find_amounts(g, glyphs, scale or 1.0)}

@@ -26,3 +26,6 @@ frontend/test/captures/
 
 # 로컬에서만 쓰는 비밀값
 .dev.vars
+
+# wrangler 로그인·캐시 상태
+.wrangler/

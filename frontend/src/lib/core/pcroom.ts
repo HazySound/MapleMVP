@@ -24,13 +24,37 @@ export const HIGH_WEEK_MINUTES = 20 * 60      // 주 20시간을 넘으면 PC방
 /** PC방 반영액을 접속 시간(분)으로 환산한다. */
 export const minutesOf = (amount: number) => Math.floor(amount / UNIT) * MINUTES_PER_UNIT
 
-export interface Restored { weeks: number[]; issues: string[]; ok: boolean }
+export interface Restored {
+  weeks: number[]
+  /** 화면에 나오지 않아 구할 수 없는 주의 자리. 블랙이면 가장 오래된 주 하나다 */
+  unknown: number[]
+  issues: string[]
+  ok: boolean
+}
+
+/** 이월을 한 푼도 안 쓴 12줄. 블랙이 아니면 늘 이것이다 */
+export const NO_CARRY: number[] = Array(TOOLTIP_ROWS).fill(0)
+
+/**
+ * 인게임 '유지까지' 금액에서 빠져 있는 이월을 되돌려 놓는다.
+ *
+ * 블랙은 갱신 때 모자란 금액을 이월에서 자동으로 꺼내 쓴다. 그래서 인게임이 적어 주는
+ * '현재 등급 유지까지'는 그 줄에서 쓰일 이월을 이미 빼고 적은 금액이다.
+ * 되돌려 놓지 않으면 이웃한 두 줄의 차이가 이월만큼 부풀어 그 주 금액이 틀린다.
+ *
+ * 얼마를 쓰는지는 툴팁 맨 오른쪽 '사용 이월 금액' 열에 줄마다 적혀 있다.
+ * 이월이 있는 것은 블랙뿐이라 다른 등급에서는 전부 0이고 아무것도 달라지지 않는다.
+ */
+export const withCarry = (needs: number[], carry: number[]): number[] =>
+  needs.map((v, i) => v + (carry[i] ?? 0))
 
 /**
  * 상단 '○○ 등급까지 N 캐시' 한 줄에서 (지금 등급 기준, 지금 13주 합계)를 뽑는다.
  * '레드 등급까지'라고 적혀 있으면 지금 등급은 그 바로 아래(다이아)다.
  */
-export function anchor(ths: number[], nextIndex: number, remaining: number): [number, number] {
+export function anchor(ths: number[], nextIndex: number, remaining: number): [number, number | null] {
+  // 블랙은 위 등급이 없어 이 줄 자체가 화면에 없다. 13주 합계는 끝내 알 수 없다
+  if (nextIndex >= ths.length) return [ths[ths.length - 1], null]
   return [nextIndex > 0 ? ths[nextIndex - 1] : 0, ths[nextIndex] - remaining]
 }
 
@@ -38,32 +62,39 @@ export function anchor(ths: number[], nextIndex: number, remaining: number): [nu
  * 툴팁 12줄을 넥슨 기준 주차별 금액 13개로 되돌린다.
  * 가운데 11주는 이웃한 줄의 차이라서 tierTh가 상쇄된다. 양 끝 두 주만 tierTh와 total이 필요하다.
  */
-export function restore(needs: number[], tierTh: number, total: number,
-                        keepNeed: number | null = null): Restored {
+export function restore(needs: number[], tierTh: number, total: number | null,
+                        keepNeed: number | null = null, carry: number[] = NO_CARRY): Restored {
   const issues: string[] = []
   if (needs.length !== TOOLTIP_ROWS) {
-    return { weeks: [], issues: [`툴팁 값이 ${TOOLTIP_ROWS}개여야 하는데 ${needs.length}개예요.`], ok: false }
+    return { weeks: [], unknown: [],
+             issues: [`툴팁 값이 ${TOOLTIP_ROWS}개여야 하는데 ${needs.length}개예요.`], ok: false }
   }
-  if (tierTh <= 0) return { weeks: [], issues: ['지금 등급을 알 수 없어요.'], ok: false }
+  if (tierTh <= 0) return { weeks: [], unknown: [], issues: ['지금 등급을 알 수 없어요.'], ok: false }
 
-  const weeks = [total - tierTh + needs[0]]                               // 가장 오래된 주
-  for (let k = 1; k < TOOLTIP_ROWS; k++) weeks.push(needs[k] - needs[k - 1]) // 가운데 11주
-  weeks.push(tierTh - needs[needs.length - 1])                            // 이번 주
+  const adj = withCarry(needs, carry)
+  // 블랙은 '○○ 등급까지'가 화면에 없어 지금 13주 합계를 모른다. 그 한 줄이 있어야
+  // 풀리는 것은 가장 오래된 주뿐이라, 나머지 12주는 그대로 구해 둔다.
+  const unknown = total == null ? [0] : []
+  const weeks = [total == null ? 0 : total - tierTh + adj[0]]         // 가장 오래된 주
+  for (let k = 1; k < TOOLTIP_ROWS; k++) weeks.push(adj[k] - adj[k - 1]) // 가운데 11주
+  weeks.push(tierTh - adj[adj.length - 1])                            // 이번 주
 
   weeks.forEach((v, i) => {
-    if (v < 0) issues.push(`${i + 1}번째 주 금액이 음수(${v.toLocaleString('ko-KR')}원)예요. 툴팁 숫자를 잘못 읽은 것 같아요.`)
+    if (v < 0 && !unknown.includes(i)) {
+      issues.push(`${i + 1}번째 주 금액이 음수(${v.toLocaleString('ko-KR')}원)예요. 툴팁 숫자를 잘못 읽은 것 같아요.`)
+    }
   })
   for (let k = 1; k < TOOLTIP_ROWS; k++) {
-    if (needs[k] < needs[k - 1]) {
-      issues.push(`${k}주 뒤(${needs[k - 1].toLocaleString('ko-KR')})보다 `
-        + `${k + 1}주 뒤(${needs[k].toLocaleString('ko-KR')})가 작아요. 유지까지 필요한 금액은 줄어들 수 없어요.`)
+    if (adj[k] < adj[k - 1]) {
+      issues.push(`${k}주 뒤(${adj[k - 1].toLocaleString('ko-KR')})보다 `
+        + `${k + 1}주 뒤(${adj[k].toLocaleString('ko-KR')})가 작아요. 유지까지 필요한 금액은 줄어들 수 없어요.`)
     }
   }
   if (keepNeed != null && keepNeed !== needs[0]) {
     issues.push(`상단의 유지 필요 금액(${keepNeed.toLocaleString('ko-KR')})과 `
       + `툴팁 1주 뒤(${needs[0].toLocaleString('ko-KR')})가 달라요.`)
   }
-  return { weeks, issues, ok: issues.length === 0 }
+  return { weeks, unknown, issues, ok: issues.length === 0 }
 }
 
 export interface Gap {
@@ -75,6 +106,8 @@ export interface Gap {
   note: string        // 확실히 잘못된 값
   warn: string        // 확인해 볼 값
   ok: boolean
+  /** 화면에 나오지 않아 구할 수 없는 주. 0으로 보이지만 '0원'이라는 뜻이 아니다 */
+  unknown: boolean
 }
 
 /**
@@ -82,9 +115,16 @@ export interface Gap {
  * 차이가 PC방이 아니라 '수집 누락'일 수도 있다. PC방은 반드시 100의 배수라
  * 그걸로 한 번 거르고, 접속 시간으로 환산해서 말이 되는지로 한 번 더 거른다.
  */
-export function compare(nexon: number[], collected: number[], starts: string[]): Gap[] {
+export function compare(nexon: number[], collected: number[], starts: string[],
+                        unknown: number[] = []): Gap[] {
   const out: Gap[] = []
   for (let i = 0; i < Math.min(nexon.length, collected.length, starts.length); i++) {
+    if (unknown.includes(i)) {
+      // 모르는 주를 0원이라고 우기면 안 된다. 비워 두고 사용자가 정하게 남긴다
+      out.push({ start: starts[i], nexon: 0, collected: collected[i], amount: 0, minutes: 0,
+                 note: '', warn: '', ok: true, unknown: true })
+      continue
+    }
     const gap = nexon[i] - collected[i]
     let note = ''
     let warn = ''
@@ -100,15 +140,18 @@ export function compare(nexon: number[], collected: number[], starts: string[]):
         + '맞는지 확인해 보세요. 수집하지 못한 결제일 수도 있어요.'
     }
     out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap,
-               minutes: minutesOf(gap), note, warn, ok: !note })
+               minutes: minutesOf(gap), note, warn, ok: !note, unknown: false })
   }
   return out
 }
 
-/** 확인한 보정값을 기존 저장분에 얹는다. 0원인 주도 '확인했다'는 뜻이라 남긴다. */
+/**
+ * 확인한 보정값을 기존 저장분에 얹는다. 0원인 주도 '확인했다'는 뜻이라 남긴다.
+ * 다만 구할 수 없었던 주는 빼 둔다. 0원으로 적어 두면 다시 물어볼 길이 없어진다.
+ */
 export function mergeSaved(saved: Record<string, number>, gaps: Gap[]): Record<string, number> {
   const out = { ...saved }
-  for (const g of gaps) out[g.start] = g.amount
+  for (const g of gaps) if (!g.unknown) out[g.start] = g.amount
   return out
 }
 

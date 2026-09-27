@@ -262,7 +262,11 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
     linger = !!guide
     guide?.finish({
       title: STAGE.done.title, tone: 'good',
-      body: `13주 합계 ${state.solved.total?.toLocaleString('ko-KR') ?? '?'}원. MapleMVP 화면으로 돌아오세요.`,
+      // 블랙은 '○○ 등급까지'가 화면에 없어 합계가 끝내 안 나온다. 물음표를 남기지 않는다
+      body: (state.solved.total == null
+        ? '블랙이라 13주 합계는 화면에 없어요. 가장 오래된 주만 빼고 다 읽었어요.'
+        : `13주 합계 ${state.solved.total.toLocaleString('ko-KR')}원.`)
+        + ' MapleMVP 화면으로 돌아오세요.',
       note: '돌아오면 이 창은 저절로 닫혀요', have: { panel: true, tip: true },
     }, 20_000)
     o.onDone(state.solved)

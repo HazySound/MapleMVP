@@ -10,7 +10,8 @@
  * 한 프레임을 판단할 때 앞선 결론을 끌어들이지도 않는다. 한 번 잘못 읽은 값이
  * 뒤따르는 프레임의 근거가 되면 틀린 답이 표를 쌓는다.
  */
-import { type ScanRaw, type Solved, solveScan, totalsFor } from './scan'
+import { NO_CARRY } from './pcroom'
+import { type ScanRaw, type Solved, isTop, solveScan, totalsFor } from './scan'
 
 export interface VoteState {
   frames: number          // 지금까지 본 프레임 수
@@ -38,13 +39,14 @@ export function createVote(collected: number[], agree = AGREE): Vote {
   let seen = 0
   let scale = 1
   let needs: number[] | null = null
+  let carry: number[] = NO_CARRY
   let solved: Solved | null = null
   let partial: Solved | null = null
 
   /** 상단 패널이 찍힌 프레임에서 합계를 찾는다. 답이 갈리는 프레임은 버린다. */
   function addAmounts(amounts: number[]) {
     if (!needs || !amounts.length) return
-    const found = totalsFor(needs, collected, amounts)
+    const found = totalsFor(needs, collected, amounts, carry)
     if (found.size !== 1) return
     const key = [...found][0]
     hits.set(key, (hits.get(key) ?? 0) + 1)
@@ -52,11 +54,13 @@ export function createVote(collected: number[], agree = AGREE): Vote {
 
   function settle() {
     if (!needs || solved) return
+    // 블랙은 '○○ 등급까지'가 화면에 없다. 기다려 봐야 오지 않으니 여기서 끝낸다
+    if (partial && isTop(partial)) { solved = { ...partial, scale }; return }
     const best = [...hits.entries()].sort((a, b) => b[1] - a[1])
     // 서로 다른 합계가 같은 표를 받으면 아직 모르는 것이다
     if (!best.length || (best.length > 1 && best[0][1] === best[1][1])) return
     const [tierTh, total] = best[0][0].split(':').map(Number)
-    solved = { needs, tierTh, total, scale }
+    solved = { needs, tierTh, total, carry, scale }
   }
 
   function state(): VoteState {
@@ -71,11 +75,12 @@ export function createVote(collected: number[], agree = AGREE): Vote {
     if (!needs) {
       const s = solveScan(raw, collected)
       if (s) {
-        const key = s.needs.join(',')
+        const key = `${s.needs.join(',')}|${s.carry.join(',')}`
         const n = (needsVotes.get(key) ?? 0) + 1
         needsVotes.set(key, n)
         if (n >= agree) {
           needs = s.needs
+          carry = s.carry
           partial = s          // 합계를 못 채우고 끝나도 12줄은 남는다
           for (const a of waiting!) addAmounts(a)   // 모아 둔 것을 한 번에 훑는다
           waiting = null

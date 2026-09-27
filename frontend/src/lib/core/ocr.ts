@@ -496,26 +496,62 @@ function findAmounts(g: Gray, scale: number, skip?: Skip): number[] {
   return [...vals].sort((a, b) => a - b)
 }
 
-export interface ScanResult { readings: number[][]; amounts: number[]; scale: number }
+export interface ScanResult {
+  readings: number[][]
+  /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 블랙이 아니면 모두 0이다 */
+  carries: number[][]
+  amounts: number[]
+  scale: number
+}
+
+/** 한 열을 임계값·블러를 바꿔 가며 읽어 서로 다른 답을 모은다. */
+function readColumn(g: Gray, t: Table): number[][] {
+  const seen: number[][] = []
+  for (const th of THRESHOLDS) {
+    for (const b of BLURS) {
+      for (const merge of [false, true]) {
+        const v = readAmounts(g, t, th, b, merge)
+        if (v && !seen.some(x => x.every((n, i) => n === v[i]))) seen.push(v)
+      }
+    }
+  }
+  return seen
+}
+
+const sameRows = (a: Table, b: Table) =>
+  a.rows.length === b.rows.length && a.rows.every((r, i) => r[0] === b.rows[i][0])
+
+/**
+ * 금액 열 오른쪽에 붙은 같은 줄의 열을 읽는다.
+ *
+ * 인게임 툴팁의 마지막 열이 '사용 이월 금액'이다. 블랙은 갱신 때 모자란 금액을
+ * 이월에서 자동으로 꺼내 쓰는데, '현재 등급 유지까지'는 그만큼 이미 빼고 적혀 있다.
+ * 이 열을 같이 읽지 않으면 그 줄이 얼마나 작게 적혔는지 알 길이 없다.
+ * 화면 숫자 더미에서 이월을 골라내려 해 봤지만, 오독한 값이 같은 끝자리를 달고
+ * 따라와서 가릴 수 없었다. 자리로 찾는 편이 확실하다.
+ */
+function rightColumns(g: Gray, tables: Table[], chosen: Table): number[][] {
+  const out: number[][] = []
+  for (const t of tables) {
+    if (t.x0 <= chosen.x1 || !sameRows(t, chosen)) continue
+    for (const v of readColumn(g, t)) {
+      if (!out.some(x => x.every((n, i) => n === v[i]))) out.push(v)
+    }
+  }
+  return out
+}
 
 /** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
-  for (const t of findTables(g)) {
-    const seen: number[][] = []
-    for (const th of THRESHOLDS) {
-      for (const b of BLURS) {
-        for (const merge of [false, true]) {
-          const v = readAmounts(g, t, th, b, merge)
-          if (v && !seen.some(x => x.every((n, i) => n === v[i]))) seen.push(v)
-        }
-      }
-    }
+  const tables = findTables(g)
+  for (const t of tables) {
+    const seen = readColumn(g, t)
     if (seen.length) {
-      return { readings: seen, scale: t.scale,
+      return { readings: seen, scale: t.scale, carries: rightColumns(g, tables, t),
                amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }) }
     }
   }
   // 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
   const sc = fallbackScale || 1
-  return { readings: [], scale: sc, amounts: findAmounts(g, sc) }
+  return { readings: [], carries: [], scale: sc, amounts: findAmounts(g, sc) }
 }
