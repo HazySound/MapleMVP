@@ -53,7 +53,7 @@
     </div>
   </div>
 
-  <p class="ef-hint">상품권은 <b>할인이 큰 것부터</b> 5만원권으로 먼저, 5만 원이 안 되는 부분은 3천 원 단위로 충전한다고 보고 계산해요. 딱 맞지 않는 끝자리는 {bc.on ? '바코드나 ' : ''}일반 충전(1:1)으로 채워요.</p>
+  <p class="ef-hint">상품권은 <b>5만원권을 먼저</b> 할인이 큰 것부터 쓰고, 남은 한도로만 3천 원 단위를 채운다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 딱 맞지 않는 끝자리는 {bc.on ? '바코드나 ' : ''}일반 충전(1:1)으로 채워요.</p>
 </article>
 
 <style>
@@ -75,5 +75,15 @@
     .row { grid-template-columns: 18px minmax(0, 1fr) 84px 92px; }
     .bc { grid-template-columns: 18px minmax(0, 1fr); }
     .bc .want { grid-column: 2; }
+  }
+  /* 좁은 폰: 상품권 이름이 칸에 눌려 잘렸다. 이름을 한 줄 다 쓰고, 두 칸은 그 아래에 */
+  @media (max-width: 420px) {
+    .row { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr); row-gap: 4px; }
+    .row label { grid-column: 2 / -1; }
+    .row:not(.head, .bc) > :global(:nth-child(3)) { grid-column: 2; }
+    .row:not(.head, .bc) > :global(:nth-child(4)) { grid-column: 3; }
+    .row.head span:nth-child(2) { display: none; }
+    .row.head span:nth-child(n+3) { text-align: left; }
+    .row + .row:not(.bc) { padding-top: 6px; border-top: 1px solid var(--color-line); }
   }
 </style>

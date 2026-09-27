@@ -160,4 +160,21 @@
   .add .txt { all: unset; box-sizing: border-box; flex: 1 1 160px; padding: 5px 10px; border-radius: 8px; font-size: 13px; color: var(--color-tx); background: var(--color-panel); border: 1px solid var(--color-line); user-select: text; }
   .add .txt:focus { border-color: var(--color-lav); }
   .add :global(.nb) { width: 150px; }
+
+  /* 폰: 줄마다 카드. 이름 / 크레딧·1만당 | 가격 칸 */
+  @media (max-width: 672px) {
+    table { min-width: 0; }
+    thead { display: none; }
+    tbody { display: grid; }
+    tr { display: grid; grid-template-columns: minmax(0, 1fr) 112px; column-gap: 8px; row-gap: 2px; align-items: center; padding: 9px 10px; box-shadow: inset 0 1px 0 var(--color-line); }
+    tbody tr:first-child { box-shadow: none; }
+    td, tr.best td, tr.best td:first-child { padding: 0; background: none; box-shadow: none; }
+    td:first-child { grid-column: 1 / -1; white-space: normal; margin-bottom: 2px; }
+    .name { flex-wrap: wrap; row-gap: 3px; }
+    td:nth-child(2), td:nth-child(4) { grid-column: 1; text-align: left; font-size: 11.5px; color: var(--color-tx3); }
+    td:nth-child(2)::before { content: '크레딧 '; font-family: var(--font-sans); }
+    td:nth-child(4)::before { content: '크레딧 1만당 '; font-family: var(--font-sans); }
+    td:nth-child(3) { grid-column: 2; grid-row: 2 / span 2; width: auto; }
+    tr.best { background: color-mix(in oklab, var(--color-butter) 8%, transparent); box-shadow: inset 0 1px 0 var(--color-line), inset 3px 0 0 var(--color-butter); }
+  }
 </style>

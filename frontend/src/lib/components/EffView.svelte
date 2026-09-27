@@ -63,6 +63,8 @@
 <style>
   .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 16px; max-width: 1560px; margin: 0 auto; }
   .grid > div { grid-column: span 12; display: grid; min-width: 0; }
+  /* 카드 안의 넓은 표가 카드를 밀어 화면 밖으로 넘치지 않게 한다. 표는 제 칸 안에서 옆으로 넘긴다 */
+  .grid > div > :global(*) { min-width: 0; }
   @media (min-width: 1296px) {
     .c4 { grid-column: span 4 !important; }
     .c4.wide { grid-column: span 5 !important; }
@@ -83,4 +85,10 @@
   .dock b { font-size: 17px; color: var(--color-tx); }
   .dock svg { width: 16px; height: 16px; color: var(--color-lav); }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  /* 폰: 양끝에 붙고 글자가 접혔다. 회수율은 빼고 한 줄로 */
+  @media (max-width: 672px) {
+    .dock { max-width: calc(100% - 24px); gap: 10px; padding: 8px 12px; }
+    .dock span { white-space: nowrap; }
+    .dock span:nth-of-type(2) { display: none; }
+  }
 </style>

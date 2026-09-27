@@ -245,4 +245,10 @@
     .knob { width: 18px; height: 18px; }
     .sw[aria-checked="true"] .knob { transform: translateX(18px); }
   }
+  /* 360px 폰: 탭이 셋이라 로그인 단추가 밀려 잘렸다. 탭 여백을 줄여 한 줄에 넣는다 */
+  @media (max-width: 400px) {
+    .bar { gap: 5px; padding-left: 8px; }
+    .bar:not(:has(.winctl)) { padding-right: 8px; }
+    .tabs button { padding: 5px 7px; font-size: 12px; }
+  }
 </style>

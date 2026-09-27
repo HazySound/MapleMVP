@@ -190,7 +190,7 @@
     {#if out.mode === 'plan'}
       <section class="weeks">
         <h4>주별로 보면 <span>줄을 누르면 아래 순서가 그 주로 바뀌어요</span></h4>
-        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 상품권은 <b>할인이 큰 것부터</b> 그 달 한도가 남은 주에 쓰고, 5만원권으로 먼저, 5만 원이 안 되는 부분은 3천 원 단위로 충전해요. 권으로 딱 맞지 않는 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 채워요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
+        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 상품권은 그 달 한도를 <b>5만원권으로 먼저</b> 할인이 큰 것부터 주마다 나눠 쓰고, 남은 한도로만 3천 원 단위를 채워요. 3천 원 단위가 다른 주의 5만원권 자리를 먹지 않게 해요. 권으로 딱 맞지 않는 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 채워요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
         <div class="tbl">
           <table>
             <thead><tr><th>주</th><th>결제</th><th>충전</th>{#if SHOP.barcode.on}<th>바코드로 받을 캐시</th>{/if}<th>할인 받음</th><th>판매</th>{#if out.credit}<th>크레딧</th>{/if}<th>낸 현금</th><th>실제로 나감</th></tr></thead>
@@ -201,21 +201,21 @@
                 {/if}
                 <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
                   <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}</td>
-                  <td class="mono">{won(w.route.pay)}</td>
-                  <td><div class="parts">{#each w.funding.parts as q (q.name)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}</span>{/each}</div></td>
+                  <td class="mono" data-l="결제">{won(w.route.pay)}</td>
+                  <td class="pt"><div class="parts">{#each w.funding.parts as q (q.name)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}</span>{/each}</div></td>
                   {#if SHOP.barcode.on}
-                    <td onclick={e => e.stopPropagation()}>
+                    <td data-l="바코드로 받을 캐시" onclick={e => e.stopPropagation()}>
                       <NumBox id="eff-wbc-{w.w.start}" label="{md(w.w.start)} 주 바코드 캐시" size="sm" placeholder={eff.barcodeWant ? won(eff.barcodeWant) : '나머지 전부'}
                         value={eff.weekBarcode[w.w.start] ?? 0} set={v => setWeekBc(w.w.start, v)} />
                     </td>
                   {/if}
-                  <td class="mono good">{discount(w) > 0 ? won(discount(w)) : '—'}</td>
-                  <td class="mono">{w.route.sales}회</td>
+                  <td class="mono good" data-l="할인 받음">{discount(w) > 0 ? won(discount(w)) : '—'}</td>
+                  <td class="mono" data-l="판매">{w.route.sales}회</td>
                   {#if out.credit}
-                    <td class="crd">{#if w.credit?.buys.length}{w.credit.buys.map(b => `${b.item.name.replace('프라임 ', '')} ${b.n}`).join(' + ')}{:else if w.credit?.earned}<span class="dim">모으는 중 {won(w.credit.left)}</span>{:else}—{/if}</td>
+                    <td class="crd" data-l="크레딧">{#if w.credit?.buys.length}{w.credit.buys.map(b => `${b.item.name.replace('프라임 ', '')} ${b.n}`).join(' + ')}{:else if w.credit?.earned}<span class="dim">모으는 중 {won(w.credit.left)}</span>{:else}—{/if}</td>
                   {/if}
-                  <td class="mono">{won(w.route.cost)}</td>
-                  <td class="mono bad">{won(w.loss)}</td>
+                  <td class="mono" data-l="낸 현금">{won(w.route.cost)}</td>
+                  <td class="mono bad lo" data-l="실제로 나감">{won(w.loss)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -279,6 +279,7 @@
 </article>
 
 <style>
+  .answer > * { min-width: 0; }
   .answer {
     display: grid; gap: 16px; padding: 22px;
     background:
@@ -380,4 +381,38 @@
   .route .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .route .dd { font-size: 12px; color: var(--color-tx3); }
   .extra { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12px; color: var(--color-tx3); }
+
+  /*
+   * 패드·폰: 주별 표를 주마다 카드로. 아홉 칸을 한 줄에 두면 화면을 넘어 '실제로 나감'이 잘린다.
+   *   9월 24일 주 · 이번 주              실제로 나감
+   *   충전 칩들
+   *   결제 | 할인 받음 | 판매 | 크레딧 | 낸 현금   (폰은 세 칸씩)
+   */
+  @media (max-width: 1032px) {
+    .tbl { border: 0; overflow: visible; }
+    table { min-width: 0; display: block; }
+    thead { display: none; }
+    tbody { display: grid; gap: 8px; }
+    tr { display: block; }
+    .month td { display: block; border-radius: 10px; padding: 8px 10px; box-shadow: none; }
+    .wk { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 10px; padding: 12px; border-radius: 12px; background: var(--color-bg2); border: 1px solid var(--color-line); }
+    .wk.sel { border-color: var(--color-lav); background: color-mix(in oklab, var(--color-lav) 12%, var(--color-bg2)); }
+    .wk td, .wk:hover td, .wk.sel td { padding: 0; box-shadow: none; background: none; text-align: left; white-space: normal; order: 4; }
+    .wk td[data-l]::before { content: attr(data-l); display: block; font-family: var(--font-sans); font-size: 10.5px; color: var(--color-tx3); }
+    .wk td.d { grid-column: span 4; order: 1; font-weight: 600; }
+    .wk .d small { display: inline; margin-left: 6px; }
+    .wk td.lo { grid-column: span 2; order: 2; text-align: right; font-size: 15px; }
+    .wk td.pt { grid-column: 1 / -1; order: 3; }
+    .parts { justify-content: flex-start; }
+    .wk :global(.nb) { margin-left: 0; }
+  }
+  @media (max-width: 672px) {
+    .answer { padding: 16px; }
+    .big { font-size: 44px; }
+    .route li { grid-template-columns: 26px 1fr; column-gap: 8px; }
+    .answer :global(.ef-chip) { white-space: normal; flex-wrap: wrap; border-radius: 10px; }
+    .wk { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .wk td.d { grid-column: span 2; }
+    .wk td.lo { grid-column: span 1; }
+  }
 </style>

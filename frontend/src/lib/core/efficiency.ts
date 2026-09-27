@@ -398,18 +398,44 @@ export interface WeekResult {
   ctx: FundCtx
 }
 
+/**
+ * 한 달 치 상품권을 그 달의 주들에 나눈다. needs는 주마다 충전해야 할 캐시, left는 그 달 남은 한도.
+ * 5만원권을 먼저 모든 주에 나눠 주고, 남은 한도로만 3천 원 단위를 채운다.
+ * 주마다 5만원권·3천 원을 섞어 사면 앞 주의 3천 원 단위가 한도를 깎아 뒤 주의 5만원권 한 장을 막는다.
+ * 돌려주는 것: 주마다 상품권별로 쓸 금액
+ */
+export function splitMonth(needs: number[], cards: Card[], left: Record<string, number>): Record<string, number>[] {
+  const rest = [...needs], lim = { ...left }
+  const out = needs.map(() => ({}) as Record<string, number>)
+  for (const unit of [BIG, SMALL]) for (const k of cards) for (let i = 0; i < rest.length; i++) {
+    const n = Math.floor(Math.min(rest[i], lim[k.key] ?? 0) / unit) * unit
+    if (n <= 0) continue
+    out[i][k.key] = (out[i][k.key] ?? 0) + n
+    rest[i] -= n; lim[k.key] -= n
+  }
+  return out
+}
+
 export function planAll(p: Plan): WeekResult[] | null {
   const cards: Card[] = p.cards
     .map(c => ({ key: c.key, name: c.name, rate: rateOf(c.disc) ?? 0 }))
     .filter((c, i) => p.cards[i].on && c.rate > 0)
     .sort((a, b) => a.rate - b.rate)
-  const monthLeft: Record<string, Record<string, number>> = {}
-  const limitsOf = (m: string) => (monthLeft[m] ??= Object.fromEntries(
-    p.cards.map(c => [c.key, m === p.thisMonth ? (p.leftNow[c.key] ?? MONTHLY) : MONTHLY])))
+  // 상품권은 달마다 먼저 나눠 둔다. 잔액을 먼저 쓰니 주마다 충전할 캐시는 잔액을 뺀 만큼
+  const weekLimits: Record<string, number>[] = []
+  {
+    let bal = p.balance
+    const needs = p.weeks.map(w => { const use = Math.min(bal, w.amount); bal -= use; return w.amount - use })
+    for (const m of new Set(p.weeks.map(w => w.month))) {
+      const idx = p.weeks.map((w, i) => (w.month === m ? i : -1)).filter(i => i >= 0)
+      const left = Object.fromEntries(p.cards.map(c => [c.key, m === p.thisMonth ? (p.leftNow[c.key] ?? MONTHLY) : MONTHLY]))
+      splitMonth(idx.map(i => needs[i]), cards, left).forEach((l, j) => (weekLimits[idx[j]] = l))
+    }
+  }
   let balance = p.balance, capLeft = p.barcode.cap
   const out: WeekResult[] = []
-  for (const w of p.weeks) {
-    const limits = limitsOf(w.month)
+  for (const [wi, w] of p.weeks.entries()) {
+    const limits = weekLimits[wi]
     const want = w.start in p.weekBarcode ? p.weekBarcode[w.start] : p.barcodeWant
     // 이 주의 사정을 떠 둔다. 뒤 주가 한도를 깎아도 이 주 계산은 그대로여야 한다
     const ctx: FundCtx = {
@@ -422,7 +448,6 @@ export function planAll(p: Plan): WeekResult[] | null {
     if (!solved) return null
     const f = fund(solved.best.pay, ctx)
     for (const q of f.parts) {
-      if (q.card) limits[p.cards.find(c => c.name === q.name)!.key] -= q.cash
       if (q.bonus) capLeft -= q.bonus
       if (q.held) balance -= q.cash
     }

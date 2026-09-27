@@ -129,6 +129,28 @@ describe('주별 상품권 한도', () => {
     expect(cash(2)).toEqual([['컬쳐랜드', 150_000], ['일반 충전', 100_000]])
     for (const w of res) expect(w.solved.best.pay).toBe(250_000)
   })
+  it('한 달 한도는 5만원권으로 먼저 나눠 쓰고, 3천 원 단위가 뒤 주의 5만원권을 막지 않게 한다', () => {
+    // 첫 주에 도서 5만원권 1장 + 3천 원 1장을 사면 한도가 3천 원 깎여 둘째 주에 5만원권 한 장이 안 들어간다
+    const res = planAll({
+      weeks: [
+        { start: '2026-10-01', amount: 255_000, tier: 'gold', month: '2026-10' },
+        { start: '2026-10-08', amount: 400_000, tier: 'gold', month: '2026-10' },
+      ],
+      balance: 0,
+      cards: [
+        { key: 'nexon', name: '넥슨카드', disc: 5.6, on: true },
+        { key: 'culture', name: '컬쳐랜드', disc: 6, on: true },
+        { key: 'book', name: '도서문화상품권', disc: 6, on: true },
+      ],
+      leftNow: { nexon: 200_000, culture: 200_000, book: 200_000 },
+      thisMonth: '2026-10',
+      barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+      um: 1500, mk: 2250, items: [], fee: null, exact: true,
+    })!
+    const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
+    expect(cash(0)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000], ['일반 충전', 5_000]])
+    expect(cash(1)).toEqual([['도서문화상품권', 150_000], ['넥슨카드', 200_000], ['일반 충전', 50_000]])
+  })
 })
 
 describe('모든 조합을 다 따져 본 답과 같다', () => {

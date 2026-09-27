@@ -133,7 +133,7 @@
                 <td class="mono min">{x.id === PG_ID ? '—' : pg ? `${fx(minPrice(pg, x.cash))}억` : '—'}</td>
                 <td class="in">
                   {#if x.id === PG_ID}
-                    <span class="pgin">{pg ? `${pg}억` : '—'}<small>왼쪽에서 입력</small></span>
+                    <span class="pgin">{pg ? `${pg}억` : '—'}<small>플가 칸에서 입력</small></span>
                   {:else}
                     <NumBox id="eff-p-{x.id}" label="{itemLabel(x)} 경매장 가격(억)" size="sm" decimal unit="억"
                       placeholder={pg ? fx(minPrice(pg, x.cash)) : ''} value={eff.prices[x.id] ?? 0}
@@ -289,6 +289,52 @@
     background: var(--color-panel); border: 1px solid var(--color-line); user-select: text;
   }
   .add input.txt:focus { border-color: var(--color-lav); }
+
+  /* 패드: 표 그대로 두되 이름·머리글이 줄바꿈되게 해서 가격 칸까지 화면 안에 넣는다 */
+  @media (min-width: 673px) and (max-width: 1295px) {
+    table { min-width: 0; }
+    th { white-space: normal; }
+    td:first-child { white-space: normal; }
+    .name { flex-wrap: wrap; row-gap: 3px; }
+    td.in { width: 112px; }
+  }
+
+  /*
+   * 폰: 표를 줄마다 카드로 바꾼다. 다섯 칸을 한 줄에 두면 가격 칸이 화면 밖으로 밀린다.
+   *   이름 (한 줄 다)
+   *   캐시 5,400 | 이득 기준 2.75억
+   *   가격 칸           | 효율
+   */
+  @media (max-width: 672px) {
+    table { min-width: 0; }
+    thead { display: none; }
+    tbody { display: grid; }
+    tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px; column-gap: 8px; row-gap: 4px; align-items: center; padding: 9px 10px; box-shadow: inset 0 1px 0 var(--color-line); }
+    tbody tr:first-child { box-shadow: none; }
+    td, tr.up td, tr.down td, tr.base td, tr.mk td { padding: 0; background: none; border: 0; box-shadow: none; }
+    tr.up td:first-child, tr.down td:first-child, tr.base td:first-child { box-shadow: none; }
+    td:first-child { grid-column: 1 / -1; white-space: normal; margin-bottom: 2px; }
+    .name { flex-wrap: wrap; row-gap: 3px; }
+    td:nth-child(2), td:nth-child(3) { text-align: left; font-size: 11.5px; color: var(--color-tx3); }
+    td:nth-child(2) { grid-column: 1; }
+    td:nth-child(3) { grid-column: 2 / -1; }
+    td:nth-child(2)::before { content: '캐시 '; font-family: var(--font-sans); }
+    td:nth-child(3)::before { content: '이득 기준 '; font-family: var(--font-sans); }
+    td:nth-child(4) { grid-column: 1 / 3; grid-row: 3; width: auto; }
+    td:nth-child(5) { grid-column: 3; grid-row: 3; }
+    tr.base td:nth-child(4) { grid-row: 2; text-align: left; }
+    tr.base td:nth-child(5) { grid-row: 2; }
+    tr.base td:nth-child(2) { display: none; }
+    .pgin { justify-items: start; }
+    tr.base td:nth-child(3), tr.mk td:nth-child(2), tr.mk td:nth-child(3) { display: none; }
+    tr.mk td:nth-child(4) { grid-row: 2; font-size: 11.5px; text-align: left; }
+    tr.mk td:nth-child(5) { grid-row: 2; }
+    tr.folded { display: block; padding: 4px; }
+    tr.up { background: color-mix(in oklab, var(--color-mint) 7%, transparent); box-shadow: inset 0 1px 0 var(--color-line), inset 3px 0 0 var(--color-mint); }
+    tr.down { background: color-mix(in oklab, var(--color-peach) 6%, transparent); box-shadow: inset 0 1px 0 var(--color-line), inset 3px 0 0 var(--color-peach); }
+    tr.base { background: color-mix(in oklab, var(--color-lav) 12%, transparent); box-shadow: inset 0 0 0 2px var(--color-lav); }
+    tr.mk { background: color-mix(in oklab, var(--color-sky) 6%, transparent); }
+  }
   .add input.txt::placeholder { color: var(--color-tx3); }
   @media (max-width: 912px) { .add { grid-template-columns: 1fr 1fr; } .add .nm2 { grid-column: 1 / -1; } }
 </style>
