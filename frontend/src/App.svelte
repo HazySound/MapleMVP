@@ -21,6 +21,7 @@
   import ResizeHandles from './lib/components/ResizeHandles.svelte'
   import Simulator from './lib/components/Simulator.svelte'
   import TitleBar from './lib/components/TitleBar.svelte'
+  import UpdateToast from './lib/components/UpdateToast.svelte'
   import WeeklyBars from './lib/components/WeeklyBars.svelte'
   import { REDUCED, TOUCH } from './lib/format'
   import { planner } from './lib/plan.svelte'
@@ -77,6 +78,8 @@
     {#if app.data}<Footer />{/if}
   </main>
   <Overlay />
+  <!-- 배포 뒤에도 옛 화면이 남아 있으면 알려 준다. 웹에서만 -->
+  <UpdateToast />
   {#if app.data && app.showHistory}<HistoryModal />{/if}
   <!-- 보정은 인게임 캡처나 화면공유가 있어야 하고(휴대폰에는 둘 다 없다),
        뺄 결제가 있어야 인게임 금액에서 PC방 몫을 가려낼 수 있다 -->

@@ -1,0 +1,10 @@
+# Cloudflare Pages 응답 머리말.
+# 화면(index.html)과 빌드 표시(version.json)는 브라우저가 붙들고 있지 않게 한다.
+# 그래야 배포 뒤 새로고침 한 번으로 새 버전이 뜨고, 업데이트 알림도 제때 나온다.
+# 이름에 해시가 붙은 js·css는 내용이 바뀌면 이름도 바뀌므로 그대로 오래 둔다.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/version.json
+  Cache-Control: no-store

@@ -44,12 +44,29 @@ const woff2Only = {
   },
 }
 
-export default defineConfig(({ mode }) => ({
-  plugins: [woff2Only, svelte(), tailwindcss(), Icons({ compiler: 'svelte' })],
-  define: { __BUILD__: JSON.stringify(buildTag()) },
+/**
+ * 웹 빌드 옆에 지금 빌드 표시를 적은 파일을 둔다.
+ * 열려 있는 화면이 이것과 다르면 새 버전이 나온 것이다(src/lib/web/update.ts).
+ * 브라우저가 옛 화면을 붙들고 있어도 이 파일은 캐시하지 않게 해 두었다(public/_headers).
+ */
+const versionFile = (build: string) => ({
+  name: 'version-file',
+  apply: 'build' as const,
+  generateBundle(this: { emitFile(f: { type: 'asset'; fileName: string; source: string }): string }) {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build }) })
+  },
+})
+
+export default defineConfig(({ mode }) => {
+  const build = buildTag()
+  return {
+  plugins: [woff2Only, svelte(), tailwindcss(), Icons({ compiler: 'svelte' }),
+            ...(mode === 'web' ? [versionFile(build)] : [])],
+  define: { __BUILD__: JSON.stringify(build) },
   // pywebview는 dist/index.html을 파일로 열기 때문에 상대 경로가 필요하다.
   // 웹 배포는 루트 기준으로 올린다.
   base: mode === 'web' ? '/' : './',
   build: mode === 'web' ? { outDir: 'dist-web' } : {},
   server: { port: 5173, strictPort: true },
-}))
+  }
+})
