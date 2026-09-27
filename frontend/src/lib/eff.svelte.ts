@@ -101,8 +101,8 @@ export const shopItems = () => SHOP.items.filter(x => !x.until || x.until >= new
 
 export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0 }))
 
-/** 한 번에 큰 금액을 채우는 아이템. 사는 사람이 적어 오래 걸릴 수 있으니, 들고 기다릴 수 있는 것(30일 이상·무기한)만 */
-export const isBig = (x: ShopItem) => x.cash >= 40_000 && (!x.days || x.days >= 30)
+/** 한 번에 큰 금액을 채우는 아이템. 판매 횟수가 확 준다. 사용 기간은 따지지 않는다(원더베리 11개도 작에 많이 쓴다) */
+export const isBig = (x: ShopItem) => x.cash >= 40_000
 
 /** 지금 13주 합계로 이 금액을 결제하면 오를 등급 */
 export function tierAfter(d: State, amount: number): TierKey | null {
