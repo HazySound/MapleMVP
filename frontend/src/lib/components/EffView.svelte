@@ -54,8 +54,8 @@
 
 {#if out && !answerSeen}
   <button class="dock" onclick={toAnswer}>
-    <span>{eff.want === 'knee' ? '최적화 루트' : eff.want === 'count' ? '횟수 정하기' : '최저가 루트'}</span><b class="mono">{won(out.sel.loss)}원</b>
-    <span>회수율 {(out.sel.back / out.sel.cost * 100).toFixed(1)}% · {out.sel.sales}회</span>
+    <span>{eff.want === 'count' ? `${out.sel.sales}회 판매 루트` : `${eff.want === 'knee' ? '최적화' : '최저가'} 루트 · ${out.sel.sales}회 판매`}</span><b class="mono">{won(out.sel.loss)}원</b>
+    <span>회수율 {(out.sel.back / out.sel.cost * 100).toFixed(1)}%</span>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
   </button>
 {/if}
