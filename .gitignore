@@ -29,3 +29,8 @@ frontend/test/captures/
 
 # wrangler 로그인·캐시 상태
 .wrangler/
+
+# 제보자·운영자 실제 데이터 (디버깅용, 로컬에만 둔다)
+docs/private/
+frontend/test/private/
+frontend/public/_debug*

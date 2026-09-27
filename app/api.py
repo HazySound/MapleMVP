@@ -192,9 +192,11 @@ class Api:
         saved = self._pcroom_weeks()
         saved.update({str(k): max(0, int(v)) for k, v in (weeks or {}).items()})
         floor = (week_start(today_kst()) - timedelta(weeks=HISTORY_WEEKS + WINDOW)).isoformat()
-        saved = {k: v for k, v in saved.items() if k >= floor}   # 13주 창을 한참 벗어난 것은 버린다
+        # 13주 창을 한참 벗어난 것은 버린다. 'pcmax:2026-09-24' 같은 부가 정보도 뒤의 날짜로 본다
+        saved = {k: v for k, v in saved.items() if k.rsplit(":", 1)[-1] >= floor}
         cache.save(paths.PCROOM, {"weeks": saved})
-        log.info("PC방 보정 저장: %d주, 합계 %s원", len(saved), f"{sum(saved.values()):,}")
+        weeks_only = {k: v for k, v in saved.items() if ":" not in k}
+        log.info("PC방 보정 저장: %d주, 합계 %s원", len(weeks_only), f"{sum(weeks_only.values()):,}")
         return self._build("ok")
 
     # ---- 캡처에서 읽기 ----

@@ -1,14 +1,15 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
-  import { NO_CARRY, anchor, compare, restore } from '../core/pcroom'
-  import { type Solved, acceptReading, carryFor, isTop as topTier, panelFields, solveScan, usesCarry,
-    whyReject } from '../core/scan'
+  import { META, NO_CARRY, anchor, compare, restore, writeWeeks } from '../core/pcroom'
+  import { settleScan } from '../core/engine'
+  import { type Solved, type TotalPick, acceptReading, carryFor, hasCarryColumn, isTop as topTier, panelFields, solveScan,
+    usesCarry, whyReject } from '../core/scan'
   import HelpModal from './HelpModal.svelte'
   import { STAGE, type ShareHandle, type ShareStatus, canShare, startShare } from '../web/share'
   import { primeChime } from '../web/chime'
   import { type Guide, canGuide, openGuide } from '../web/pip'
   import type { PcRoomResult, Tier } from '../types'
-  import { TIER_COLOR, TIER_INK_VAR, addDays, md, spotlight, won } from '../format'
+  import { type PcFuzzy, TIER_COLOR, TIER_INK_VAR, addDays, md, pcCaveat, pcRange, spotlight, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -26,6 +27,9 @@
   let needTexts = $state<string[]>(Array(12).fill(''))
 
   let result = $state<PcRoomResult | null>(null)
+  // 상단 '○○ 등급까지'로 볼 숫자가 여럿일 때 사용자가 고를 목록. 고르기 전에는 계산하지 않는다
+  let choices = $state<TotalPick[] | null>(null)
+  let ownText = $state('')
   let edited = $state<Record<string, number>>({})   // 사용자가 직접 고친 주
   let busy = $state(false)
   let error = $state('')
@@ -64,7 +68,37 @@
 
   const rows = $derived(result?.rows ?? [])
   const amountOf = (start: string, fallback: number) => edited[start] ?? fallback
-  const pcTotal = $derived(rows.reduce((s, r) => s + amountOf(r.start, r.amount), 0))
+  /** 13주 중 목요일 갱신에서 이월이 쓰인 주. 그 주는 100원 단위로 떨어지지 않는다 */
+  const looseOf = (b: { used13: number[] }) => b.used13.map(u => u > 0)
+  /** 확정하지 못한 주: 사용자가 직접 고치지 않은 범위·확인 불가 주 */
+  const loose = (r: { start: string; pcMin?: number; pcMax?: number; unknown?: boolean; group?: string }) =>
+    edited[r.start] === undefined && (!!r.unknown || !!r.group || (r.pcMax ?? 0) > (r.pcMin ?? 0))
+  /** 합만 아는 묶음 → 그 묶음의 주들 */
+  const groupOf = (g: string) => rows.filter(r => r.group === g && edited[r.start] === undefined)
+  const pcOf = (r: typeof rows[number], hi: boolean) => {
+    const e = edited[r.start]
+    if (e !== undefined) return e
+    if (r.unknown) return 0
+    if (r.group) return r.gapMin ?? 0          // 묶음의 합은 첫 주에 몰려 있다
+    return (hi ? r.pcMax : r.pcMin) ?? r.amount
+  }
+  const pcSum = $derived({
+    total: rows.reduce((s, r) => s + pcOf(r, false), 0),
+    totalMax: rows.reduce((s, r) => s + pcOf(r, true), 0),
+  })
+  /** 금액 자체를 범위로만 아는 주 (블랙 첫 스캔의 가장 오래된 주) */
+  const hiddenRow = (r: { gapMin?: number; gapMax?: number }) => (r.gapMax ?? 0) > (r.gapMin ?? 0)
+  const caveat = $derived(pcCaveat({
+    ...pcSum,
+    fuzzy: rows.filter(r => loose(r) && (!r.group || r.group === r.start)).map((r): PcFuzzy => {
+      if (r.unknown) return { start: r.start, kind: 'unknown', min: 0, max: 0 }
+      if (r.group) {
+        const g = groupOf(r.group)
+        return { start: r.start, end: g[g.length - 1].start, kind: 'group', min: r.gapMin ?? 0, max: r.gapMin ?? 0 }
+      }
+      return { start: r.start, kind: 'range', min: r.pcMin ?? 0, max: r.pcMax ?? 0 }
+    }),
+  }))
   const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined))
 
   /** 넣은 숫자로 주차별 PC방 반영액을 뽑는다. 규칙은 core/pcroom에 있다. */
@@ -81,26 +115,47 @@
       openInput = true
       return
     }
-    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown)
+    // 목요일 갱신에서 이월이 쓰인 주는 그 금액이 사용 금액으로 채워져 100원 단위가 아니다.
+    // 블랙의 이번 주는 앱이 모르는 사이에 그랬을 수 있어 늘 그렇게 본다
+    const last = r.weeks.length - 1
+    const mixed = b.used13.flatMap((u, i) => (u > 0 || (isTop && i === last) ? [i] : []))
+    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed)
+    // 블랙이면 1주 뒤 줄의 '사용 이월'이 지금 잔액이다(1주 뒤 '유지까지'가 남아 있으면 다 쓰니까).
+    // 블랙이 아니면 이월은 없다. 떨어졌다면 다 쓴 것이다
+    const carryNow = !isTop ? 0 : num(needTexts[0]) > 0 ? carry[0] : null
+    // 빨간 줄이 있으면 숫자부터 바로잡아야 한다. 그 전에는 범위를 셈해 봐야 소용없다
+    const st = gaps.some(g => g.note) ? null : settleScan(b, r, carryNow)
     result = {
       ok: gaps.every(g => g.ok),
       issues: gaps.filter(g => g.note).map(g => g.note),
-      rows: gaps.map(g => ({ start: g.start, end: addDays(g.start, 6), nexon: g.nexon,
-                             spent: g.collected, amount: g.amount, minutes: g.minutes,
-                             note: g.note, warn: g.warn, unknown: g.unknown })),
+      rows: gaps.map((g, i) => {
+        const w = st?.weeks[i]
+        return { start: g.start, end: addDays(g.start, 6),
+                 spent: g.collected, amount: w ? w.pcMin : g.amount, minutes: g.minutes,
+                 note: g.note, warn: w && w.pcMax > w.pcMin ? '' : g.warn, unknown: w ? w.unknown : g.unknown,
+                 pcMin: w?.pcMin, pcMax: w?.pcMax, gapMin: w?.gapMin, gapMax: w?.gapMax, group: w?.group,
+                 nexon: w && !w.unknown && !w.group ? g.collected + w.gapMin : g.nexon }
+      }),
       total, tierTh, pcTotal: gaps.reduce((s, g) => s + g.amount, 0),
+      conflict: st?.conflict, carry: st?.carry,
     }
   }
 
   async function save() {
     busy = true
     try {
-      const weeks: Record<string, number> = {}
-      // 구할 수 없었던 주를 0원으로 적어 두면 '확인했다'는 뜻이 돼 다시 물어볼 길이 없어진다
-      for (const r of rows) {
-        if (r.unknown && edited[r.start] === undefined) continue
-        weeks[r.start] = amountOf(r.start, r.amount)
-      }
+      // 구할 수 없었던 주를 0원으로 적어 두면 '확인했다'는 뜻이 돼 다시 물어볼 길이 없어진다.
+      // 범위로만 아는 주는 최솟값을 금액으로, 범위는 옆에 따로 적는다
+      const weeks = writeWeeks(rows.map(r => {
+        const e = edited[r.start]
+        if (e !== undefined) return { start: r.start, gapMin: e, gapMax: e, pcMin: e, pcMax: e, unknown: false }
+        const gapMin = r.gapMin ?? r.amount
+        return { start: r.start, gapMin, gapMax: r.gapMax ?? gapMin, pcMin: r.pcMin ?? r.amount,
+                 pcMax: r.pcMax ?? r.amount, unknown: !!r.unknown, group: r.group }
+      }))
+      // 인게임에서 본 이월 잔액. 다음부터 구매내역으로 되짚는 대신 이 값을 믿는다
+      const b = getBase()
+      if (b && result?.carry != null) weeks[META.carry + b.thisWeek] = result.carry
       await pcroomSave(weeks)
       app.showPcRoom = false
     } finally {
@@ -146,19 +201,21 @@
         scanMsg = raw.message || '이미지를 읽지 못했어요.'
         return
       }
-      const s = solveScan(raw, b.purchases, prev)
+      const s = solveScan(raw, b.purchases, prev, looseOf(b))
       if (!s) {
         scanBad = true
         // 왜 실패했는지 말해 주지 않으면 매번 처음부터 원인을 찾게 된다
-        const ok = raw.readings.filter(
-          v => acceptReading(v, b.purchases, carryFor(v, b.purchases, raw.carries) ?? NO_CARRY)).length
+        const black = hasCarryColumn(raw)
+        const col = raw.carries?.find(c => c.length === NO_CARRY.length) ?? NO_CARRY
+        const ok = raw.readings.filter(v => acceptReading(
+          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b)) ?? NO_CARRY, black, looseOf(b))).length
         scanMsg = !raw.readings.length
           ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `
             + `(화면에서 숫자 ${raw.amounts.length}개만 봤어요)`
           : ok
             ? `표는 읽었는데 어느 값이 맞는지 가릴 수 없었어요. `
               + `(후보 ${raw.readings.length}개 중 ${ok}개 통과, 숫자 ${raw.amounts.length}개)`
-            : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, carry)}`
+            : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b))}`
         return
       }
       apply(s)
@@ -167,19 +224,46 @@
     }
   }
 
+  /** '○○ 등급까지' 후보 → (그 등급 자리, 남은 금액) */
+  const choiceOf = (c: TotalPick) => {
+    const i = d.tiers.findIndex(t => t.th === c.tierTh) + 1
+    return { i, name: d.tiers[i]?.name ?? '', remaining: (d.tiers[i]?.th ?? 0) - c.total }
+  }
+
+  /** 후보 중 하나를 골랐거나 직접 넣었다. 그 숫자로 계산한다 */
+  function choose(i: number, remaining: number) {
+    choices = null
+    ownText = ''
+    nextIndex = i
+    remainText = remaining.toLocaleString('ko-KR')
+    scanPartial = false
+    scanMsg = `${d.tiers[i]?.name ?? ''} 등급까지 ${remainText}캐시로 계산했어요.`
+    calc()
+  }
+
   /** 읽어낸 값을 입력칸에 넣는다. 캡처로 읽든 화면공유로 읽든 같다. */
   function apply(s: Solved) {
     prev = s
     needTexts = s.needs.map(v => v.toLocaleString('ko-KR'))
     const f = panelFields(s)
     nextIndex = f.tierIndex
+    if (s.choices?.length) {
+      // 여러 숫자가 '○○ 등급까지'로 말이 된다. 인게임 화면을 보는 사람이 고르게 한다
+      choices = s.choices
+      nextIndex = choiceOf(s.choices[0]).i
+      result = null
+      scanPartial = true
+      scanMsg = "상단 '○○ 등급까지' 금액이 여러 숫자로 읽혔어요. 인게임 화면과 같은 숫자를 골라 주세요."
+      return
+    }
+    choices = null
     carryText = s.carry[0] ? s.carry[0].toLocaleString('ko-KR') : ''
     carryRest = s.carry.slice(1)
     if (f.remaining != null) remainText = f.remaining.toLocaleString('ko-KR')
     if (topTier(s)) {
       // 블랙은 위 등급이 없어 '○○ 등급까지'가 화면에 없다. 한 장 더 찍어도 나오지 않는다
       scanPartial = false
-      scanMsg = '블랙이라 13주 합계가 화면에 안 나와요. 가장 오래된 주 하나만 빼고 다 구했어요.'
+      scanMsg = '블랙이라 13주 합계가 화면에 안 나와요. 확정하지 못한 주는 아래에 범위로 보여 드려요.'
         + (usesCarry(s) ? ` (사용 이월 ${s.carry[0].toLocaleString('ko-KR')}원 반영)` : '')
       calc()
     } else if (s.total == null) {
@@ -285,6 +369,7 @@
     try {
       handle = await startShare({
         collected: b.purchases,
+        loose: looseOf(b),
         guide: async () => {
           const g = await openGuide(() => handle?.stop(), () => handle?.save())
           guided = !!g
@@ -335,8 +420,8 @@
       <span class="meta">
         {#if d.pcroom.missing.length}
           <em>13주 중 {d.pcroom.missing.length}주는 아직 몰라요</em>
-        {:else if d.pcroom.total}
-          지금 적용 중 · {won(d.pcroom.total)}원
+        {:else if d.pcroom.totalMax}
+          지금 적용 중 · {pcRange(d.pcroom)}원
         {:else}
           보정값 없음
         {/if}
@@ -417,6 +502,23 @@
         <p class="scanmsg busy"><span class="spin small" aria-hidden="true"></span>캡처를 읽고 있어요…</p>
       {:else if scanMsg}
         <p class="scanmsg" class:bad={scanBad} class:warn={scanPartial}>{scanMsg}</p>
+        {#if choices}
+          {@const first = choiceOf(choices[0])}
+          <!-- 화면의 숫자는 위치로 가리지 않고 전부 대 본다. 여럿이 말이 되면 인게임을 보는 사람이 고른다 -->
+          <div class="choices" role="group" aria-label="상단 금액 고르기">
+            {#each choices as c (c.tierTh + ':' + c.total)}
+              {@const o = choiceOf(c)}
+              <button class="chip mono" onclick={() => choose(o.i, o.remaining)}>
+                {o.name} 등급까지 {won(o.remaining)}
+              </button>
+            {/each}
+            <span class="own">
+              <input class="mono" type="text" inputmode="numeric" placeholder="직접 입력" bind:value={ownText}
+                onblur={() => (ownText = fmt(ownText))} aria-label="{first.name} 등급까지 직접 입력" />
+              <button class="chip" disabled={!num(ownText)} onclick={() => choose(first.i, num(ownText))}>확인</button>
+            </span>
+          </div>
+        {/if}
       {/if}
 
       <button class="fold" aria-expanded={openInput} onclick={() => (openInput = !openInput)}>
@@ -459,7 +561,7 @@
                그만큼 1주 뒤 줄이 작게 적혀 있어서, 모르면 그 주 금액이 틀린다 -->
           <div class="prow">
             <span class="k">1주차 뒤 사용 이월 금액</span>
-            <input type="text" inputmode="numeric" bind:value={carryText} placeholder="16,132"
+            <input type="text" inputmode="numeric" bind:value={carryText} placeholder="15,000"
               onblur={() => (carryText = fmt(carryText))} aria-label="사용 이월 금액" />
             <small>캐시 · 표 맨 오른쪽 열의 첫 줄이에요 (없으면 0)</small>
           </div>
@@ -512,25 +614,52 @@
               <div class="r2" class:bad={!!r.note} class:warn={!r.note && !!r.warn}
                    class:zero={v === 0} class:unsure={!!r.unknown}>
                 <span class="mono wk2">{md(r.start)}–{md(r.end)}</span>
-                <span class="n mono">{r.unknown ? '–' : won(r.nexon)}</span>
+                <span class="n mono">{r.unknown || (r.group && edited[r.start] === undefined) ? '–'
+                  : hiddenRow(r) && edited[r.start] === undefined
+                  ? `${won(r.spent + (r.gapMin ?? 0))}~${won(r.spent + (r.gapMax ?? 0))}` : won(r.nexon)}</span>
                 <span class="n mono dim">{won(r.spent)}</span>
                 <span class="n">
-                  <input class="mono" type="text" inputmode="numeric" value={v.toLocaleString('ko-KR')}
-                    aria-label="{md(r.start)} 주 PC방 금액"
-                    onchange={e => (edited[r.start] = Number(e.currentTarget.value.replace(/[^\d]/g, '')) || 0)} />
+                  {#if loose(r)}
+                    <!-- 확정하지 못한 주는 고칠 값을 짐작할 수 없다. 범위를 보여 주고, 원하면 눌러서 직접 넣는다 -->
+                    <button class="range mono" onclick={() => (edited[r.start] = r.unknown || r.group ? 0 : r.pcMin ?? 0)}
+                      use:tip={'눌러서 직접 넣을 수 있어요'}>
+                      {r.unknown ? '확인 불가' : r.group ? (r.group === r.start ? `합 ${won(r.gapMin ?? 0)}` : '↑ 합')
+                        : `${won(r.pcMin ?? 0)}~${won(r.pcMax ?? 0)}`}
+                    </button>
+                  {:else}
+                    <input class="mono" type="text" inputmode="numeric" value={v.toLocaleString('ko-KR')}
+                      aria-label="{md(r.start)} 주 PC방 금액"
+                      onchange={e => (edited[r.start] = Number(e.currentTarget.value.replace(/[^\d]/g, '')) || 0)} />
+                  {/if}
                 </span>
-                <span class="tm">{v ? hm(Math.floor(v / 100) * 6) : '-'}</span>
+                <span class="tm">{v && !loose(r) ? hm(Math.floor(v / 100) * 6) : '-'}</span>
               </div>
-              {#if r.unknown}
-                <p class="msg">이 주는 인게임 화면에 나오지 않아요. 비워 두면 보정하지 않고 넘어가요.</p>
-              {:else if r.note || r.warn}
+              {#if r.group && r.group === r.start && edited[r.start] === undefined}
+                {@const g = groupOf(r.group)}
+                <p class="msg">{md(g[0].start)}~{md(g[g.length - 1].end)} {g.length}주는 툴팁에 0으로 나와 합계만 알아요.
+                  이 {g.length}주 PC방은 합쳐서 {won(r.gapMin ?? 0)}원이에요.</p>
+              {:else if r.unknown && edited[r.start] === undefined}
+                <p class="msg">인게임에 이 주 금액이 나오지 않아요. 곧 13주에서 빠지는 주라 등급에는 영향이 없어요.</p>
+              {:else if loose(r) && !r.group && hiddenRow(r)}
+                <p class="msg">인게임에 이 주 금액이 나오지 않아요. 이월 잔액으로 거꾸로 맞춰 보면
+                  PC방은 {won(r.pcMin ?? 0)}~{won(r.pcMax ?? 0)}원 사이예요.</p>
+              {:else if loose(r) && !r.group}
+                <p class="msg">목요일 갱신 때 쓴 이월 {won((r.gapMin ?? 0) - (r.pcMax ?? 0))}~{won((r.gapMax ?? 0) - (r.pcMin ?? 0))}원이
+                  섞여 있어, PC방은 {won(r.pcMin ?? 0)}~{won(r.pcMax ?? 0)}원 사이까지만 알 수 있어요.</p>
+              {:else if !r.group && (r.note || r.warn)}
                 <p class="msg" class:bad={!!r.note}>{r.note || r.warn}</p>
               {/if}
             {/each}
           </div>
 
+          {#if caveat}<p class="caveat">{caveat}</p>{/if}
+          {#if result?.conflict}
+            <p class="caveat bad">이월 규칙으로 되짚어 봤는데 인게임 숫자와 맞는 경우가 없었어요. 가운데 주는 그대로 믿어도 되지만,
+              100원 단위가 아닌 주의 PC방은 범위로만 보여 드려요.</p>
+          {/if}
           <div class="foot">
-            <div class="sum">PC방 보정 합계 <b class="mono">{won(pcTotal)}</b>원
+            <div class="sum">PC방 보정 합계
+              <b class="mono">{pcRange(pcSum)}</b>원
               {#if result?.total != null}<small>· 13주 합계가 {won(result.total)}원이 돼요</small>{/if}
             </div>
             <div class="foot-btns">
@@ -551,6 +680,11 @@
 
 <style>
   .unsure { opacity: .6 }
+  .range { font-size: 12px; color: var(--color-peach); background: none; border: 1px dashed var(--color-line);
+           border-radius: 6px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
+  .caveat { white-space: pre-line; margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.6;
+            color: var(--color-tx2); background: color-mix(in oklab, var(--color-peach) 10%, transparent); }
+  .caveat.bad { background: color-mix(in oklab, var(--color-rose, #f87171) 12%, transparent); }
   .none { color: var(--color-tx3) }
 
   .back {
@@ -597,6 +731,9 @@
   .spin.small { width: 11px; height: 11px; border-width: 1.8px; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .file.off { opacity: .45; pointer-events: none; }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; }
+  .choices .own { display: inline-flex; gap: 6px; align-items: center; }
+  .choices input { width: 110px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--color-line); background: transparent; color: inherit; }
   .scanmsg.busy { color: var(--color-tx2); display: flex; align-items: center; }
   .capmain { flex: 1 1 320px; min-width: 0; display: grid; gap: 2px; }
   .capmain b { font-size: 13px; color: var(--color-tx); }

@@ -20,6 +20,14 @@ export interface PcRoomRow {
   warn: string     // 확인해 볼 값
   /** 화면에 나오지 않아 구할 수 없는 주 (블랙의 가장 오래된 주) */
   unknown?: boolean
+  /** PC방 범위. 갱신 때 쓴 이월이 섞여 확정하지 못한 주는 둘이 다르다 */
+  pcMin?: number
+  pcMax?: number
+  /** 그 주 금액(넥슨 − 수집) 범위. 블랙 첫 스캔의 가장 오래된 주는 범위로만 안다 */
+  gapMin?: number
+  gapMax?: number
+  /** 합만 아는 묶음의 첫 주. 묶음의 합은 첫 주 금액에 몰려 있다 */
+  group?: string
 }
 
 /** 파이썬 인식기가 뽑아 준 숫자 후보. 어느 것이 맞는지는 core/scan이 고른다 */
@@ -41,6 +49,10 @@ export interface PcRoomResult {
   total?: number | null
   tierTh?: number
   pcTotal?: number
+  /** 이월 규칙으로 맞춰 봤지만 툴팁과 맞는 경우가 없었다 */
+  conflict?: boolean
+  /** 인게임 툴팁으로 확인한 이월 잔액. 저장해 두고 다음부터 이 값을 믿는다 */
+  carry?: number | null
 }
 
 /** 파이썬이 내려 주는 것: 원본 결제내역과 저장해 둔 PC방 보정값뿐이다 */

@@ -8,6 +8,8 @@ export type TierKey = 'bronze' | 'silver' | 'gold' | 'diamond' | 'red' | 'black'
 
 export const WINDOW = 13
 export const CARRY_MAX = 10_000_000
+/** 블랙 이월 제도가 시작된 주(목요일). 그 전에는 250만을 넘긴 금액이 그냥 사라졌다 */
+export const CARRY_START = '2026-09-17'
 
 export const TIERS: Tier[] = [
   { key: 'bronze', name: '브론즈', th: 150_000 },
@@ -68,60 +70,93 @@ export interface Refresh {
   carryAdded: number
 }
 
+const sumOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+
 /**
- * 13주 합계와 이월 잔액으로 등급을 정한다.
- * 블랙 기준을 넘으면 초과분이 이월된다. newest(직전에 끝난 주의 결제)를 넘겨받으면
- * 그 주 결제분까지만 쌓는다. 기준에 못 미치면 이월로 부족분을 메운다.
+ * 목요일 갱신 한 번. total은 새 주가 0원으로 들어온 13주 합계다.
+ * 기준에 못 미치면 이월로 부족분을 메운다. 꺼내 쓴 금액은 새 주의 사용 금액으로
+ * 채워진다(공지 예시 2 "사용 금액에 채워지나"). 그 몫은 부르는 쪽이 새 주에 더한다.
  */
-export function grade(total: number, carry: number, newest = 0): Refresh {
-  if (total >= BLACK.th) {
-    const added = Math.min(CARRY_MAX, carry + Math.min(newest, total - BLACK.th)) - carry
-    return { sum: total, tier: BLACK, carry: carry + added, carryUsed: 0, carryAdded: added }
-  }
-  const shortage = BLACK.th - total
-  if (carry >= shortage) {
-    return { sum: total, tier: BLACK, carry: carry - shortage, carryUsed: shortage, carryAdded: 0 }
-  }
-  return { sum: total, tier: tierOf(total + carry), carry: 0, carryUsed: carry, carryAdded: 0 }
+export function grade(total: number, carry: number): Refresh {
+  if (total >= BLACK.th) return { sum: total, tier: BLACK, carry, carryUsed: 0, carryAdded: 0 }
+  const used = Math.min(carry, BLACK.th - total)
+  return { sum: total, tier: tierOf(total + used), carry: carry - used, carryUsed: used, carryAdded: 0 }
+}
+
+/**
+ * 한 주 동안 쌓이는 이월. live는 그 주 결제까지 더한 13주 합계, spent는 그 주 결제.
+ * 결제로 블랙 기준을 넘는 순간 넘친 만큼이 쌓인다. 목요일까지 기다리지 않는다.
+ * (2026-09 블랙 제보: 목요일에 쌓는다고 보면 그사이 빠져나간 주 몫을 놓친다)
+ */
+export function accrue(live: number, spent: number, carry: number): number {
+  return Math.min(CARRY_MAX, carry + Math.min(spent, Math.max(0, live - BLACK.th))) - carry
 }
 
 /**
  * amounts(오래된 주 → 이번 주)로 지난 목요일 갱신들을 재현한다.
  * 등급 기준은 "이번 주 포함 최근 13주"라서, 목요일 0시에는 새 주가 0원이므로
  * 앞선 12주 합계로 등급이 정해진다. 이월은 데이터 시작 시점에 0이었다고 본다.
+ *
+ * 돌려주는 weeks는 갱신 때 꺼내 쓴 이월까지 채운 주별 금액이다.
+ * fixed인 주는 넥슨 툴팁에서 되짚은 값이라 이미 그 몫이 들어 있어 더하지 않는다.
+ * used는 주마다 그 주 목요일 갱신에서 꺼내 쓴 이월이다. covered는 그 이월로 블랙을 지켰는지다
+ * (지켰으면 모자란 만큼만 썼고, 못 지켰으면 가진 것을 다 썼다).
+ *
+ * starts를 주면 CARRY_START 전의 주에서는 이월을 쌓지도 쓰지도 않는다.
+ * opts.anchor: 그 주가 끝났을 때의 이월을 인게임에서 읽은 값으로 맞춘다.
+ * opts.bonus: 처음 이월이 쌓이는 주에 얹을 금액. 13주 밖 PC방처럼 구매내역에 없는 몫을 흉내 낸다.
  */
-export function replay(amounts: number[]): { tier: Tier | null; carry: number } {
+export function replay(amounts: number[], fixed: boolean[] = [], starts: string[] = [],
+                       opts: { anchor?: { k: number; carry: number }; bonus?: number } = {}):
+    { tier: Tier | null; carry: number; weeks: number[]; used: number[]; covered: boolean[]; held: number[] } {
+  const w = [...amounts]
+  const used: number[] = []
+  const held: number[] = []   // 그 주가 끝났을 때의 이월
+  const covered: boolean[] = []
   let carry = 0
+  let bonus = opts.bonus ?? 0
   let tier: Tier | null = null
-  for (let k = WINDOW - 1; k < amounts.length; k++) {
-    const prev12 = amounts.slice(k - WINDOW + 1, k)
-    const sum = prev12.reduce((a, b) => a + b, 0)
-    const r = grade(sum, carry, prev12.length ? prev12[prev12.length - 1] : 0)
-    carry = r.carry
+  for (let k = 0; k < w.length; k++) {
+    const on = !starts[k] || starts[k] >= CARRY_START
+    const r = grade(sumOf(w.slice(Math.max(0, k - WINDOW + 1), k)), on ? carry : 0)
+    carry = on ? r.carry : 0
     tier = r.tier
+    used.push(r.carryUsed)
+    covered.push(r.carryUsed > 0 && r.tier === BLACK)
+    if (!fixed[k]) w[k] += r.carryUsed
+    if (on) {
+      const added = accrue(sumOf(w.slice(Math.max(0, k - WINDOW + 1), k + 1)), amounts[k], carry)
+      carry += added
+      if (added > 0 && bonus) { carry = Math.min(CARRY_MAX, carry + bonus); bonus = 0 }
+    }
+    if (opts.anchor?.k === k) carry = opts.anchor.carry
+    held.push(carry)
   }
-  return { tier, carry }
+  return { tier, carry, weeks: w, used, covered, held }
 }
 
 /** 지금 등급. 이번 주 결제까지 더한 13주 합계로 바로 정해진다. */
 export function tierNow(last13: number[], carry: number): Tier | null {
-  const sum = last13.reduce((a, b) => a + b, 0)
-  return grade(sum, carry, last13[last13.length - 1]).tier
+  return grade(sumOf(last13), carry).tier
 }
 
 /**
  * 이번 주에 extra를 더 쓰고 그 뒤로 결제가 없을 때, 다음 목요일부터 13번의 갱신 결과.
  * 갱신 때마다 가장 오래된 주가 빠지고 새 주는 0원으로 들어온다.
+ * 이월을 꺼내 쓴 갱신은 그 금액이 새 주에 채워져 13주 동안 합계에 남는다.
  */
 export function forecast(last13: number[], carry: number, extra = 0): Refresh[] {
   const w = [...last13.slice(0, -1), last13[last13.length - 1] + extra]
+  // extra로 기준을 넘으면 그 몫은 바로 쌓인다
+  const added = accrue(sumOf(w), extra, carry)
+  carry += added
   const out: Refresh[] = []
   for (let k = 0; k < WINDOW; k++) {
-    // 직전에 끝난 주는 첫 갱신에서만 결제가 있다
-    const sum = w.slice(k + 1).reduce((a, b) => a + b, 0)
-    const r = grade(sum, carry, k === 0 ? w[w.length - 1] : 0)
+    w.shift()
+    const r = grade(sumOf(w), carry)
     carry = r.carry
-    out.push(r)
+    w.push(r.carryUsed)
+    out.push(k === 0 ? { ...r, carryAdded: added } : r)
   }
   return out
 }

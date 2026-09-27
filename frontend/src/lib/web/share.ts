@@ -85,6 +85,8 @@ export interface ShareStatus extends VoteState { shots: number; stage: Stage }
 
 export interface ShareOpts {
   collected: number[]
+  /** 13주 중 갱신 때 이월이 쓰인 주 */
+  loose?: boolean[]
   /** 게임 위에 띄울 안내 창. 화면을 고른 뒤에 연다 */
   guide?(): Promise<Guide | null>
   onStream(stream: MediaStream): void
@@ -126,7 +128,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   const worker = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
-  const vote = createVote(o.collected)
+  const vote = createVote(o.collected, undefined, o.loose)
   // 화면을 고르고 나서 연다. 고르는 창이 이 위에 겹치지 않도록
   let guide = o.guide ? await o.guide() : null
 
@@ -263,7 +265,9 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
     guide?.finish({
       title: STAGE.done.title, tone: 'good',
       // 블랙은 '○○ 등급까지'가 화면에 없어 합계가 끝내 안 나온다. 물음표를 남기지 않는다
-      body: (state.solved.total == null
+      body: (state.solved.choices
+        ? "상단 '○○ 등급까지'가 여러 숫자로 읽혔어요. 앱에서 인게임과 같은 숫자를 골라 주세요."
+        : state.solved.total == null
         ? '블랙이라 13주 합계는 화면에 없어요. 가장 오래된 주만 빼고 다 읽었어요.'
         : `13주 합계 ${state.solved.total.toLocaleString('ko-KR')}원.`)
         + ' MapleMVP 화면으로 돌아오세요.',

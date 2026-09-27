@@ -24,10 +24,15 @@ export const HIGH_WEEK_MINUTES = 20 * 60      // 주 20시간을 넘으면 PC방
 /** PC방 반영액을 접속 시간(분)으로 환산한다. */
 export const minutesOf = (amount: number) => Math.floor(amount / UNIT) * MINUTES_PER_UNIT
 
+/** 주 from..to(둘 다 포함)의 넥슨 금액 합. 하나하나는 모르고 합만 안다 */
+export interface Block { from: number; to: number; sum: number }
+
 export interface Restored {
   weeks: number[]
-  /** 화면에 나오지 않아 구할 수 없는 주의 자리. 블랙이면 가장 오래된 주 하나다 */
+  /** 하나하나 금액을 모르는 주의 자리. 블랙의 가장 오래된 주, 툴팁에 0으로 나온 줄 사이의 주 */
   unknown: number[]
+  /** unknown 중 합은 아는 묶음 */
+  blocks: Block[]
   issues: string[]
   ok: boolean
 }
@@ -36,17 +41,22 @@ export interface Restored {
 export const NO_CARRY: number[] = Array(TOOLTIP_ROWS).fill(0)
 
 /**
- * 인게임 '유지까지' 금액에서 빠져 있는 이월을 되돌려 놓는다.
+ * 툴팁 가운데 11주. k번째 주 = (k+1)주 뒤 − k주 뒤 + (k+1)주 뒤 줄의 사용 이월.
  *
- * 블랙은 갱신 때 모자란 금액을 이월에서 자동으로 꺼내 쓴다. 그래서 인게임이 적어 주는
- * '현재 등급 유지까지'는 그 줄에서 쓰일 이월을 이미 빼고 적은 금액이다.
- * 되돌려 놓지 않으면 이웃한 두 줄의 차이가 이월만큼 부풀어 그 주 금액이 틀린다.
+ * 블랙은 갱신 때 모자란 금액을 이월에서 꺼내 쓰고, 인게임 '현재 등급 유지까지'는
+ * 그만큼 빼고 적힌다. 꺼내 쓴 금액은 새 주의 사용 금액으로 채워져 다음 줄부터
+ * 합계에 남으므로, 앞 줄의 이월은 이웃한 두 줄 사이에서 지워지고 뒷 줄의 것만 남는다.
+ * (2026-09 블랙 제보에서 수집한 결제와 원 단위까지 맞는 것으로 확인)
  *
  * 얼마를 쓰는지는 툴팁 맨 오른쪽 '사용 이월 금액' 열에 줄마다 적혀 있다.
- * 이월이 있는 것은 블랙뿐이라 다른 등급에서는 전부 0이고 아무것도 달라지지 않는다.
+ * 이월이 있는 것은 블랙뿐이라 다른 등급에서는 전부 0이고 그냥 두 줄의 차이다.
  */
-export const withCarry = (needs: number[], carry: number[]): number[] =>
-  needs.map((v, i) => v + (carry[i] ?? 0))
+export const middleWeeks = (needs: number[], carry: number[] = NO_CARRY): number[] =>
+  needs.slice(1).map((v, k) => v + (carry[k + 1] ?? 0) - needs[k])
+
+/** 이번 주 금액. 12주 뒤 줄에는 그동안 채워질 이월이 전부 들어 있어 한꺼번에 뺀다 */
+export const lastWeek = (needs: number[], tierTh: number, carry: number[] = NO_CARRY): number =>
+  tierTh - needs[needs.length - 1] - carry.reduce((a, b) => a + b, 0)
 
 /**
  * 상단 '○○ 등급까지 N 캐시' 한 줄에서 (지금 등급 기준, 지금 13주 합계)를 뽑는다.
@@ -59,42 +69,71 @@ export function anchor(ths: number[], nextIndex: number, remaining: number): [nu
 }
 
 /**
+ * 줄마다 그 갱신 때의 13주 합계를 아는지.
+ * 인게임은 모자란 금액이 없으면 '유지까지'를 0으로 적는다. 그때 합계는 기준 이상이라는 것만 안다.
+ * 다만 블랙이 이월로 메우는 줄은 0이어도 '사용 이월'이 곧 모자란 금액이라 합계를 안다.
+ */
+export const knownRows = (needs: number[], carry: number[] = NO_CARRY) =>
+  needs.map((n, i) => n > 0 || (carry[i] ?? 0) > 0)
+
+/**
  * 툴팁 12줄을 넥슨 기준 주차별 금액 13개로 되돌린다.
- * 가운데 11주는 이웃한 줄의 차이라서 tierTh가 상쇄된다. 양 끝 두 주만 tierTh와 total이 필요하다.
+ *
+ * S[k] = k주 뒤 갱신 때의 13주 합계(그 갱신에서 쓸 이월 전) = 기준 − 유지까지 − 사용 이월.
+ * 갱신에서 쓴 이월은 새 주에 채워져 합계에 남으므로 S[k+1] = S[k] − W[k] + 쓴 이월[k].
+ * 그래서 합계를 아는 두 줄 사이의 주는 합을 알고, 이웃한 두 줄이면 그 주 금액이 곧 나온다.
+ * S[0]은 지금 13주 합계(상단 '○○ 등급까지'), S[13]은 앞으로 채워질 이월의 합이다.
+ * 블랙은 S[0]이 화면에 없어 가장 오래된 주를 모르고, 0으로 적힌 줄 사이의 주는 합만 안다.
  */
 export function restore(needs: number[], tierTh: number, total: number | null,
                         keepNeed: number | null = null, carry: number[] = NO_CARRY): Restored {
   const issues: string[] = []
-  if (needs.length !== TOOLTIP_ROWS) {
-    return { weeks: [], unknown: [],
-             issues: [`툴팁 값이 ${TOOLTIP_ROWS}개여야 하는데 ${needs.length}개예요.`], ok: false }
-  }
-  if (tierTh <= 0) return { weeks: [], unknown: [], issues: ['지금 등급을 알 수 없어요.'], ok: false }
+  const fail = (msg: string): Restored => ({ weeks: [], unknown: [], blocks: [], issues: [msg], ok: false })
+  if (needs.length !== TOOLTIP_ROWS) return fail(`툴팁 값이 ${TOOLTIP_ROWS}개여야 하는데 ${needs.length}개예요.`)
+  if (tierTh <= 0) return fail('지금 등급을 알 수 없어요.')
 
-  const adj = withCarry(needs, carry)
-  // 블랙은 '○○ 등급까지'가 화면에 없어 지금 13주 합계를 모른다. 그 한 줄이 있어야
-  // 풀리는 것은 가장 오래된 주뿐이라, 나머지 12주는 그대로 구해 둔다.
-  const unknown = total == null ? [0] : []
-  const weeks = [total == null ? 0 : total - tierTh + adj[0]]         // 가장 오래된 주
-  for (let k = 1; k < TOOLTIP_ROWS; k++) weeks.push(adj[k] - adj[k - 1]) // 가운데 11주
-  weeks.push(tierTh - adj[adj.length - 1])                            // 이번 주
+  const won = (n: number) => n.toLocaleString('ko-KR')
+  const known = knownRows(needs, carry)
+  const used = (k: number) => (k >= 1 && k <= TOOLTIP_ROWS ? carry[k - 1] ?? 0 : 0)
+  const S: (number | null)[] = [total]
+  for (let k = 1; k <= TOOLTIP_ROWS; k++) S.push(known[k - 1] ? tierTh - needs[k - 1] - used(k) : null)
+  S.push(carry.reduce((a, b) => a + b, 0))
+
+  // 0은 합계가 기준을 넘는 앞쪽 줄에만 나올 수 있다. 사이에 끼어 있으면 잘못 읽은 것이다
+  for (let k = 1; k < TOOLTIP_ROWS; k++) {
+    if (known[k - 1] && !known[k]) {
+      issues.push(`${k + 1}주 뒤가 0으로 읽혔는데 ${k}주 뒤는 ${won(needs[k - 1])}이에요. 툴팁 숫자를 잘못 읽은 것 같아요.`)
+    }
+  }
+
+  const weeks: number[] = Array(WEEKS).fill(0)
+  const unknown: number[] = []
+  const blocks: Block[] = []
+  let a = S.findIndex(v => v != null)
+  for (let i = 0; i < a; i++) unknown.push(i)
+  for (let b = a + 1; b < S.length; b++) {
+    if (S[b] == null) continue
+    let sum = S[a]! - S[b]!
+    for (let k = a; k < b; k++) sum += used(k)
+    if (b === a + 1) weeks[a] = sum
+    else {
+      blocks.push({ from: a, to: b - 1, sum })
+      for (let i = a; i < b; i++) unknown.push(i)
+      if (sum < 0) issues.push(`${a + 1}~${b}번째 주 합이 음수(${won(sum)}원)예요. 툴팁 숫자를 잘못 읽은 것 같아요.`)
+    }
+    a = b
+  }
 
   weeks.forEach((v, i) => {
-    if (v < 0 && !unknown.includes(i)) {
-      issues.push(`${i + 1}번째 주 금액이 음수(${v.toLocaleString('ko-KR')}원)예요. 툴팁 숫자를 잘못 읽은 것 같아요.`)
-    }
+    if (v >= 0 || unknown.includes(i)) return
+    issues.push(i >= 1 && i < TOOLTIP_ROWS
+      ? `${i}주 뒤(${won(needs[i - 1])})보다 ${i + 1}주 뒤(${won(needs[i])})가 작아요. 유지까지 필요한 금액은 줄어들 수 없어요.`
+      : `${i + 1}번째 주 금액이 음수(${won(v)}원)예요. 툴팁 숫자를 잘못 읽은 것 같아요.`)
   })
-  for (let k = 1; k < TOOLTIP_ROWS; k++) {
-    if (adj[k] < adj[k - 1]) {
-      issues.push(`${k}주 뒤(${adj[k - 1].toLocaleString('ko-KR')})보다 `
-        + `${k + 1}주 뒤(${adj[k].toLocaleString('ko-KR')})가 작아요. 유지까지 필요한 금액은 줄어들 수 없어요.`)
-    }
-  }
   if (keepNeed != null && keepNeed !== needs[0]) {
-    issues.push(`상단의 유지 필요 금액(${keepNeed.toLocaleString('ko-KR')})과 `
-      + `툴팁 1주 뒤(${needs[0].toLocaleString('ko-KR')})가 달라요.`)
+    issues.push(`상단의 유지 필요 금액(${won(keepNeed)})과 툴팁 1주 뒤(${won(needs[0])})가 달라요.`)
   }
-  return { weeks, unknown, issues, ok: issues.length === 0 }
+  return { weeks, unknown, blocks, issues, ok: issues.length === 0 }
 }
 
 export interface Gap {
@@ -116,7 +155,7 @@ export interface Gap {
  * 그걸로 한 번 거르고, 접속 시간으로 환산해서 말이 되는지로 한 번 더 거른다.
  */
 export function compare(nexon: number[], collected: number[], starts: string[],
-                        unknown: number[] = []): Gap[] {
+                        unknown: number[] = [], mixed: number[] = []): Gap[] {
   const out: Gap[] = []
   for (let i = 0; i < Math.min(nexon.length, collected.length, starts.length); i++) {
     if (unknown.includes(i)) {
@@ -130,6 +169,13 @@ export function compare(nexon: number[], collected: number[], starts: string[],
     let warn = ''
     if (gap < 0) {
       note = '수집한 금액이 인게임보다 많아요. 툴팁 숫자를 잘못 읽었을 수 있어요.'
+    } else if (mixed.includes(i)) {
+      // 블랙의 이번 주: 목요일 갱신 때 꺼내 쓴 이월이 이 주 사용 금액으로 채워진다.
+      // 얼마가 이월이고 얼마가 PC방인지는 툴팁만으로 가를 수 없어 합친 채로 둔다
+      if (gap) warn = '갱신 때 쓴 이월이 섞여 있어 PC방 시간은 알 수 없어요.'
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap,
+                 minutes: 0, note, warn, ok: true, unknown: false })
+      continue
     } else if (gap % UNIT) {
       note = '100원 단위가 아니에요. PC방이 아니라 수집하지 못한 결제일 수 있어요.'
     } else if (minutesOf(gap) > MAX_WEEK_MINUTES) {
@@ -155,9 +201,67 @@ export function mergeSaved(saved: Record<string, number>, gaps: Gap[]): Record<s
   return out
 }
 
+/**
+ * 저장 맵에는 주 시작일을 키로 '넥슨 − 수집' 금액을 둔다. 확정하지 못한 주는 같은 맵에
+ * 키 앞에 이름을 붙여 부가 정보를 함께 둔다. 계정 저장소·exe가 맵을 통째로 옮기기만 해서
+ * 따로 칸을 만들지 않아도 같이 따라다닌다.
+ *   gapmax:주   그 주 금액의 최댓값 (주 금액 자체를 모를 때. 저장한 값은 최솟값)
+ *   pcmin:주 / pcmax:주   그 주 PC방의 범위 (갱신 때 쓴 이월이 섞여 PC방만 따로 모를 때)
+ *   unk:주      1이면 끝내 알 수 없는 주 (블랙 첫 스캔의 가장 오래된 주)
+ *   grp:주      합만 아는 묶음의 첫 주 (20260709처럼 숫자). 묶음의 합은 첫 주에 몰아 둔다
+ *   carry:주    그 주에 인게임 툴팁으로 확인한 이월 잔액
+ */
+export const META = { gapMax: 'gapmax:', pcMin: 'pcmin:', pcMax: 'pcmax:', unknown: 'unk:', group: 'grp:',
+                      carry: 'carry:' }
+const groupKey = (iso: string) => Number(iso.replace(/-/g, ''))
+const groupIso = (n: number) => { const s = String(n); return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` }
+
+/** 한 주의 보정 상태. 확정된 주는 최소와 최대가 같다 */
+export interface WeekPc {
+  start: string
+  gapMin: number      // 넥슨 − 수집 (갱신 때 쓴 이월 포함)
+  gapMax: number
+  pcMin: number       // 그중 PC방
+  pcMax: number
+  unknown: boolean    // 끝내 알 수 없는 주
+  /** 합만 아는 묶음의 첫 주. 묶음의 합은 그 주의 gapMin에 몰려 있다 */
+  group?: string
+}
+
+/** 저장 맵에서 한 주를 읽는다. 아직 스캔하지 않은 주는 null */
+export function readWeek(saved: Record<string, number>, s: string): WeekPc | null {
+  if (saved[META.unknown + s]) {
+    return { start: s, gapMin: 0, gapMax: 0, pcMin: 0, pcMax: 0, unknown: true }
+  }
+  if (!(s in saved)) return null
+  const gapMin = saved[s]
+  const gapMax = Math.max(gapMin, saved[META.gapMax + s] ?? gapMin)
+  const pcMin = saved[META.pcMin + s] ?? gapMin
+  const pcMax = Math.max(pcMin, saved[META.pcMax + s] ?? gapMax)
+  const g = saved[META.group + s]
+  return { start: s, gapMin, gapMax, pcMin, pcMax, unknown: false, ...(g ? { group: groupIso(g) } : {}) }
+}
+
+/**
+ * 저장할 맵을 만든다. 부가 정보는 확정된 주에도 '없음'에 해당하는 값으로 늘 같이 적는다.
+ * 저장은 덮어쓰기만 해서, 지난번 범위가 이번에 확정됐을 때 옛 범위를 지울 길이 이것뿐이다.
+ */
+export function writeWeeks(weeks: WeekPc[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const w of weeks) {
+    if (!w.unknown) out[w.start] = w.gapMin
+    out[META.gapMax + w.start] = w.gapMax
+    out[META.pcMin + w.start] = w.pcMin
+    out[META.pcMax + w.start] = w.pcMax
+    out[META.unknown + w.start] = w.unknown ? 1 : 0
+    out[META.group + w.start] = w.group ? groupKey(w.group) : 0
+  }
+  return out
+}
+
 /** 13주 창 안에서 아직 보정값을 모르는 주. 주가 지나면 최근 주부터 여기 쌓인다. */
 export const missing = (starts: string[], saved: Record<string, number>) =>
-  starts.filter(s => !(s in saved))
+  starts.filter(s => readWeek(saved, s) == null)
 
 /** 주별 금액에 저장된 보정값을 더한다. 모르는 주는 0으로 둔다. */
 export const applyCorrections = (amounts: number[], starts: string[], saved: Record<string, number>) =>

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   anchor, applyCorrections, compare, mergeSaved, minutesOf, missing, prune, restore,
 } from './pcroom'
+import { forecast } from './mvp'
+import { real } from '../../../test/private'
 
 // tests/test_pcroom.py와 같은 경우를 쓴다. 실제 인게임 툴팁(2026-09-24, 다이아)이 바탕이다.
 const NEEDS = [20330, 46750, 46750, 48850, 48850, 88850, 108850, 108850, 138650, 178450, 178450, 646300]
@@ -94,29 +96,38 @@ describe('저장한 보정값', () => {
 })
 
 /**
- * 블랙만 이월이 있다. 인게임 '유지까지'는 이월을 이미 뺀 금액이라,
- * 되돌려 놓지 않으면 1주 뒤와 2주 뒤 사이의 한 주가 이월만큼 부풀어 나온다.
+ * 블랙만 이월이 있다. 인게임 '유지까지'는 그 갱신에서 쓸 이월을 뺀 금액이고,
+ * 쓴 이월은 새 주의 사용 금액으로 채워져 다음 줄부터 합계에 남는다.
+ * 그래서 앞 줄의 이월은 이웃한 두 줄 사이에서 지워지고, 이번 주에만 전부 빠져 있다.
+ *
+ * 만든 숫자다. 이번 목요일 갱신에서 1만이 모자라 이월로 메웠고(이번 주에 1만이 채워짐),
+ * 이월이 1만 5천 남아 다음 목요일에 모두 쓰인다. 8/20 주에만 PC방 1,200이 있다.
  */
 describe('블랙 — 이월과 모르는 주', () => {
-  const TIP = [104_568, 771_531, 772_224, 822_024, 822_024, 1_325_364,
-               1_325_364, 1_396_164, 1_396_164, 1_396_164, 2_201_034, 2_476_134]
   const BLACK = 2_500_000
-  // 인게임 표 맨 오른쪽 '사용 이월 금액' 열. 첫 갱신에서 다 쓰고 그 뒤는 0이다
-  const CARRY = [16_132, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  const W13 = [170_000, 600_000, 0, 50_000, 0, 500_000, 0, 70_000, 0, 0, 800_000, 300_000, 10_000]
+  const SPENT = [170_000, 600_000, 0, 50_000, 0, 500_000, 0, 68_800, 0, 0, 800_000, 300_000, 0]
+  const f = forecast(W13, 15_000).slice(0, 12)
+  const TIP = f.map(r => BLACK - r.sum - r.carryUsed)
+  const CARRY = f.map(r => r.carryUsed)
   const STARTS13 = [...STARTS]
 
-  it('이월은 1주 뒤 줄 하나만 움직인다', () => {
-    const plain = restore(TIP, BLACK, null)
-    const fixed = restore(TIP, BLACK, null, null, CARRY)
-    expect(fixed.weeks[1]).toBe(plain.weeks[1] - CARRY[0])
-    expect(fixed.weeks.slice(2)).toEqual(plain.weeks.slice(2))
+  it('툴팁이 그렇게 나온다 — 1주 뒤 줄에서 남은 이월을 모두 쓴다', () => {
+    expect(CARRY).toEqual([15_000, ...Array(11).fill(0)])
+    expect(TIP[0]).toBe(BLACK - (2_490_000 - 170_000 + 10_000) - 15_000)
   })
 
-  it('이월을 되돌리면 그 주 금액이 100 단위로 떨어진다', () => {
+  it('1주 뒤 줄의 이월은 이웃한 두 줄 사이에서 지워진다', () => {
+    const plain = restore(TIP, BLACK, null)
+    const r = restore(TIP, BLACK, null, null, CARRY)
+    expect(r.weeks.slice(1, 12)).toEqual(plain.weeks.slice(1, 12))
+    expect(r.weeks.slice(1, 12)).toEqual(W13.slice(1, 12))
+  })
+
+  it('이번 주에는 쓰일 이월이 전부 빠져 있다', () => {
     const r = restore(TIP, BLACK, null, null, CARRY)
     expect(r.ok).toBe(true)
-    expect(r.weeks[1]).toBe(650_831)              // 부풀린 666,963이 아니다
-    expect(r.weeks[12]).toBe(BLACK - TIP[11])     // 이번 주는 이월과 무관하다
+    expect(r.weeks[12]).toBe(10_000)                  // 갱신 때 채워진 1만
   })
 
   it('합계를 모르면 가장 오래된 주를 모른다고 표시한다', () => {
@@ -127,27 +138,37 @@ describe('블랙 — 이월과 모르는 주', () => {
     expect(restore(NEEDS, DIAMOND, TOTAL).unknown).toEqual([])
   })
 
-  it('모르는 주는 결제보다 적다고 나무라지 않는다', () => {
+  it('PC방은 가운데 주에서 그대로 나오고, 이번 주는 이월이 섞였다고 알린다', () => {
     const r = restore(TIP, BLACK, null, null, CARRY)
-    const spent = [300_000, 640_831, 693, 45_800, 0, 500_340, 0, 60_800, 0, 0,
-                   800_870, 270_100, 20_866]
-    const gaps = compare(r.weeks, spent, STARTS13, r.unknown)
+    const gaps = compare(r.weeks, SPENT, STARTS13, r.unknown, [12])
     expect(gaps[0].unknown).toBe(true)
-    expect(gaps[0].note).toBe('')
     expect(gaps.every(g => g.ok)).toBe(true)
+    expect(gaps[7].amount).toBe(1_200)
+    expect(gaps[12].amount).toBe(10_000)
+    expect(gaps[12].minutes).toBe(0)
+    expect(gaps[12].warn).toContain('이월')
   })
 
   it('모르는 주는 저장하지 않는다 — 0원으로 굳으면 다시 물을 길이 없다', () => {
     const r = restore(TIP, BLACK, null, null, CARRY)
-    const spent = [300_000, 640_831, 693, 45_800, 0, 500_340, 0, 60_800, 0, 0,
-                   800_870, 270_100, 20_866]
-    const saved = mergeSaved({}, compare(r.weeks, spent, STARTS13, r.unknown))
+    const saved = mergeSaved({}, compare(r.weeks, SPENT, STARTS13, r.unknown, [12]))
     expect(STARTS13[0] in saved).toBe(false)
-    expect(saved[STARTS13[1]]).toBe(10_000)
+    expect(saved[STARTS13[7]]).toBe(1_200)
   })
 
   it('블랙은 상단에서 기준점을 못 뽑는다', () => {
     const ths = [150_000, 300_000, 600_000, 900_000, 1_500_000, 2_500_000]
     expect(anchor(ths, ths.length, 0)).toEqual([2_500_000, null])
+  })
+})
+
+/** 블랙 제보자의 실제 툴팁과 결제 (test/private, git 제외) */
+describe.skipIf(!real)('블랙 제보자 캡처', () => {
+  it('가운데 주는 수집한 결제와 원 단위까지 같고, 이번 주에는 채워진 이월이 있다', () => {
+    const { tip, carry, spent13, nexon13 } = real!.reporter
+    const r = restore(tip, 2_500_000, null, null, carry)
+    expect(r.ok).toBe(true)
+    expect(r.weeks.slice(1, 13)).toEqual(nexon13.slice(1, 13))
+    expect(r.weeks[1]).toBe(spent13[1])
   })
 })

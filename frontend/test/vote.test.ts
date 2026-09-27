@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { scan, toGray } from '../src/lib/core/ocr'
 import type { ScanRaw } from '../src/lib/core/scan'
 import { createVote } from '../src/lib/core/vote'
+import { forecast } from '../src/lib/core/mvp'
 
 /**
  * 화면공유처럼 여러 장을 차례로 넣었을 때 결론이 제대로 모이는지 본다.
@@ -101,15 +102,15 @@ describe.skipIf(!have)('프레임 모으기', () => {
 /**
  * 블랙은 상단 '○○ 등급까지'가 애초에 없어서, 합계를 기다리면 영영 끝나지 않는다.
  * 12줄이 두 번 같게 나온 시점에 끝나야 한다. (캡처가 필요 없어 늘 돈다)
+ * 만든 숫자다. 이번 목요일에 이월로 9,950을 메웠고 1만 5천이 남았다.
  */
 describe('블랙 등급은 합계를 기다리지 않는다', () => {
-  const TIP = [104_568, 771_531, 772_224, 822_024, 822_024, 1_325_364,
-               1_325_364, 1_396_164, 1_396_164, 1_396_164, 2_201_034, 2_476_134]
-  const AMOUNTS = [16_132, 104_568, 88_333]
-  const CARRY = [16_132, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-  const SPENT = [300_000, 640_831, 693, 45_800, 0, 500_340, 0, 60_800, 0, 0,
-                 800_870, 270_100, 20_866]
-  const shot: ScanRaw = { readings: [TIP], carries: [CARRY], amounts: AMOUNTS, scale: 1 }
+  const W13 = [170_050, 600_000, 0, 50_000, 0, 500_000, 0, 70_000, 0, 0, 800_000, 300_000, 9_950]
+  const SPENT = [170_050, 600_000, 0, 50_000, 0, 500_000, 0, 68_800, 0, 0, 800_000, 300_000, 0]
+  const f = forecast(W13, 15_000).slice(0, 12)
+  const TIP = f.map(r => 2_500_000 - r.sum - r.carryUsed)
+  const CARRY = f.map(r => r.carryUsed)
+  const shot: ScanRaw = { readings: [TIP], carries: [CARRY], amounts: [15_000, TIP[0], 88_333], scale: 1 }
 
   it('같은 장 두 번이면 결론이 난다', () => {
     const vote = createVote(SPENT)
@@ -119,5 +120,24 @@ describe('블랙 등급은 합계를 기다리지 않는다', () => {
     expect(st.solved!.tierTh).toBe(2_500_000)
     expect(st.solved!.carry).toEqual(CARRY)
     expect(st.solved!.total).toBeNull()
+  })
+})
+
+/**
+ * 툴팁 앞쪽 줄이 0이라 상단 금액 후보가 둘로 갈리는 경우. 기다려도 한쪽으로 모이지 않으니
+ * 같은 목록이 두 번 나오면 고를 목록을 들고 끝낸다. (캡처가 필요 없어 늘 돈다)
+ */
+describe('합계 후보가 갈리면 고를 목록을 넘긴다', () => {
+  const W13 = [60_000, 30_000, 0, 0, 0, 40_000, 20_000, 0, 30_000, 40_000, 0, 470_000, 300_000]
+  const SPENT = [60_000, 27_900, 0, 0, 0, 40_000, 20_000, 0, 30_000, 40_000, 0, 470_000, 300_000]
+  const NEEDS = forecast(W13, 0).slice(0, 12).map(r => Math.max(0, 900_000 - r.sum))
+  const shot: ScanRaw = { readings: [NEEDS], amounts: [5_100, 510_000], scale: 1 }
+
+  it('같은 장 두 번이면 목록과 함께 끝난다', () => {
+    const vote = createVote(SPENT)
+    vote.feed(shot)
+    const st = vote.feed(shot)
+    expect(st.solved?.total).toBeNull()
+    expect(st.solved?.choices?.map(c => c.total)).toEqual([990_000, 1_494_900])
   })
 })

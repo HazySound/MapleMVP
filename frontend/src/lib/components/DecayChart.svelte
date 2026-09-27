@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
   import { atX, fit, onResize } from '../canvas'
-  import { C, FONT, TIER_COLOR, addDays, hexA, md, spotlight, tierColor, tierVar, tierName, won } from '../format'
+  import { C, FONT, TIER_COLOR, addDays, eun, hexA, iga, md, ro, spotlight, tierColor, tierVar, tierName, won } from '../format'
 
   const d = $derived(app.data!)
   const sim = $derived(app.sim ?? d.sim)
@@ -119,8 +119,9 @@
     const k = sim.keepWeeks
     const name = tierName(d.tiers, now)
     if (k === 0) return `다음 목요일부터 ${name} 아래로 내려가요.`
-    if (k >= sim.forecast.length) return `추가 결제 없이도 ${name}이 ${k}번 넘게 유지돼요.`
-    return `${name}은 ${md(addDays(d.deadline, (k - 1) * 7))} 갱신까지 유지되고, ${md(addDays(d.deadline, k * 7))}에 ${tierName(d.tiers, sim.forecast[k].tier)}(으)로 내려가요.`
+    if (k >= sim.forecast.length) return `추가 결제 없이도 ${name}${iga(name)} ${k}번 넘게 유지돼요.`
+    const down = tierName(d.tiers, sim.forecast[k].tier)
+    return `${name}${eun(name)} ${md(addDays(d.deadline, (k - 1) * 7))} 갱신까지 유지되고, ${md(addDays(d.deadline, k * 7))}에 ${down}${ro(down)} 내려가요.`
   })
 </script>
 

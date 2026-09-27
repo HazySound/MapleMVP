@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BLACK, CARRY_MAX, TIERS, forecast, grade, needFor, needNow, plan, replay,
+  BLACK, CARRY_MAX, TIERS, accrue, forecast, grade, needFor, needNow, plan, replay,
   tierNow, tierOf, todayKst, weekStart, weeklyAmounts,
 } from './mvp'
+import { real } from '../../../test/private'
 
 // tests/test_mvp.py와 같은 경우를 쓴다. 파이썬과 결과가 갈리면 여기서 걸린다.
 const T = Object.fromEntries(TIERS.map(t => [t.key, t]))
@@ -50,9 +51,10 @@ describe('주차', () => {
 })
 
 describe('이월', () => {
-  it('직전에 끝난 주의 초과분만 쌓인다', () => {
-    expect(grade(2_700_000, 0, 300_000).carry).toBe(200_000)
-    expect(grade(2_700_000, 0, 50_000).carry).toBe(50_000)
+  it('기준을 넘긴 만큼, 그 주 결제 안에서만 쌓인다', () => {
+    expect(accrue(2_700_000, 300_000, 0)).toBe(200_000)
+    expect(accrue(2_700_000, 50_000, 0)).toBe(50_000)
+    expect(accrue(2_400_000, 300_000, 0)).toBe(0)
   })
 
   it('공식 예시대로 쓰인다', () => {
@@ -69,7 +71,7 @@ describe('이월', () => {
   })
 
   it('상한이 있다', () => {
-    expect(grade(20_000_000, 9_000_000, 20_000_000).carry).toBe(CARRY_MAX)
+    expect(9_000_000 + accrue(20_000_000, 20_000_000, 9_000_000)).toBe(CARRY_MAX)
   })
 })
 
@@ -87,11 +89,37 @@ describe('지금 등급과 지난 갱신 재현', () => {
     expect(tierNow(amounts.slice(-13), carry)).toBe(T.diamond)
   })
 
-  it('크게 쓴 주는 빠진 뒤 이월이 한 번 메운다', () => {
+  it('크게 쓴 주가 빠지면 이월이 메우고, 메운 금액은 13주 동안 남는다', () => {
     const amounts = [...Array(12).fill(0), 5_000_000, ...Array(12).fill(0)]
-    expect(replay(amounts)).toEqual({ tier: BLACK, carry: 2_500_000 })
-    expect(replay([...amounts, 0])).toEqual({ tier: BLACK, carry: 0 })
-    expect(replay([...amounts, 0, 0]).tier).toBeNull()
+    expect(replay(amounts)).toMatchObject({ tier: BLACK, carry: 2_500_000 })
+    const r = replay([...amounts, 0])
+    expect(r).toMatchObject({ tier: BLACK, carry: 0 })
+    expect(r.weeks.at(-1)).toBe(2_500_000)            // 꺼내 쓴 이월이 새 주에 채워진다
+    expect(replay([...amounts, 0, 0]).tier).toBe(BLACK)
+    expect(replay([...amounts, ...Array(13).fill(0)]).tier).toBe(BLACK)
+    expect(replay([...amounts, ...Array(14).fill(0)]).tier).toBeNull()
+  })
+
+  /**
+   * 주중에 결제로 250만을 넘기면 그 순간 넘친 만큼 쌓인다. 다음 목요일에 가장 오래된 주가
+   * 빠져 모자라지면 그 이월로 메운다. 목요일에만 쌓는다고 보면 그사이 빠진 주 몫을 놓쳐
+   * 여기서 레드로 떨어진다. (2026-09 블랙 제보에서 확인한 규칙)
+   */
+  it('주중에 기준을 넘긴 초과분도 쌓인다', () => {
+    const r = replay([100_000, 2_000_000, ...Array(10).fill(0), 460_000, 0])
+    // 넷째 줄 결제로 256만 → 6만 적립. 갱신 때 246만이라 4만을 꺼내 쓰고 2만 남는다
+    expect(r).toMatchObject({ tier: BLACK, carry: 20_000 })
+    expect(r.weeks.at(-1)).toBe(40_000)
+  })
+
+  /** 블랙 제보자의 실제 숫자로 인게임 툴팁과 원 단위까지 맞는지 (test/private, git 제외) */
+  it.skipIf(!real)('제보자 캡처와 같은 이월과 유지 금액이 나온다', () => {
+    const { nexon13, outsideWeek, tip, carry } = real!.reporter
+    const r = replay([outsideWeek, ...nexon13], [false, ...nexon13.map(() => true)])
+    expect(r).toMatchObject({ tier: BLACK, carry: carry[0] })
+    const f = forecast(r.weeks.slice(-13), r.carry)
+    expect(f[0].carryUsed).toBe(carry[0])
+    expect(BLACK.th - f[0].sum - f[0].carryUsed).toBe(tip[0])   // 인게임 1주 뒤 '유지까지'
   })
 })
 
@@ -112,10 +140,14 @@ describe('예측', () => {
     const f = forecast([...Array(12).fill(0), 2_000_000], 1_000_000)
     expect(f[0].tier).toBe(BLACK)
     expect(f[0].carry).toBe(500_000)
+    // 첫 갱신에서 쓴 50만이 새 주에 채워져 2,000,000 + 500,000으로 버틴다
     expect(f[1].tier).toBe(BLACK)
-    expect(f[1].carry).toBe(0)
-    expect(f[2].tier).toBe(T.red)
-    expect(f[12].sum).toBe(0)
+    expect(f[1].carry).toBe(500_000)
+    expect(f[11].tier).toBe(BLACK)
+    // 2,000,000이 빠지면 채운 50만과 남은 이월 50만뿐이다
+    expect(f[12].sum).toBe(500_000)
+    expect(f[12].carryUsed).toBe(500_000)
+    expect(f[12].tier).toBe(T.diamond)
   })
 
   it('다음 목요일 기준은 가장 오래된 주가 빠진 뒤다', () => {

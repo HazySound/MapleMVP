@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { app, refresh, setExtra, setTarget } from '../store.svelte'
-  import { eul, TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, countup, md, spotlight, tierName, won } from '../format'
+  import { eul, ro, TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, countup, md, spotlight, tierName, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -33,6 +33,8 @@
   const curTh = $derived(d.tiers.find(t => t.key === cur)?.th ?? 0)
   // 다음 목요일 합계(시뮬레이션 포함)로 지금 등급을 지킬 수 있는지
   const keepNeed = $derived(Math.max(0, (cur ? curTh : d.tiers[0].th) - sim.forecast[0].sum - d.carry))
+  // 다음 목요일 갱신에서 꺼내 쓸 이월 (블랙만)
+  const carryUsed = $derived(sim.carryUsed)
 
   // ---- 목표 ----
   const target = $derived(d.tiers.find(t => t.key === app.target)!)
@@ -78,11 +80,14 @@
       {:else if keepNeed === 0}
         <b>{tierName(d.tiers, cur)} 유지 확정</b>
         <span class="body">다음 주 목요일에도 {tierName(d.tiers, cur)} 등급이에요.
-          여유 <span class="mono">{won(sim.forecast[0].sum + d.carry - curTh)}</span>원</span>
+          여유 <span class="mono">{won(sim.forecast[0].sum + d.carry - curTh)}</span>원
+          {#if carryUsed}<br /><span class="carry">이월 <span class="mono">{won(carryUsed)} / {won(d.carry)}</span>원 사용</span>{/if}</span>
       {:else}
         <b><span class="mono">{won(keepNeed)}</span>원 더 결제하면 {tierName(d.tiers, cur)} 유지</b>
         <span class="body">{md(d.weeks[0].start)}–{md(d.weeks[0].end)} 주의 <span class="mono">{won(d.weeks[0].amount)}</span>원이 빠져서,
-          지금대로면 {tierName(d.tiers, sim.next)}(으)로 내려가요.</span>
+          지금대로면 {tierName(d.tiers, sim.next)}{ro(tierName(d.tiers, sim.next))} 내려가요.
+          <!-- 제목 금액은 이월을 쓰고도 모자란 금액이라 빠지는 주 금액과 다르다. 그 차이만 따로 짧게 -->
+          {#if carryUsed}<br /><span class="carry">이월 <span class="mono">{won(carryUsed)} / {won(d.carry)}</span>원 사용</span>{/if}</span>
       {/if}
     </div>
   </div>
@@ -166,6 +171,7 @@
     -webkit-line-clamp: 2; line-clamp: 2;
     overflow: hidden; height: calc(13px * 1.5 * 2);
   }
+  .carry { font-size: 12px; color: var(--color-butter); }
   .ic { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: none; background: color-mix(in oklab, var(--k) 24%, transparent); color: var(--k); }
   .ic svg { width: 18px; height: 18px; }
   .t { font-size: 13px; color: var(--color-tx2); line-height: 1.5; }

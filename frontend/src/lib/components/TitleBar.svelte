@@ -21,8 +21,14 @@
     }
     if (app.loggedOut) return '로그아웃됨'
     if (!app.data?.syncedAt) return '아직 동기화 전'
-    const min = Math.floor((now - new Date(app.data.syncedAt).getTime()) / 60000)
-    return min < 1 ? '방금 동기화됨' : min < 60 ? `${min}분 전 동기화` : `${Math.floor(min / 60)}시간 전 동기화`
+    // 저절로 동기화되는 게 아니라서 '방금'·'n분 전'은 헷갈린다. 마지막으로 가져온 때를 그대로 적는다
+    const t = new Date(app.data.syncedAt)
+    const day = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    const hm = `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`
+    const when = day(t) === day(new Date(now)) ? '오늘'
+      : day(t) === day(new Date(now - 864e5)) ? '어제'
+      : `${t.getMonth() + 1}월 ${t.getDate()}일`
+    return `마지막 동기화 ${when} ${hm}`
   })
 
   // 웹에는 로그인이 없다. 받아 둔 내역이 하나도 없으면 여기부터 시작해야 하므로

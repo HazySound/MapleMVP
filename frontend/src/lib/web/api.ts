@@ -199,7 +199,7 @@ export const webApi: PyApi = {
     const at = load<Record<string, number>>(KEY.pcroomAt, {})
     for (const week of Object.keys(weeks)) at[week] = now
     save(KEY.pcroomAt, at)
-    save('maplemvp.syncedAt', new Date().toISOString())
+    // 동기화 시각은 넥슨 구매내역을 가져온 때다. PC방 보정을 저장했다고 바꾸면 '방금 동기화됨'이 거짓말이 된다
     return raw()
   },
 

@@ -266,15 +266,22 @@ def digit_clusters(g: np.ndarray, scale: float, skip: list[tuple[int, int]] | No
 
 def find_amounts(g: np.ndarray, glyphs: dict, scale: float,
                  skip: list[tuple[int, int]] | None = None) -> list[int]:
-    """화면에 보이는 숫자들을 모두 읽어 온다. 어느 게 '○○ 등급까지'인지는 검증으로 가린다."""
+    """화면에 보이는 숫자들을 모두 읽어 온다. 어느 게 '○○ 등급까지'인지는 검증으로 가린다.
+
+    붙어버린 숫자는 임계값을 올려야 갈려서 한 자리를 여러 값으로 읽는다. 다만 한 값에서만 나온
+    판독까지 후보로 넘기면 오독이 섞인다(가장 낮은 값에서 '3'·'6'이 붙어 여섯 자리가 네 자리로 읽힌 적이 있다).
+    그래서 자리마다 가장 많이 나온 판독만 남긴다. 표가 같게 갈리면 둘 다 남긴다.
+    """
     vals = set()
     for y0, y1, x0, x1, _ in digit_clusters(g, scale, skip):
-        # 붙어버린 숫자는 임계값을 올려야 갈린다. 여러 값으로 읽어 모두 후보로 둔다
+        tally: dict[int, int] = {}
         for th in THRESHOLDS + (235, 245):
             gs = line_glyphs(g, y0, y1, x0, x1, scale, th)
             t = "".join(_match(glyphs, im) for im in gs).replace(",", "")
             if t.isdigit() and 1_000 <= int(t) <= 2_500_000:
-                vals.add(int(t))
+                tally[int(t)] = tally.get(int(t), 0) + 1
+        top = max(tally.values(), default=0)
+        vals.update(v for v, n in tally.items() if n == top)
     return sorted(vals)
 
 

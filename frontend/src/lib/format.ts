@@ -59,6 +59,45 @@ export const man = (n: number) => (n >= 10000 ? `${Math.round(n / 1000) / 10}만
 /** 'YYYY-MM-DD' → 'MM.DD' */
 export const md = (iso: string) => iso.slice(5, 10).replace('-', '.')
 
+/** PC방 보정 합계. 범위로만 아는 주가 있으면 '최소~최대' */
+export const pcRange = (p: { total: number; totalMax: number }) =>
+  p.totalMax > p.total ? `${won(p.total)}~${won(p.totalMax)}` : won(p.total)
+
+/** PC방을 주별로 확정하지 못한 주. group은 end 주까지 합만 안다 */
+export interface PcFuzzy { start: string; end?: string; kind: 'unknown' | 'range' | 'group'; min: number; max: number }
+
+const day = (iso: string) => ({ m: Number(iso.slice(5, 7)), d: Number(iso.slice(8, 10)) })
+/** 'M월 N주차'. 주는 목요일에 시작하므로 그 달의 몇 번째 목요일인지로 센다 */
+const weekOf = (start: string) => { const { m, d } = day(start); return `${m}월 ${Math.ceil(d / 7)}주차` }
+/** '7월 2~8일' / '7월 30일~8월 5일' */
+function spanOf(from: string, to: string): string {
+  const a = day(from)
+  const b = day(to)
+  return a.m === b.m ? `${a.m}월 ${a.d}~${b.d}일` : `${a.m}월 ${a.d}일~${b.m}월 ${b.d}일`
+}
+
+/**
+ * PC방을 주별로 확정하지 못한 주를 한눈에 보이게 적는다. 다 확정됐으면 빈 문자열.
+ * 툴팁은 줄바꿈만 살리므로 줄 단위로 표처럼 맞춘다. 결과창과 버튼 툴팁이 같은 글을 쓴다.
+ */
+export function pcCaveat(p: { total: number; totalMax: number; fuzzy: PcFuzzy[] }): string {
+  if (!p.fuzzy.length) return ''
+  const head = p.totalMax > p.total
+    ? `확정 ${won(p.total)}원 · 확인 안 된 금액 최대 ${won(p.totalMax - p.total)}원`
+    : `합계 ${won(p.total)}원`
+  const rows = p.fuzzy.map(f => {
+    const end = addDays(f.end ?? f.start, 6)
+    const when = f.end && f.end !== f.start
+      ? `${weekOf(f.start)}~${weekOf(f.end)} (${spanOf(f.start, end)})`
+      : `${weekOf(f.start)} (${spanOf(f.start, end)})`
+    const what = f.kind === 'unknown' ? '알 수 없음'
+      : f.kind === 'group' ? `합계 ${won(f.min)}원`
+      : `${won(f.min)}~${won(f.max)}원`
+    return `${when}  ${what}`
+  })
+  return [head, '', '확인되지 않은 주', ...rows, '', '매주 스캔하면 점점 정확해져요.'].join('\n')
+}
+
 export function addDays(iso: string, days: number): string {
   const d = new Date(iso.slice(0, 10) + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() + days)
@@ -106,3 +145,15 @@ export function eul(word: string): string {
   if (c < 0xac00 || c > 0xd7a3) return '를'
   return (c - 0xac00) % 28 ? '을' : '를'
 }
+
+/** 마지막 글자의 받침 번호. 받침이 없거나 한글이 아니면 0 */
+function coda(word: string): number {
+  const c = word.codePointAt(word.length - 1) ?? 0
+  return c < 0xac00 || c > 0xd7a3 ? 0 : (c - 0xac00) % 28
+}
+/** 은/는 (블랙은 / 다이아는) */
+export const eun = (word: string) => (coda(word) ? '은' : '는')
+/** 이/가 (블랙이 / 다이아가) */
+export const iga = (word: string) => (coda(word) ? '이' : '가')
+/** 으로/로. ㄹ 받침은 '로'다 (레드로 / 블랙으로 / 미달로) */
+export const ro = (word: string) => { const k = coda(word); return k && k !== 8 ? '으로' : '로' }

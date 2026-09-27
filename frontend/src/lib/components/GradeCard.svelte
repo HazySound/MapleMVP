@@ -2,7 +2,7 @@
   import gsap from 'gsap'
   import { app, refresh, toggleMedal } from '../store.svelte'
   import { fit, onResize } from '../canvas'
-  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, spotlight, tierIdx, won } from '../format'
+  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, pcCaveat, pcRange, spotlight, tierIdx, won } from '../format'
   import Badge from './Badge.svelte'
   import Medal from './Medal.svelte'
   import { tip } from '../tip'
@@ -179,19 +179,19 @@
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
     {#if canFix}
-      <button class="pc" class:on={!!d.pcroom.total && !noRows} class:hl={needPc} class:off={noRows}
+      <button class="pc" class:on={!!d.pcroom.totalMax && !noRows} class:hl={needPc} class:off={noRows}
         onclick={() => (noRows ? want() : (app.showPcRoom = true))}
         use:tip={noRows
           ? '구매내역을 먼저 동기화해 주세요. 수집한 결제가 있어야 그 차이를 PC방으로 볼 수 있어요'
           : needPc
             ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
-            : '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
-        {#if d.pcroom.total && !noRows}PC방 +{won(d.pcroom.total)}원{:else}PC방 보정{/if}
+            : pcCaveat(d.pcroom) || '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
+        {#if d.pcroom.totalMax && !noRows}PC방 +{pcRange(d.pcroom)}원{:else}PC방 보정{/if}
       </button>
-    {:else if d.pcroom.total}
+    {:else if d.pcroom.totalMax}
       <span class="pc tag on"
-        use:tip={'PC에서 맞춰 둔 프리미엄 PC방 접속분이에요. 고치는 건 PC에서만 돼요'}>
-        PC방 +{won(d.pcroom.total)}원
+        use:tip={`PC에서 맞춰 둔 프리미엄 PC방 접속분이에요. 고치는 건 PC에서만 돼요.${pcCaveat(d.pcroom) ? '\n\n' + pcCaveat(d.pcroom) : ''}`}>
+        PC방 +{pcRange(d.pcroom)}원
       </span>
     {/if}
   </h3>

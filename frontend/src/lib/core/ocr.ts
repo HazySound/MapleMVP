@@ -480,18 +480,27 @@ function digitClusters(g: Gray, scale: number, skip?: Skip,
   return out
 }
 
-/** 화면에 보이는 숫자들을 모두 읽어 온다. 어느 게 맞는지는 규칙이 가린다. */
+/**
+ * 화면에 보이는 숫자들을 모두 읽어 온다. 어느 게 맞는지는 규칙이 가린다.
+ *
+ * 붙어 버린 숫자는 기준을 올려야 떨어져서 한 자리를 여러 기준으로 읽는다. 다만 한 기준에서만
+ * 나온 판독까지 후보로 넘기면 오독이 섞인다(가장 낮은 기준에서 '3'·'6'이 붙어 여섯 자리가 네 자리로
+ * 읽혔다). 그래서 자리마다 가장 많이 나온 판독만 남긴다. 표가 같게 갈리면 둘 다 남긴다.
+ */
 function findAmounts(g: Gray, scale: number, skip?: Skip): number[] {
   const vals = new Set<number>()
   for (const c of digitClusters(g, scale, skip)) {
+    const tally = new Map<number, number>()
     for (const th of [...THRESHOLDS, 235, 245]) {
       const gs = lineGlyphs(g, c.y0, c.y1, c.x0, c.x1, scale, th)
       const t = gs.map(match).join('').replace(/,/g, '')
       if (/^\d+$/.test(t)) {
         const v = Number(t)
-        if (v >= 1000 && v <= 2_500_000) vals.add(v)
+        if (v >= 1000 && v <= 2_500_000) tally.set(v, (tally.get(v) ?? 0) + 1)
       }
     }
+    const top = Math.max(0, ...tally.values())
+    for (const [v, n] of tally) if (n === top) vals.add(v)
   }
   return [...vals].sort((a, b) => a - b)
 }
