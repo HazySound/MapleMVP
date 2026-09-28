@@ -9,7 +9,7 @@
  * - 묶음은 통째로 사고 통째로 판다. 가격은 묶음 전체 가격이고 판매 1회
  * - 경매장 수수료는 사는 순간 오를 등급으로 정한다. 실버 이상 3%, 아니면 5%
  * - 상품권은 권 단위로 산다. 5만원권이 먼저, 5만 원이 안 되는 부분은 3천 원 단위. 넘치게 사지 않는다
- * - 권으로 딱 맞지 않는 끝자리는 바코드(이벤트 때만) 또는 일반 충전 1:1
+ * - 권으로 딱 맞지 않는 끝자리는 바코드(이벤트 때만) 또는 일반 충전(기본 1:1, 할인을 넣으면 그 비율)
  * - 상품권 한도는 달마다 새로 생긴다(각 20만 원)
  */
 import type { TierKey } from './mvp'
@@ -41,6 +41,20 @@ export const countLabel = (x: Pick<ShopItem, 'set'>, n: number) => x.set > 1 ? `
 
 /** 플가 가격(억)일 때 이 아이템이 플가와 같은 효율이 되는 가격(억) */
 export const minPrice = (pg: number, cash: number) => pg * cash / 5900
+
+/**
+ * 일반 충전 비율 칸. 사람마다 적는 방식이 달라 방식을 고르게 한다.
+ * off: 할인율(7 → 7% 할인), ratio: 실제 비율(93 또는 0.93), per10k: 1만 캐시당 현금(9300).
+ * 캐시 1원에 드는 현금을 돌려준다. 비었거나 말이 안 되면 1(1:1)
+ */
+export type PlainMode = 'off' | 'ratio' | 'per10k'
+export function plainRateOf(mode: PlainMode, v: number): number {
+  const r = !v || v <= 0 ? 1
+    : mode === 'off' ? 1 - v / 100
+    : mode === 'ratio' ? (v > 1 ? v / 100 : v)
+    : v / 10000
+  return r > 0 && r < 1 ? r : 1
+}
 
 /** 사는 순간 이 등급이 되면 경매장 수수료 */
 export const feeOf = (tier: TierKey | null) => tier && tier !== 'bronze' ? 0.03 : 0.05
@@ -82,6 +96,11 @@ export interface FundCtx {
   cards: Card[]
   /** 바코드 이벤트. null이면 없음. want가 null이면 남는 금액 전부 */
   barcode: { bonus: number; capLeft: number; want: number | null } | null
+  /**
+   * 일반 충전에서 캐시 1원에 드는 현금. 없으면 1(1:1).
+   * 넥슨팩 쿠폰처럼 한도 없이 할인받아 충전하는 사람이 비율을 넣는다
+   */
+  plain?: number
 }
 
 /** 캐시 c를 마련하는 데 드는 현금과 그 내역 */
@@ -103,7 +122,9 @@ export function fund(c: number, x: FundCtx): Funding {
     parts.push({ name: k.name, cash: use, won: use * k.rate, card: true, big: big / BIG, small })
     left -= use; cost += use * k.rate
   }
-  if (x.barcode && left > 0) {
+  const plain = x.plain ?? 1
+  // 나머지 전부를 바코드로 받게 둔 경우, 일반 충전이 더 싸면 바코드는 쓰지 않는다
+  if (x.barcode && left > 0 && (x.barcode.want != null || 1 / (1 + x.barcode.bonus) < plain)) {
     const use = x.barcode.want == null ? left : Math.min(left, x.barcode.want)
     if (use > 0) {
       const b = x.barcode.bonus
@@ -113,7 +134,7 @@ export function fund(c: number, x: FundCtx): Funding {
       left -= use; cost += won
     }
   }
-  if (left > 0) { parts.push({ name: '일반 충전', cash: left, won: left }); cost += left }
+  if (left > 0) { parts.push({ name: '일반 충전', cash: left, won: left * plain }); cost += left * plain }
   return { cost, parts }
 }
 
@@ -368,6 +389,8 @@ export interface Plan {
   /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
   balance: number
   cards: CardSetting[]
+  /** 일반 충전에서 캐시 1원에 드는 현금. 없으면 1(1:1) */
+  plainRate?: number
   /** 이번 달에 남은 상품권 한도. 다음 달부터는 각 20만 원 */
   leftNow: Record<string, number>
   thisMonth: string
@@ -417,9 +440,11 @@ export function splitMonth(needs: number[], cards: Card[], left: Record<string, 
 }
 
 export function planAll(p: Plan): WeekResult[] | null {
+  const plain = p.plainRate ?? 1
+  // 일반 충전보다 비싸거나 같은 상품권은 쓸 까닭이 없다
   const cards: Card[] = p.cards
     .map(c => ({ key: c.key, name: c.name, rate: rateOf(c.disc) ?? 0 }))
-    .filter((c, i) => p.cards[i].on && c.rate > 0)
+    .filter((c, i) => p.cards[i].on && c.rate > 0 && c.rate < plain)
     .sort((a, b) => a.rate - b.rate)
   // 상품권은 달마다 먼저 나눠 둔다. 잔액을 먼저 쓰니 주마다 충전할 캐시는 잔액을 뺀 만큼
   const weekLimits: Record<string, number>[] = []
@@ -441,6 +466,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     const ctx: FundCtx = {
       held: { cash: balance, won: balance }, limits: { ...limits }, cards,
       barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft, want } : null,
+      plain,
     }
     const fee = p.fee ?? feeOf(w.tier)
     const creditPer = p.credit ? creditWonPer(p.credit.items, fee, p.um) : 0

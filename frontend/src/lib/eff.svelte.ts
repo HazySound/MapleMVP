@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, isShort, pickAt, planAll, routesOf, type BarcodeEvent, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, isShort, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
@@ -33,6 +33,9 @@ interface Saved {
   /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
   balance: number
   cards: { key: string; name: string; disc: number; on: boolean }[]
+  /** 일반 충전 비율(넥슨팩 쿠폰 등). 적는 방식과 값. 값이 0이면 1:1 */
+  plainMode: PlainMode
+  plainVal: number
   leftNow: Record<string, number>
   leftMonth: string
   barcodeOn: boolean
@@ -74,7 +77,7 @@ interface Saved {
 function fresh(): Saved {
   return {
     usePlan: true, amount: 0, balance: 0,
-    cards: CARDS.map(c => ({ ...c, disc: 0, on: true })),
+    cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), plainMode: 'off', plainVal: 0,
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
@@ -285,7 +288,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const all = sellables()
   const credit = eff.creditOn ? { balance: eff.creditBalance, items: creditItems(), keepRest: eff.creditKeep } : null
   const run = (items: Sellable[]) => planAll({
-    weeks, balance: eff.balance, cards: eff.cards, leftNow: eff.leftNow, thisMonth: thisMonth(),
+    weeks, balance: eff.balance, cards: eff.cards, plainRate: plainRateOf(eff.plainMode, eff.plainVal), leftNow: eff.leftNow, thisMonth: thisMonth(),
     barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: eff.weekBarcode,
     um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit,
   })
