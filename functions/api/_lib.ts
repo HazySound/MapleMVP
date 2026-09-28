@@ -5,6 +5,8 @@
  * 서명이 맞으면 우리가 내준 것으로 본다. 서버가 기억할 것이 없으니
  * 여러 곳에서 동시에 요청이 와도 어긋날 일이 없다.
  */
+import { buildQna, dropPosts } from './_qna'
+
 export interface Env {
   DB: D1Database
   KAKAO_REST_KEY: string
@@ -12,6 +14,8 @@ export interface Env {
   /** 탈퇴할 때 카카오 연결까지 끊는 데 쓴다. 없으면 우리 쪽 것만 지운다 */
   KAKAO_ADMIN_KEY?: string
   SESSION_SECRET: string
+  /** 로컬에서 카카오 없이 로그인해 보는 길(auth/dev). 운영에는 넣지 않는다 */
+  DEV_LOGIN?: string
 }
 
 export interface Ctx {
@@ -133,6 +137,9 @@ async function build(db: D1Database) {
   try {
     await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS member_name ON member (nick, tag) WHERE nick <> ''")
   } catch { /* 이미 있다 */ }
+  // 문의 게시판에 답을 다는 사람. 대시보드가 아니라 D1에서 직접 켠다
+  try { await db.exec('ALTER TABLE member ADD COLUMN admin INTEGER NOT NULL DEFAULT 0') } catch { /* 이미 있다 */ }
+  await buildQna(db)
   // 진단 기록(가져오기가 왜 안 됐는지). log.ts가 쓴다
   await db.exec('CREATE TABLE IF NOT EXISTS applog (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL)')
   await db.exec('CREATE INDEX IF NOT EXISTS applog_uid ON applog (uid, id)')
@@ -146,18 +153,25 @@ async function build(db: D1Database) {
  */
 export async function erase(db: D1Database, uid: string): Promise<void> {
   await ensure(db)
+  // 남긴 문의도 이 사람 것이다. 글째로 지우면 거기 달린 답과 그림도 같이 간다
+  const mine = await db.prepare('SELECT id FROM post WHERE uid = ?').bind(uid).all<{ id: number }>()
+  await dropPosts(db, mine.results.map(r => r.id))
   await db.batch([
     db.prepare('DELETE FROM vault WHERE uid = ?').bind(uid),
     db.prepare('DELETE FROM member WHERE uid = ?').bind(uid),
+    db.prepare('DELETE FROM reply WHERE uid = ?').bind(uid),
+    db.prepare('DELETE FROM image WHERE uid = ?').bind(uid),
+    db.prepare('DELETE FROM follow WHERE uid = ?').bind(uid),
+    db.prepare('DELETE FROM note WHERE uid = ?').bind(uid),
     db.prepare('DELETE FROM applog WHERE uid = ?').bind(uid),
   ])
 }
 
 /** 이용자가 정한 이름과 번호. 아직 안 정했으면 빈 이름 */
-export async function nickOf(db: D1Database, uid: string): Promise<{ nick: string; tag: number }> {
-  const row = await db.prepare('SELECT nick, tag FROM member WHERE uid = ?').bind(uid)
-    .first<{ nick: string; tag: number }>()
-  return { nick: row?.nick ?? '', tag: row?.tag ?? 0 }
+export async function nickOf(db: D1Database, uid: string): Promise<{ nick: string; tag: number; admin: boolean }> {
+  const row = await db.prepare('SELECT nick, tag, admin FROM member WHERE uid = ?').bind(uid)
+    .first<{ nick: string; tag: number; admin: number }>()
+  return { nick: row?.nick ?? '', tag: row?.tag ?? 0, admin: !!row?.admin }
 }
 
 export const json = (data: unknown, status = 200) =>

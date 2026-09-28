@@ -16,6 +16,10 @@
 </script>
 
 <footer>
+  {#if app.web}
+    <a href="#qna">문의 게시판</a>
+    <span class="dot" aria-hidden="true">·</span>
+  {/if}
   <span>
     문의 · 제보 <a href="mailto:{MAIL}">{MAIL}</a>
   </span>

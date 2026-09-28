@@ -67,6 +67,8 @@ export default defineConfig(({ mode }) => {
   // 웹 배포는 루트 기준으로 올린다.
   base: mode === 'web' ? '/' : './',
   build: mode === 'web' ? { outDir: 'dist-web' } : {},
-  server: { port: 5173, strictPort: true },
+  // 로컬에서 게시판·로그인을 시험할 때는 functions를 wrangler pages dev(8788)로 띄워 둔다.
+  // 안 띄워 두면 /api가 실패하고 앱은 로그인 없이 돌아간다
+  server: { port: 5173, strictPort: true, proxy: { '/api': 'http://127.0.0.1:8788' } },
   }
 })

@@ -19,6 +19,7 @@
   import PlanGoal from './lib/components/PlanGoal.svelte'
   import PlanSummary from './lib/components/PlanSummary.svelte'
   import PlanTable from './lib/components/PlanTable.svelte'
+  import QnaView from './lib/components/QnaView.svelte'
   import ResizeHandles from './lib/components/ResizeHandles.svelte'
   import Simulator from './lib/components/Simulator.svelte'
   import TitleBar from './lib/components/TitleBar.svelte'
@@ -51,7 +52,9 @@
 <div class="shell">
   <TitleBar />
   <main>
-    {#if app.data && app.view === 'plan'}
+    {#if app.web && app.view === 'qna'}
+      <QnaView />
+    {:else if app.data && app.view === 'plan'}
       {#if planner.input}
         <div class="grid" use:intro>
           <!-- 목표 카드는 이 영역 안에서만 따라 내려오고, 차트 앞에서 멈춘다 -->
@@ -78,7 +81,7 @@
       <div class="boot"><span></span></div>
     {/if}
     <!-- 화면 맨 아래. 내용이 끝난 다음에 온다 -->
-    {#if app.data}<Footer />{/if}
+    {#if app.data || app.view === 'qna'}<Footer />{/if}
   </main>
   <Overlay />
   <!-- 배포 뒤에도 옛 화면이 남아 있으면 알려 준다. 웹에서만 -->
@@ -89,7 +92,7 @@
   {#if app.data?.syncedAt && app.showPcRoom && !(app.web && TOUCH)}<PcRoomModal />{/if}
   {#if app.data && app.web && app.showImport}<ImportModal />{/if}
   <!-- 모달은 화면 전체를 덮어야 한다. 타이틀바 안에 두면 거기에 갇힌다 -->
-  {#if app.web && app.showSignIn}<LoginModal onClose={() => (app.showSignIn = false)} />{/if}
+  {#if app.web && app.showSignIn}<LoginModal forQna={app.signInForQna} onClose={() => { app.showSignIn = false; app.signInForQna = false }} />{/if}
   <!-- 이름이 비어 있다는 것은 이 계정으로 처음 왔다는 뜻이다 -->
   {#if app.web && app.user && !app.user.nick}<NameModal />{/if}
 </div>

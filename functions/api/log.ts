@@ -11,7 +11,8 @@
 import { type Ctx, ensure, json, who } from './_lib'
 import { LIMIT, tick, tooMany } from './_rate'
 
-const MAX = 60_000
+/** 5년 치 월별 기록이 들어온다. 넉넉히 두되 끝없이 받지는 않는다 */
+const MAX = 300_000
 const KEEP = 20
 
 export async function onRequestPost(ctx: Ctx): Promise<Response> {

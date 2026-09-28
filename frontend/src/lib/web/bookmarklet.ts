@@ -150,11 +150,14 @@ function collect(appOrigin: string) {
   const SHOP_API = 'https://public.api.nexon.com/shopping'
   const SHOP_KEY = '56b88a9a-5ac6-583f-8f9d-dcbfbd5693dc'
   const SHOP_ID = '23'
-  /** 새 넥슨쇼핑이 열린 달. 그 전 내역은 다른 곳에 있고, MVP 13주와도 멀다 */
-  const SHOP_FROM = 2025 * 12 + 10
-  const SHOP_MONTHS = 12
+  /*
+   * 넥슨쇼핑 구매내역은 넥슨캐시 내역처럼 5년 가까이 남아 있고, 옛날 달도 같은 주소로 조회된다.
+   * 쿠폰은 가끔 사는 것이라 빈 달이 길게 이어지는 게 보통이다. 넥슨캐시처럼 '빈 달이 이어지면
+   * 멈추기'를 쓰면 몇 년 전 구매를 두고 온다. 그래서 조회 가능한 기간(60개월)을 빈 달이어도 다 읽는다
+   */
+  const SHOP_MONTHS = 60
 
-  const shopLog: { at: string; ver: number; steps: string[]; months: any[]; statuses: Record<string, number>; ok: boolean; count: number; error: string } =
+  const shopLog: { at: string; ver: number; steps: string[]; months: any[]; statuses: Record<string, number>; ok: boolean; count: number; error: string; keys?: string } =
     { at: new Date().toISOString(), ver: 2, steps: [], months: [], statuses: {}, ok: false, count: 0, error: '' }
   const note = (s: string) => { shopLog.steps.push(s) }
 
@@ -211,7 +214,6 @@ function collect(appOrigin: string) {
       let triedLogin = false
       for (let i = 0; i < SHOP_MONTHS; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        if (d.getFullYear() * 12 + d.getMonth() < SHOP_FROM) break
         const y = d.getFullYear()
         const m = d.getMonth() + 1
         say(`<b>MapleMVP</b><br>넥슨쇼핑 ${y}년 ${m}월 읽는 중…<br>` + dim(`쿠폰 ${out.length}건`))
@@ -244,13 +246,15 @@ function collect(appOrigin: string) {
             // 무엇이 왔는지 운영자가 볼 수 있게 남긴다. 번호는 뒷자리만
             log.items.push({ date, name: String(p?.productName ?? '').slice(0, 60), price, qty: p?.totalQty ?? null,
                              status, pay: p?.paymentType ?? null, type: p?.productType ?? null,
-                             shop: p?.shopName ?? null, id: String(p?.purchaseId ?? '').slice(-4),
-                             keys: Object.keys(p ?? {}).join(',') })
+                             shop: p?.shopName ?? null, id: String(p?.purchaseId ?? '').slice(-4) })
+            // 응답에 어떤 칸이 있는지는 한 번만 적는다. 5년 치를 읽으면 기록이 불어난다
+            if (!shopLog.keys) shopLog.keys = Object.keys(p ?? {}).join(',')
             if (status !== 'USED' || !price || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
             out.push({ date, item: String(p?.productName ?? '넥슨쇼핑 쿠폰').replace(/\s+/g, ' ').trim(),
                        price, id: 'shop:' + String(p?.purchaseId ?? `${date}:${price}:${out.length}`) })
           }
         }
+        if (!log.items.length) delete log.items
         shopLog.months.push(log)
       }
       shopLog.ok = true

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import AccountMenu from './AccountMenu.svelte'
+  import NoteBell from './NoteBell.svelte'
+  import { go, leaveBoard } from '../qna.svelte'
   import { app, refresh, showLogin, toggleTheme, win } from '../store.svelte'
   import { TOUCH } from '../format'
   import { tip } from '../tip'
@@ -35,6 +37,11 @@
   // 단추가 어디 있는지 확실히 알려 준다.
   // 손가락 기기에서는 가져오기 자체가 안 된다. 없는 길을 가리키지 않는다
   const needSync = $derived(app.web && !app.data?.syncedAt && !busy && !TOUCH)
+
+  function tab(v: 'dash' | 'plan' | 'eff') {
+    leaveBoard()
+    app.view = v
+  }
 </script>
 
 <header class="bar">
@@ -56,10 +63,10 @@
 
   {#if app.data}
     <nav class="tabs" aria-label="화면">
-      <button aria-pressed={app.view === 'dash'} onclick={() => (app.view = 'dash')}>현황</button>
-      <button aria-pressed={app.view === 'plan'} onclick={() => (app.view = 'plan')}>목표 계획</button>
-      <button aria-pressed={app.view === 'eff'} onclick={() => (app.view = 'eff')}>효율표</button>
-      <span class="ind" style="--i:{['dash', 'plan', 'eff'].indexOf(app.view)}"></span>
+      <button aria-pressed={app.view === 'dash'} onclick={() => tab('dash')}>현황</button>
+      <button aria-pressed={app.view === 'plan'} onclick={() => tab('plan')}>목표 계획</button>
+      <button aria-pressed={app.view === 'eff'} onclick={() => tab('eff')}>효율표</button>
+      <span class="ind" class:off={app.view === 'qna'} style="--i:{['dash', 'plan', 'eff'].indexOf(app.view)}"></span>
     </nav>
   {/if}
 
@@ -87,6 +94,17 @@
     </button>
     {/if}
   </div>
+
+  <!-- 문의는 로그인 전에도 읽을 수 있다. 종은 알림을 받을 사람(로그인)에게만 -->
+  {#if app.web}
+    <button class="qna" class:has-bell={!!app.user} aria-pressed={app.view === 'qna'} onclick={() => go('qna')} aria-label="문의 게시판" use:tip={'문의 게시판'}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 11.6a8.1 8.1 0 0 1-11.9 7.2L3.5 20.5l1.7-4.8A8.1 8.1 0 1 1 20.5 11.6z"/><path d="M8.6 11.8h.01M12.2 11.8h.01M15.8 11.8h.01"/>
+      </svg>
+      <span>문의</span>
+    </button>
+    {#if app.user}<NoteBell />{/if}
+  {/if}
 
   <!-- 왼쪽부터: 동기화 · 화면 밝기 · 로그인. 오른쪽 끝은 창 단추가 있던 자리라 비워 둔다 -->
   <button class="sw" role="switch" aria-checked={app.theme === 'light'} onclick={toggleTheme}
@@ -157,6 +175,16 @@
   .tabs button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--color-tx3); padding: 5px 16px; white-space: nowrap; transition: color .25s; }
   .tabs button[aria-pressed="true"] { color: var(--color-tx); }
   .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); transform: translateX(calc(100% * var(--i, 0))); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
+  .ind.off { opacity: 0; }
+  /* 문의 게시판. 넓을 때는 글자까지, 좁아지면 말풍선만 */
+  .qna {
+    flex: none; appearance: none; cursor: pointer; font: inherit; font-size: 12.5px;
+    display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border-radius: 9px;
+    border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-tx2); transition: all .2s;
+  }
+  .qna:hover { color: var(--color-tx); border-color: var(--color-line2); background: var(--color-panel2); }
+  .qna[aria-pressed="true"] { color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 60%, transparent); }
+  .qna svg { width: 15px; height: 15px; }
   .sync { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--color-tx3); }
   .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--color-mint); animation: ping 2.4s infinite; }
   .dot.busy { background: var(--color-lav); }
@@ -227,6 +255,8 @@
    */
   @media (max-width: 1032px) {
     .sync .txt, .tag { display: none; }
+    .qna { width: 30px; padding: 0; justify-content: center; }
+    .qna span { display: none; }
     .tabs { margin-left: 4px; }
     .tabs button { padding: 5px 12px; }
     /* 글씨도 단추도 없으면 빈 칸만 남는다 (웹+손가락) */
@@ -247,8 +277,14 @@
   }
   /* 360px 폰: 탭이 셋이라 로그인 단추가 밀려 잘렸다. 탭 여백을 줄여 한 줄에 넣는다 */
   @media (max-width: 400px) {
-    .bar { gap: 5px; padding-left: 8px; }
+    .bar { gap: 4px; padding-left: 8px; }
     .bar:not(:has(.winctl)) { padding-right: 8px; }
     .tabs button { padding: 5px 7px; font-size: 12px; }
+    /* 단추 하나 둘 자리가 없다. 로그인했으면 종만 남긴다(종 메뉴에 게시판 가는 길이 있다) */
+    .qna.has-bell { display: none; }
+    /* 로그인 전에는 '로그인' 글자 단추와 문의 단추가 같이 선다. 로고는 첫 화면 링크일 뿐이라 이때만 뺀다 */
+    .bar:has(.qna:not(.has-bell)) .brand { display: none; }
+    .sw { width: 38px; }
+    .sw[aria-checked="true"] .knob { transform: translateX(14px); }
   }
 </style>

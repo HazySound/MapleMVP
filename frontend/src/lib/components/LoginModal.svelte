@@ -9,7 +9,8 @@
   import { login } from '../web/account'
   import { spotlight } from '../format'
 
-  let { onClose }: { onClose: () => void } = $props()
+  /** forQna: 게시판에서 글쓰기·추천을 누르다 온 사람. 휴대폰 이야기는 필요 없다 */
+  let { onClose, forQna = false }: { onClose: () => void; forQna?: boolean } = $props()
 </script>
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && onClose()}>
@@ -19,33 +20,40 @@
     </button>
 
     <h2>로그인</h2>
-    <p class="why">
-      PC에서 모아 둔 구매내역을<br><b>휴대폰에서도 그대로</b> 볼 수 있어요.
-    </p>
+    {#if forQna}
+      <p class="why">
+        문의를 남기거나 <b>추천</b>하려면 로그인이 필요해요.<br>
+        답변이 등록되면 알림을 남겨 드려요.
+      </p>
+    {:else}
+      <p class="why">
+        PC에서 모아 둔 구매내역을<br><b>휴대폰에서도 그대로</b> 볼 수 있어요.
+      </p>
 
-    <div class="flow" aria-hidden="true">
-      <div class="step">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2.6" y="4" width="18.8" height="12.4" rx="2"/><path d="M8.6 20.4h6.8M12 16.4v4"/>
+      <div class="flow" aria-hidden="true">
+        <div class="step">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.6" y="4" width="18.8" height="12.4" rx="2"/><path d="M8.6 20.4h6.8M12 16.4v4"/>
+          </svg>
+          <b>PC</b>
+          <span>구매내역 가져오기</span>
+        </div>
+        <svg class="arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 12h15M13.5 6.5 20 12l-6.5 5.5"/>
         </svg>
-        <b>PC</b>
-        <span>구매내역 가져오기</span>
+        <div class="step on">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6.4" y="2.6" width="11.2" height="18.8" rx="2.4"/><path d="M11 18.6h2"/>
+          </svg>
+          <b>휴대폰</b>
+          <span>로그인하고 보기</span>
+        </div>
       </div>
-      <svg class="arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 12h15M13.5 6.5 20 12l-6.5 5.5"/>
-      </svg>
-      <div class="step on">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="6.4" y="2.6" width="11.2" height="18.8" rx="2.4"/><path d="M11 18.6h2"/>
-        </svg>
-        <b>휴대폰</b>
-        <span>로그인하고 보기</span>
-      </div>
-    </div>
 
-    <p class="note">
-      휴대폰에서는 넥슨 내역을 <b>가져올 수 없어요.</b> PC에서 먼저 가져와 주세요.
-    </p>
+      <p class="note">
+        휴대폰에서는 넥슨 내역을 <b>가져올 수 없어요.</b> PC에서 먼저 가져와 주세요.
+      </p>
+    {/if}
 
     <button class="kakao" onclick={login}>
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

@@ -10,7 +10,7 @@ import type { Bare, HistoryPage, HistoryQuery, Progress, Raw, Sim, State, TierKe
 export type Overlay = null | 'boot' | 'first-sync' | 'login' | 'first-error'
 
 export const app = $state({
-  view: 'dash' as 'dash' | 'plan' | 'eff',
+  view: 'dash' as 'dash' | 'plan' | 'eff' | 'qna',
   data: null as State | null,
   sim: null as Sim | null,
   extra: 0,
@@ -26,7 +26,8 @@ export const app = $state({
   showPcRoom: false,
   showImport: false,
   showSignIn: false,   // 로그인 안내 창 (웹)
-  user: null as { id: string; nick: string; tag: number } | null,   // 카카오로 로그인한 사람 (웹)
+  signInForQna: false,   // 게시판에서 로그인 안내를 연 경우 (안내 문구가 다르다)
+  user: null as { id: string; nick: string; tag: number; admin?: boolean } | null,   // 카카오로 로그인한 사람 (웹)
   syncingUp: false,  // 계정에 올리는 중
   savedAt: 0,        // 계정에 마지막으로 올린 시각 (0이면 아직 못 올렸다)
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
@@ -98,6 +99,7 @@ export async function boot() {
     // 쿠키는 30일짜리라 대개 그대로 로그인 상태다. 아니면 곧 아래에서 치운다
     app.user = cachedUser()
     await listenWeb()
+    ;(await import('./qna.svelte')).initBoard()
     void signedIn()
   }
   py.get_ui().then(ui => {
@@ -173,6 +175,7 @@ async function signedIn() {
   }
   app.user = u
   app.savedAt = lastSaved()
+  void (await import('./qna.svelte')).checkNotes()
   const v = await acc.pull()
   if (!v) return
   const { mergeVault } = await import('./web/api')
@@ -182,6 +185,28 @@ async function signedIn() {
   await reloadWeb()
   // 이 브라우저에만 있던 것이 있으면 계정에도 올려 둔다
   void pushUp()
+}
+
+/**
+ * 지금 쿠키가 누구인지 다시 묻고 이름표만 바꾼다.
+ * 같은 브라우저의 다른 탭에서 다른 계정으로 로그인하면 쿠키가 바뀌는데, 이 탭 화면은 모른다.
+ */
+export async function refreshUser() {
+  const u = await (await import('./web/account')).me()
+  rememberUser(u)
+  app.user = u
+}
+
+/** 다른 탭이 로그인·로그아웃하면 이름표를 바로 맞춘다(그 탭이 적어 둔 것을 본다) */
+export function followOtherTabs(onChange: () => void) {
+  addEventListener('storage', e => {
+    if (e.key !== USER) return
+    try {
+      const u = e.newValue ? (JSON.parse(e.newValue) as Me) : null
+      app.user = u?.id ? u : null
+    } catch { app.user = null }
+    onChange()
+  })
 }
 
 /**
@@ -201,7 +226,7 @@ async function signedIn() {
  * 실제 내려받기는 쿠키를 들고 서버에 다시 묻는다.
  */
 const USER = 'maplemvp.user'
-type Me = { id: string; nick: string; tag: number }
+type Me = { id: string; nick: string; tag: number; admin?: boolean }
 function cachedUser(): Me | null {
   try {
     const raw = localStorage.getItem(USER)

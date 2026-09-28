@@ -16,6 +16,8 @@ export interface User {
   nick: string
   /** 같은 이름을 쓰는 사람들 사이에서 몇 번째인지. 아직 화면에는 안 쓴다 */
   tag: number
+  /** 문의 게시판에 답을 다는 사람. 서버가 D1을 보고 정한다 */
+  admin?: boolean
 }
 
 export interface Vault {

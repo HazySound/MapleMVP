@@ -20,7 +20,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   if (wait) return tooMany(wait)
   await ensure(ctx.env.DB)
   const m = await nickOf(ctx.env.DB, me.uid)
-  return json({ id: me.uid, nick: m.nick, tag: m.tag })
+  return json({ id: me.uid, nick: m.nick, tag: m.tag, admin: m.admin })
 }
 
 export async function onRequestPut(ctx: Ctx): Promise<Response> {
@@ -46,7 +46,7 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
 
   await ensure(ctx.env.DB)
   const now = await nickOf(ctx.env.DB, me.uid)
-  if (now.nick === nick) return json({ id: me.uid, nick, tag: now.tag })
+  if (now.nick === nick) return json({ id: me.uid, nick, tag: now.tag, admin: now.admin })
 
   // 번호는 한 문장 안에서 매긴다. 읽고 나서 쓰면 그 사이에 끼어들 수 있다
   await ctx.env.DB
@@ -57,5 +57,5 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
     .bind(me.uid, nick, Date.now()).run()
 
   const after = await nickOf(ctx.env.DB, me.uid)
-  return json({ id: me.uid, nick: after.nick, tag: after.tag })
+  return json({ id: me.uid, nick: after.nick, tag: after.tag, admin: after.admin })
 }
