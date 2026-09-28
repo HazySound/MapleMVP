@@ -31,6 +31,7 @@ export const app = $state({
   savedAt: 0,        // 계정에 마지막으로 올린 시각 (0이면 아직 못 올렸다)
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
   importError: '',   // 북마클릿이 알려 온 실패 사유
+  importNote: '',    // 가져오기는 됐지만 알려 줄 것 (넥슨쇼핑을 못 읽었거나 예전 북마크)
   importPoke: 0,     // 북마클릿이 이 화면을 부른 횟수. 다음에 누를 곳을 짚어 준다
   maximized: false,
   web: false,        // 브라우저에서 도는 중 (넥슨 수집을 직접 못 한다)
@@ -318,17 +319,29 @@ async function listenWeb() {
   listen({
     onConnect: () => {
       app.importError = ''
+      app.importNote = ''
       app.progress = null
       app.importing = true
       app.showImport = true
     },
     onProgress: p => { app.progress = p },
-    onRows: async () => {
+    onRows: async (_rows, meta) => {
       app.importing = false
       app.progress = null
+      // 넥슨쇼핑은 실제 내역으로 확인하지 못한 채 붙였다. 무엇이 왔는지 기록을 남겨 둔다
+      const log = { ...(meta.shopLog ?? {}), ver: meta.ver, at: new Date().toISOString() }
+      const { keepImportLog } = await import('./web/api')
+      keepImportLog(log)
+      if (app.user) void (await import('./web/account')).sendLog(log)
+      const ok = meta.shopLog?.ok === true
+      app.importNote = meta.ver < 2
+        ? '북마크가 예전 버전이라 넥슨쇼핑에서 산 쿠폰은 못 가져왔어요. 아래 단추를 북마크바에 다시 끌어다 놓고 한 번 더 눌러 주세요.'
+        : !ok ? '넥슨캐시 내역은 가져왔지만 넥슨쇼핑 쿠폰은 읽지 못했어요. 무엇이 막혔는지 기록을 남겨 뒀어요.'
+        : ''
       await reloadWeb()
       void pushUp()
-      app.showImport = false   // 다 받았으니 바로 대시보드를 보여 준다
+      // 다 받았으니 바로 대시보드를 보여 준다. 알릴 게 있으면 창을 그대로 둔다
+      app.showImport = !!app.importNote
     },
     onError: message => {
       app.importing = false

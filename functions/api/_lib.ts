@@ -133,6 +133,9 @@ async function build(db: D1Database) {
   try {
     await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS member_name ON member (nick, tag) WHERE nick <> ''")
   } catch { /* 이미 있다 */ }
+  // 진단 기록(가져오기가 왜 안 됐는지). log.ts가 쓴다
+  await db.exec('CREATE TABLE IF NOT EXISTS applog (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL)')
+  await db.exec('CREATE INDEX IF NOT EXISTS applog_uid ON applog (uid, id)')
 }
 
 /**
@@ -146,6 +149,7 @@ export async function erase(db: D1Database, uid: string): Promise<void> {
   await db.batch([
     db.prepare('DELETE FROM vault WHERE uid = ?').bind(uid),
     db.prepare('DELETE FROM member WHERE uid = ?').bind(uid),
+    db.prepare('DELETE FROM applog WHERE uid = ?').bind(uid),
   ])
 }
 

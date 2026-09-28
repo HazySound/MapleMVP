@@ -77,6 +77,10 @@
     <p class="live bad">
       <span class="livetx"><b>가져오지 못했어요</b><small>{app.importError}</small></span>
     </p>
+  {:else if app.importNote}
+    <p class="live warn">
+      <span class="livetx"><b>거의 다 가져왔어요</b><small>{app.importNote}</small></span>
+    </p>
   {/if}
 
   <p class="why">
@@ -209,6 +213,8 @@
   .livetx b { font-size: 13px; color: var(--color-tx); }
   .livetx small { font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
   .live.bad .livetx b { color: var(--color-bad); }
+  .live.warn { border-color: color-mix(in oklab, var(--color-peach) 55%, var(--color-line)); }
+  .live.warn .livetx b { color: var(--color-peach); }
   .spin {
     flex: none; display: inline-block; width: 14px; height: 14px; border-radius: 50%;
     border: 2px solid color-mix(in oklab, var(--color-lav) 30%, transparent); border-top-color: var(--color-lav);

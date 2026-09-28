@@ -9,6 +9,8 @@
  */
 import type { PyApi } from '../api'
 import type { ExportResult, HistoryPage, PcRoomScan, PlanInput, Raw, Row } from '../types'
+import { weekStart } from '../core/mvp'
+import { META } from '../core/pcroom'
 
 const KEY = {
   rows: 'maplemvp.rows',
@@ -46,9 +48,11 @@ function save(key: string, value: unknown): void {
  * 찍지 않는다. 찍으면 로그인한 채로 접속할 때마다 동기화 시각이 접속 시각으로 바뀐다
  */
 export function saveRows(rows: Row[], fresh = true): void {
+  const before = load<Row[]>(KEY.rows, [])
+  const had = new Set(before.map(r => r.id).filter(Boolean))
   const seen = new Set<string>()
   const merged: Row[] = []
-  for (const r of [...rows, ...load<Row[]>(KEY.rows, [])]) {
+  for (const r of [...rows, ...before]) {
     if (r.id) {
       if (seen.has(r.id)) continue
       seen.add(r.id)
@@ -57,7 +61,52 @@ export function saveRows(rows: Row[], fresh = true): void {
   }
   merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   save(KEY.rows, merged)
-  if (fresh) save('maplemvp.syncedAt', new Date().toISOString())
+  if (fresh) {
+    save('maplemvp.syncedAt', new Date().toISOString())
+    // 계정에서 합칠 때는 하지 않는다. 그 기기가 이미 뺀 보정값이 같이 내려온다
+    settleLate(rows.filter(r => r.id && !had.has(r.id)))
+  }
+}
+
+/**
+ * 뒤늦게 알게 된 결제를 보정값에서 뺀다.
+ *
+ * 보정값은 '그 주 인게임 − 그때까지 수집한 결제'라서, 스캔할 때 몰랐던 결제(넥슨쇼핑 쿠폰 등)는
+ * 이미 보정값 안에 들어 있다. 그 결제를 나중에 가져오면 같은 돈을 두 번 센다. 그만큼 빼 준다.
+ *
+ * 스캔한 날부터 산 것은 빼지 않는다. 그건 스캔 뒤에 인게임에도 새로 더해진 돈이다.
+ * 같은 날은 앞뒤를 가를 수 없어 빼지 않는다. 틀렸으면 다시 스캔하면 바로잡힌다.
+ */
+export function settleLate(fresh: Row[]): void {
+  if (!fresh.length) return
+  const pc = load<Record<string, number>>(KEY.pcroom, {})
+  const at = load<Record<string, number>>(KEY.pcroomAt, {})
+  const kst = (t: number) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10)
+  const now = Date.now()
+  let changed = false
+  for (const r of fresh) {
+    const w = weekStart(r.date)
+    if (!(w in pc) || pc[META.unknown + w] || !at[w] || r.date >= kst(at[w])) continue
+    const cut = Math.min(pc[w], r.price)
+    if (cut <= 0) continue
+    pc[w] -= cut
+    for (const m of [META.gapMax, META.pcMin, META.pcMax]) {
+      if (pc[m + w] != null) pc[m + w] = Math.max(0, pc[m + w] - cut)
+    }
+    at[w] = now
+    changed = true
+  }
+  if (!changed) return
+  save(KEY.pcroom, pc)
+  save(KEY.pcroomAt, at)
+}
+
+/**
+ * 가져오기 진단 기록. 넥슨쇼핑은 실제 내역으로 확인하지 못하고 붙였기 때문에,
+ * 무엇이 왔는지 이 브라우저에도 최근 몇 개를 남긴다(계정에는 account.sendLog로 따로 보낸다).
+ */
+export function keepImportLog(log: Record<string, unknown>): void {
+  save('maplemvp.importLog', [log, ...load<unknown[]>('maplemvp.importLog', [])].slice(0, 5))
 }
 
 /**

@@ -129,6 +129,138 @@ function collect(appOrigin: string) {
     return out
   }
 
+  /*
+   * 넥슨쇼핑(shopping.nexon.com) 메이플스토리 상점.
+   *
+   * 여기서 산 것은 쿠폰으로 오고, 캐시샵에서 쿠폰번호를 넣어야 MVP 금액에 들어간다.
+   * 그 결제는 위의 넥슨캐시 내역에 안 잡힌다. 그래서 따로 읽는다.
+   *
+   * 주소와 머리말은 넥슨쇼핑 화면 코드(2026-09 기준)에 적힌 그대로다.
+   *   GET public.api.nexon.com/shopping/api/v1/purchase/by-date?shopId=23&year=&month=
+   *   authorization: 'Web ' + 쿠키 _ifwt, x-inface-api-key(화면 코드에 박힌 공개 값),
+   *   shop-id, x-inface-user-uid(넥슨 로그인 도구가 주는 회원 번호)
+   *   응답: { code: 0, data: { purchasesByDate: [{ date, purchases: [{ purchaseId, productName,
+   *          totalPrice, totalQty, purchaseStatus, ... }] }] } }
+   * 쿠폰을 등록한 것(USED '사용 완료')만 센다. 등록한 날은 응답에 없어서 산 날로 둔다.
+   *
+   * 한 번도 실제 내역으로 확인하지 못했다. 그래서 무엇을 보냈고 무엇이 왔는지를 전부
+   * 기록(log)으로 남겨 앱에 넘긴다. 앱은 그걸 계정에 저장해서 운영자가 볼 수 있다.
+   * 로그인 토큰 같은 비밀값은 기록에 넣지 않는다.
+   */
+  const SHOP_API = 'https://public.api.nexon.com/shopping'
+  const SHOP_KEY = '56b88a9a-5ac6-583f-8f9d-dcbfbd5693dc'
+  const SHOP_ID = '23'
+  /** 새 넥슨쇼핑이 열린 달. 그 전 내역은 다른 곳에 있고, MVP 13주와도 멀다 */
+  const SHOP_FROM = 2025 * 12 + 10
+  const SHOP_MONTHS = 12
+
+  const shopLog: { at: string; ver: number; steps: string[]; months: any[]; statuses: Record<string, number>; ok: boolean; count: number; error: string } =
+    { at: new Date().toISOString(), ver: 2, steps: [], months: [], statuses: {}, ok: false, count: 0, error: '' }
+  const note = (s: string) => { shopLog.steps.push(s) }
+
+  const cookie = (name: string) => {
+    const m = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith(name + '='))
+    return m ? decodeURIComponent(m.slice(name.length + 1)) : ''
+  }
+
+  /** 넥슨 로그인 도구에서 회원 번호를 얻는다. 이 페이지에 없으면 불러와 본다 */
+  const shopUid = async (): Promise<string> => {
+    try {
+      if (!w.inface?.auth) {
+        note('inface: 이 페이지에 없음 → 불러오기')
+        await new Promise<void>(ok => {
+          const s = document.createElement('script')
+          s.src = 'https://signin.nexon.com/sdk/inface.js'
+          s.onload = () => ok()
+          s.onerror = () => { note('inface: 불러오기 실패(차단?)'); ok() }
+          document.head.appendChild(s)
+          setTimeout(ok, 6000)
+        })
+        for (let i = 0; i < 20 && !w.inface?.auth; i++) await sleep(150)
+      }
+      if (!w.inface?.auth?.getUserProfile) { note('inface: getUserProfile 없음'); return '' }
+      const p = await w.inface.auth.getUserProfile()
+      const uid = String(p?.data?.uid ?? p?.uid ?? '')
+      note(uid ? 'inface: 회원 번호 받음' : `inface: 회원 번호 없음 (${Object.keys(p?.data ?? p ?? {}).join(',')})`)
+      return uid
+    } catch (e) {
+      note('inface: 오류 ' + String((e as Error)?.message || e).slice(0, 120))
+      return ''
+    }
+  }
+
+  const shopFetch = async (path: string, token: string, uid: string, method = 'GET') => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json', 'x-inface-api-key': SHOP_KEY, 'shop-id': SHOP_ID,
+    }
+    if (token) headers.authorization = 'Web ' + token
+    if (uid) headers['x-inface-user-uid'] = uid
+    const res = await fetch(SHOP_API + path, { method, headers })
+    let body: any = null
+    try { body = await res.json() } catch { /* 본문이 JSON이 아니다 */ }
+    return { status: res.status, body }
+  }
+
+  /** 넥슨쇼핑 메이플 상점에서 쿠폰을 등록한 결제를 읽는다. 실패해도 넥슨캐시 내역은 그대로 보낸다 */
+  const collectShop = async (now: Date) => {
+    const out: { date: string; item: string; price: number; id: string }[] = []
+    try {
+      const token = cookie('_ifwt')
+      note(token ? '토큰(_ifwt): 있음' : '토큰(_ifwt): 이 페이지에서 읽을 수 없음')
+      const uid = await shopUid()
+      let triedLogin = false
+      for (let i = 0; i < SHOP_MONTHS; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        if (d.getFullYear() * 12 + d.getMonth() < SHOP_FROM) break
+        const y = d.getFullYear()
+        const m = d.getMonth() + 1
+        say(`<b>MapleMVP</b><br>넥슨쇼핑 ${y}년 ${m}월 읽는 중…<br>` + dim(`쿠폰 ${out.length}건`))
+        const path = `/api/v1/purchase/by-date?shopId=${SHOP_ID}&year=${y}&month=${m}`
+        let r = await shopFetch(path, token, uid)
+        // 넥슨쇼핑 화면은 처음 들어올 때 이 사람을 한 번 등록한다. 거절되면 그걸 해 보고 다시 묻는다
+        if ((r.status !== 200 || r.body?.code !== 0) && !triedLogin) {
+          triedLogin = true
+          const l = await shopFetch('/api/v1/user/login', token, uid, 'POST')
+          note(`user/login: HTTP ${l.status} code ${l.body?.code ?? '-'} ${String(l.body?.message ?? '').slice(0, 80)}`)
+          r = await shopFetch(path, token, uid)
+        }
+        const data = r.body?.data
+        const days = Array.isArray(data?.purchasesByDate) ? data.purchasesByDate : null
+        const log: any = { ym: `${y}-${m}`, http: r.status, code: r.body?.code ?? null,
+                           message: String(r.body?.message ?? '').slice(0, 120), days: days ? days.length : null, items: [] }
+        if (!days) {
+          log.keys = Object.keys(data ?? r.body ?? {}).slice(0, 20)
+          shopLog.months.push(log)
+          // 첫 달부터 안 되면 나머지 달도 같다
+          if (i === 0) throw new Error(`넥슨쇼핑 응답을 읽지 못했어요 (HTTP ${r.status}, code ${r.body?.code ?? '-'})`)
+          continue
+        }
+        for (const day of days) {
+          for (const p of Array.isArray(day?.purchases) ? day.purchases : []) {
+            const status = String(p?.purchaseStatus ?? '')
+            shopLog.statuses[status] = (shopLog.statuses[status] ?? 0) + 1
+            const price = Number(p?.totalPrice ?? p?.price ?? 0) || 0
+            const date = String(day?.date ?? p?.purchaseAt ?? '').replace(/[./]/g, '-').slice(0, 10)
+            // 무엇이 왔는지 운영자가 볼 수 있게 남긴다. 번호는 뒷자리만
+            log.items.push({ date, name: String(p?.productName ?? '').slice(0, 60), price, qty: p?.totalQty ?? null,
+                             status, pay: p?.paymentType ?? null, type: p?.productType ?? null,
+                             shop: p?.shopName ?? null, id: String(p?.purchaseId ?? '').slice(-4),
+                             keys: Object.keys(p ?? {}).join(',') })
+            if (status !== 'USED' || !price || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+            out.push({ date, item: String(p?.productName ?? '넥슨쇼핑 쿠폰').replace(/\s+/g, ' ').trim(),
+                       price, id: 'shop:' + String(p?.purchaseId ?? `${date}:${price}:${out.length}`) })
+          }
+        }
+        shopLog.months.push(log)
+      }
+      shopLog.ok = true
+    } catch (e) {
+      shopLog.error = String((e as Error)?.message || e).slice(0, 200)
+    }
+    shopLog.count = out.length
+    return out
+  }
+
   /** 연결이 안 됐을 때. 복사는 사용자가 눌러야 허용된다 */
   const offerCopy = (text: string, n: number) => {
     say(`<b>메이플 ${n}건</b> 읽었어요.<br>`
@@ -204,14 +336,21 @@ function collect(appOrigin: string) {
         if (empty >= 6) break
       }
 
+      // 넥슨쇼핑에서 산 쿠폰. 여기서 실패해도 위에서 읽은 것은 그대로 보낸다
+      send({ kind: 'progress', label: '넥슨쇼핑', done: 0, count: rows.length })
+      const shop = await collectShop(now)
+      rows.push(...shop)
+
       if (acked) {
-        send({ kind: 'rows', rows })
-        say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>` + dim('MapleMVP 탭에서 확인하세요.'))
+        send({ kind: 'rows', rows, ver: 2, shopLog })
+        say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>`
+          + dim(shopLog.ok ? `넥슨쇼핑 쿠폰 ${shop.length}건 포함` : '넥슨쇼핑은 읽지 못했어요 (기록을 남겼어요)')
+          + '<br>' + dim('MapleMVP 탭에서 확인하세요.'))
         // 우리가 연 탭이면 닫힌다. 직접 연 탭이면 안내만 남는다
         setTimeout(() => { window.close(); bye(6000) }, 1200)
         return
       }
-      offerCopy(JSON.stringify({ source: MARK, rows }), rows.length)
+      offerCopy(JSON.stringify({ source: MARK, rows, ver: 2, shopLog }), rows.length)
     } catch (e) {
       const msg = String((e as Error)?.message || e)
       // 로그인이 풀린 경우는 따로 안내한다 (넥슨이 '세션 만료 유저'로 답한다)

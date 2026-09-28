@@ -31,6 +31,11 @@
   let choices = $state<TotalPick[] | null>(null)
   let ownText = $state('')
   let edited = $state<Record<string, number>>({})   // 사용자가 직접 고친 주
+  /**
+   * PC방으로는 말이 안 되지만 인게임 금액은 맞는 주. 넥슨쇼핑 쿠폰처럼 우리가 못 가져온 결제다.
+   * 인게임 툴팁이 정답이라, 차액을 그대로 그 주에 넣으면 등급이 게임과 같아진다
+   */
+  let missed = $state<Record<string, boolean>>({})
   let busy = $state(false)
   let error = $state('')
 
@@ -99,12 +104,23 @@
       return { start: r.start, kind: 'range', min: r.pcMin ?? 0, max: r.pcMax ?? 0 }
     }),
   }))
-  const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined))
+  const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined && !missed[r.start]))
+  /** 수집 못 한 결제로 볼 수 있는 빨간 줄. 인게임보다 수집이 많으면 잘못 읽은 것이라 안 된다 */
+  const canMiss = (r: { note: string; nexon: number; spent: number; unknown?: boolean }) =>
+    !!r.note && !r.unknown && r.nexon >= r.spent
+
+  function markMissed(start: string, on: boolean) {
+    const keep = edited
+    missed = { ...missed, [start]: on }
+    calc(true)
+    edited = keep
+  }
 
   /** 넣은 숫자로 주차별 PC방 반영액을 뽑는다. 규칙은 core/pcroom에 있다. */
-  function calc() {
+  function calc(keepMissed = false) {
     error = ''
     edited = {}
+    if (!keepMissed) missed = {}
     const b = getBase()
     if (!b) return
     const [tierTh, total] = anchor(d.tiers.map(t => t.th), nextIndex, num(remainText))
@@ -124,10 +140,10 @@
     // 블랙이 아니면 이월은 없다. 떨어졌다면 다 쓴 것이다
     const carryNow = !isTop ? 0 : num(needTexts[0]) > 0 ? carry[0] : null
     // 빨간 줄이 있으면 숫자부터 바로잡아야 한다. 그 전에는 범위를 셈해 봐야 소용없다
-    const st = gaps.some(g => g.note) ? null : settleScan(b, r, carryNow)
+    const st = gaps.some(g => g.note && !missed[g.start]) ? null : settleScan(b, r, carryNow)
     result = {
       ok: gaps.every(g => g.ok),
-      issues: gaps.filter(g => g.note).map(g => g.note),
+      issues: gaps.filter(g => g.note && !missed[g.start]).map(g => g.note),
       rows: gaps.map((g, i) => {
         const w = st?.weeks[i]
         return { start: g.start, end: addDays(g.start, 6),
@@ -155,7 +171,12 @@
       }))
       // 인게임에서 본 이월 잔액. 다음부터 구매내역으로 되짚는 대신 이 값을 믿는다
       const b = getBase()
-      if (b && result?.carry != null) weeks[META.carry + b.thisWeek] = result.carry
+      // 이월 규칙으로 되짚지 못했으면(13주 밖에 우리가 모르는 결제가 있을 때 — 넥슨쇼핑 쿠폰 등)
+      // 툴팁 '사용 이월 금액' 열의 합을 쓴다. 앞으로 꺼내 쓸 이월이라 잔액보다 클 수 없다.
+      // 모르는 채로 두면 이월을 0으로 쳐서, 인게임은 블랙인데 레드로 보인다
+      const used = carry.reduce((s, v) => s + v, 0)
+      const anchor = result?.carry ?? (isTop && result?.conflict && used > 0 ? used : null)
+      if (b && anchor != null) weeks[META.carry + b.thisWeek] = anchor
       await pcroomSave(weeks)
       app.showPcRoom = false
     } finally {
@@ -595,7 +616,7 @@
       </p>
 
       <div class="acts">
-        <button class="btn primary" disabled={!filled || busy} onclick={calc}>주차별로 계산하기</button>
+        <button class="btn primary" disabled={!filled || busy} onclick={() => calc()}>주차별로 계산하기</button>
       </div>
       {/if}
       {#if error}<p class="err">{error}</p>{/if}
@@ -611,7 +632,8 @@
             <div class="r2 head"><span>주</span><span class="n">인게임</span><span class="n">수집한 결제</span><span class="n">PC방</span><span class="n">환산</span></div>
             {#each rows as r (r.start)}
               {@const v = amountOf(r.start, r.amount)}
-              <div class="r2" class:bad={!!r.note} class:warn={!r.note && !!r.warn}
+              <div class="r2" class:bad={!!r.note && !missed[r.start]} class:warn={!r.note && !!r.warn}
+                   class:miss={missed[r.start]}
                    class:zero={v === 0} class:unsure={!!r.unknown}>
                 <span class="mono wk2">{md(r.start)}–{md(r.end)}</span>
                 <span class="n mono">{r.unknown || (r.group && edited[r.start] === undefined) ? '–'
@@ -632,7 +654,7 @@
                       onchange={e => (edited[r.start] = Number(e.currentTarget.value.replace(/[^\d]/g, '')) || 0)} />
                   {/if}
                 </span>
-                <span class="tm">{v && !loose(r) ? hm(Math.floor(v / 100) * 6) : '-'}</span>
+                <span class="tm">{missed[r.start] ? '결제' : v && !loose(r) ? hm(Math.floor(v / 100) * 6) : '-'}</span>
               </div>
               {#if r.group && r.group === r.start && edited[r.start] === undefined}
                 {@const g = groupOf(r.group)}
@@ -646,8 +668,18 @@
               {:else if loose(r) && !r.group}
                 <p class="msg">목요일 갱신 때 쓴 이월 {won((r.gapMin ?? 0) - (r.pcMax ?? 0))}~{won((r.gapMax ?? 0) - (r.pcMin ?? 0))}원이
                   섞여 있어, PC방은 {won(r.pcMin ?? 0)}~{won(r.pcMax ?? 0)}원 사이까지만 알 수 있어요.</p>
+              {:else if missed[r.start] && edited[r.start] === undefined}
+                <p class="msg ok">
+                  이 주 {won(v)}원은 수집하지 못한 결제(넥슨쇼핑 쿠폰 등)로 저장해요. 인게임과 같은 금액이 돼요.
+                  <button class="link" onclick={() => markMissed(r.start, false)}>되돌리기</button>
+                </p>
               {:else if !r.group && (r.note || r.warn)}
-                <p class="msg" class:bad={!!r.note}>{r.note || r.warn}</p>
+                <p class="msg" class:bad={!!r.note}>
+                  {r.note || r.warn}
+                  {#if canMiss(r) && edited[r.start] === undefined}
+                    <button class="link" onclick={() => markMissed(r.start, true)}>이 금액 그대로 저장하기</button>
+                  {/if}
+                </p>
               {/if}
             {/each}
           </div>
@@ -669,7 +701,7 @@
               <button class="btn primary" disabled={busy || blocked} onclick={save}>저장하고 반영</button>
             </div>
           </div>
-          {#if blocked}<p class="err">빨간 줄의 금액을 확인하고 고쳐야 저장할 수 있어요.</p>{/if}
+          {#if blocked}<p class="err">빨간 줄의 금액을 고치거나 '이 금액 그대로 저장하기'를 눌러야 저장할 수 있어요.</p>{/if}
         </section>
       {/if}
     </div>
@@ -874,6 +906,12 @@
   .r2 input { width: 100%; padding: 5px 8px; font-size: 12.5px; }
   .msg { margin: 0; padding: 4px 11px 8px; font-size: 11.5px; color: var(--color-peach); background: color-mix(in oklab, var(--color-peach) 11%, transparent); }
   .msg.bad { color: var(--color-bad); background: color-mix(in oklab, var(--color-bad) 12%, transparent); }
+  .msg.ok { color: var(--color-sky); background: color-mix(in oklab, var(--color-sky) 10%, transparent); }
+  .r2.miss { background: color-mix(in oklab, var(--color-sky) 8%, transparent); }
+  .msg .link {
+    appearance: none; border: 0; background: none; cursor: pointer; padding: 0; margin-left: 6px;
+    font: inherit; font-weight: 600; color: inherit; text-decoration: underline;
+  }
 
   .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
   .sum { font-size: 13px; color: var(--color-tx2); }

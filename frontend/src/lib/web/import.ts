@@ -47,11 +47,25 @@ export function claimTab(): void {
   try { if (!window.name) window.name = APP_TAB } catch { /* 막히면 새 탭이 하나 더 열릴 뿐이다 */ }
 }
 
+/**
+ * 북마클릿이 함께 보내는 넥슨쇼핑 진단 기록. 모양은 북마클릿이 정한다(bookmarklet.ts shopLog).
+ * 예전 북마크(ver 없음)는 넥슨쇼핑을 읽지 않는다.
+ */
+export interface ImportMeta { ver: number; shopLog: Record<string, unknown> | null }
+
+function meta(data: unknown): ImportMeta {
+  const d = (data ?? {}) as { ver?: unknown; shopLog?: unknown }
+  return {
+    ver: typeof d.ver === 'number' ? d.ver : 1,
+    shopLog: d.shopLog && typeof d.shopLog === 'object' ? d.shopLog as Record<string, unknown> : null,
+  }
+}
+
 export interface Incoming {
   /** 북마클릿이 이 탭을 찾았다. 아직 긁기 전이다 */
   onConnect(): void
   onProgress(p: Progress): void
-  onRows(rows: Row[]): void
+  onRows(rows: Row[], meta: ImportMeta): void
   onError(message: string): void
   /** 다른 탭에서 내역이 저장됐다 */
   onOther(): void
@@ -80,18 +94,19 @@ export function listen(h: Incoming): () => void {
     const rows = parse(d)
     if (!rows) return
     saveRows(rows)
-    h.onRows(rows)
+    h.onRows(rows, meta(d))
   }
 
   const onPaste = (e: ClipboardEvent) => {
     const text = e.clipboardData?.getData('text')
     if (!text || !text.includes(MARK)) return
     try {
-      const rows = parse(JSON.parse(text))
+      const data = JSON.parse(text)
+      const rows = parse(data)
       if (!rows) return
       e.preventDefault()
       saveRows(rows)
-      h.onRows(rows)
+      h.onRows(rows, meta(data))
     } catch { /* 우리 것이 아니면 그냥 둔다 */ }
   }
 

@@ -76,6 +76,21 @@ export async function pull(): Promise<Vault | null> {
   }
 }
 
+/**
+ * 가져오기 진단 기록을 계정에 남긴다. 넥슨쇼핑을 못 읽었을 때 운영자가 이유를 보려고 쓴다.
+ * 실패해도 가져오기에는 영향이 없다.
+ */
+export async function sendLog(log: unknown): Promise<void> {
+  try {
+    await fetch('/api/log', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'import', log }),
+    })
+  } catch { /* 이 브라우저에는 남아 있다 */ }
+}
+
 /** 계정에 올린다. 실패해도 이 브라우저에는 이미 저장돼 있다 */
 export async function push(v: Vault): Promise<boolean> {
   try {
