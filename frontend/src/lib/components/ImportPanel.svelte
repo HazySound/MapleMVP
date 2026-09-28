@@ -10,6 +10,9 @@
   const has = $derived(d.weeks.some(w => w.spent))
 
   let url = $state('')
+  /** 넥슨쇼핑 메이플스토리 상점 구매내역, 이번 달 */
+  const now = new Date()
+  const shopPage = `https://shopping.nexon.com/kr/my/purchase?year=${now.getFullYear()}&month=${now.getMonth() + 1}&shopId=23`
   let status = $state('')
   let waiting = $state(false)
 
@@ -57,6 +60,19 @@
       status = '새 탭이 막혔어요. 팝업 허용을 켜거나 직접 결제내역 페이지를 열어 주세요.'
     }
   }
+
+  /**
+   * 넥슨쇼핑 쿠폰만 남았을 때. 넥슨 결제내역 탭과 같은 이름으로 열어서, 거기서 북마크를 누르면
+   * 이 탭과 이어져 다 보내고 스스로 닫힌다
+   */
+  function goShop() {
+    waiting = true
+    status = '넥슨쇼핑 구매내역을 열었어요. 거기서 북마크를 눌러 주세요.'
+    if (!window.open(shopPage, 'maplemvp-nexon')) {
+      waiting = false
+      status = '새 탭이 막혔어요. 팝업 허용을 켜거나 넥슨쇼핑 구매내역을 직접 열어 주세요.'
+    }
+  }
 </script>
 
 <article class="card" use:spotlight>
@@ -79,7 +95,7 @@
     </p>
   {:else if app.importNote}
     <p class="live warn">
-      <span class="livetx"><b>거의 다 가져왔어요</b><small>{app.importNote}</small></span>
+      <span class="livetx"><b>{app.importNeedShop ? '넥슨쇼핑 쿠폰만 남았어요' : '거의 다 가져왔어요'}</b><small>{app.importNote}</small></span>
     </p>
   {/if}
 
@@ -103,12 +119,21 @@
     <li>
       <span class="n">2</span>
       <div>
-        <b>넥슨 결제내역 페이지를 열고 로그인하세요</b>
-        <small>아래 단추로 열면 됩니다. 다른 사이트에서 북마크를 눌러도
-          같은 안내가 뜨면서 열 수 있어요.</small>
-        <button class="btn primary" class:poke bind:this={goBtn} onclick={go} disabled={waiting}>
-          {waiting ? '열었어요 · 거기서 북마크를 누르세요' : '넥슨 결제내역 페이지 열기'}
-        </button>
+        {#if app.importNeedShop}
+          <!-- 넥슨캐시 내역은 이미 받았다. 이번엔 넥슨쇼핑 쪽이다 -->
+          <b>넥슨쇼핑 메이플 상점 구매내역을 여세요</b>
+          <small>넥슨캐시 내역은 이미 가져왔어요. 이번엔 넥슨쇼핑에서 산 쿠폰이에요.</small>
+          <button class="btn primary" class:poke bind:this={goBtn} onclick={goShop} disabled={waiting}>
+            {waiting ? '열었어요 · 거기서 북마크를 누르세요' : '넥슨쇼핑 메이플 상점 구매내역 열기'}
+          </button>
+        {:else}
+          <b>넥슨 결제내역 페이지를 열고 로그인하세요</b>
+          <small>아래 단추로 열면 됩니다. 다른 사이트에서 북마크를 눌러도
+            같은 안내가 뜨면서 열 수 있어요.</small>
+          <button class="btn primary" class:poke bind:this={goBtn} onclick={go} disabled={waiting}>
+            {waiting ? '열었어요 · 거기서 북마크를 누르세요' : '넥슨 결제내역 페이지 열기'}
+          </button>
+        {/if}
       </div>
     </li>
     <li>
@@ -124,6 +149,12 @@
   <p class="note">
     다음부터는 <b>아무 사이트에서나 북마크만 누르면</b> 돼요. MapleMVP를 미리 열어 둘
     필요도 없어요 — 다 읽으면 이 화면을 알아서 띄워 줍니다. 이미 열려 있으면 그 탭으로 옵니다.
+  </p>
+  <p class="note">
+    <b>넥슨쇼핑에서 산 쿠폰</b>(캐시샵에 쿠폰번호를 넣은 것)도 같이 가져와요. 결제내역 페이지에서
+    못 가져오면 안내가 떠요. 그때
+    <a href={shopPage} target="_blank" rel="noopener">넥슨쇼핑 메이플 상점 구매내역</a>
+    화면에서 <b>북마크를 한 번 더</b> 누르면 돼요.
   </p>
 
   {#if status}<p class="status" class:on={!waiting}>{status}</p>{/if}
@@ -183,6 +214,7 @@
   @media (prefers-reduced-motion: reduce) { .btn.poke { animation: none; } }
 
   .hl { color: var(--color-lav) !important; }
+  .note a { color: var(--color-lav); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
   .note {
     margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--color-tx3);
     padding: 10px 12px; border-radius: 10px; background: var(--color-bg2); border: 1px solid var(--color-line);

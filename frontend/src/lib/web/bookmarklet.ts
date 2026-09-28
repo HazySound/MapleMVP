@@ -9,6 +9,8 @@
  *   - 넥슨 결제내역 페이지가 아니면 → 그 페이지를 열어 주고, 로그인 뒤 다시 누르라고 안내
  *   - 넥슨 로그인 페이지면 → 로그인을 끊지 않도록 안내만
  *   - 결제내역 페이지면 → MapleMVP 탭을 잡고, 긁으면서 진행률을 보내고, 다 보내면 스스로 닫힌다
+ *   - 넥슨쇼핑 구매내역 페이지면 → 넥슨쇼핑 쿠폰만 읽어 보낸다. 결제내역 페이지에서 넥슨쇼핑을
+ *     못 읽었을 때 여기로 보낸다(넥슨쇼핑 안에서는 로그인 토큰이 늘 있다)
  * MapleMVP 탭은 이미 열려 있으면 그리로 가고, 없으면 새로 연다.
  */
 
@@ -27,6 +29,8 @@ function collect(appOrigin: string) {
   const MAPLE = '메이플스토리'
   const MARK = 'maplemvp-bookmarklet'
   const HOST = 'payment.nexon.com'
+  const SHOP_HOST = 'shopping.nexon.com'
+  const onShop = location.host === SHOP_HOST
   const USAGE = 'https://payment.nexon.com/usage/?pagecode=2'
   const TAB = 'maplemvp'
   const w = window as any
@@ -53,7 +57,7 @@ function collect(appOrigin: string) {
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
   // ── 결제내역 페이지가 아니면 거기부터 열어 준다 ──
-  if (location.host !== HOST) {
+  if (location.host !== HOST && !onShop) {
     // 로그인 중이라면 새 탭을 띄우지 않는다. 로그인 흐름이 끊긴다
     if (/(^|\.)nexon\.com$/.test(location.host)) {
       say(`<b style="color:#ffc29e">로그인을 마쳐 주세요</b><br>`
@@ -156,6 +160,11 @@ function collect(appOrigin: string) {
    * 멈추기'를 쓰면 몇 년 전 구매를 두고 온다. 그래서 조회 가능한 기간(60개월)을 빈 달이어도 다 읽는다
    */
   const SHOP_MONTHS = 60
+  /** 넥슨쇼핑 메이플스토리 상점 구매내역, 이번 달. 로그인돼 있으면 바로 그 목록이 뜬다 */
+  const SHOP_PAGE = (() => {
+    const d = new Date()
+    return `https://shopping.nexon.com/kr/my/purchase?year=${d.getFullYear()}&month=${d.getMonth() + 1}&shopId=23`
+  })()
 
   const shopLog: { at: string; ver: number; steps: string[]; months: any[]; statuses: Record<string, number>; ok: boolean; count: number; error: string; keys?: string } =
     { at: new Date().toISOString(), ver: 2, steps: [], months: [], statuses: {}, ok: false, count: 0, error: '' }
@@ -259,7 +268,7 @@ function collect(appOrigin: string) {
         say(`<b>MapleMVP</b><br>넥슨쇼핑 로그인 확인 중…`)
         const f = document.createElement('iframe')
         f.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px'
-        f.src = 'https://shopping.nexon.com/kr/my/purchase?shopId=' + SHOP_ID
+        f.src = SHOP_PAGE
         document.body.appendChild(f)
         for (let i = 0; i < 40 && !token; i++) { await sleep(250); token = cookie('_ifwt') }
         f.remove()
@@ -390,6 +399,29 @@ function collect(appOrigin: string) {
 
       const now = new Date()
       const rows: { date: string; item: string; price: number; id: string }[] = []
+
+      // ── 넥슨쇼핑 페이지: 쿠폰만 읽어 보낸다 ──
+      if (onShop) {
+        send({ kind: 'progress', label: '넥슨쇼핑', done: 0, count: 0 })
+        const shop = await collectShop(now)
+        if (!shopLog.ok) {
+          send({ kind: 'rows', rows: [], ver: 2, part: 'shop', shopLog })
+          say(`<b style="color:#ff9aa8">넥슨쇼핑 구매내역을 읽지 못했어요</b><br>`
+            + dim(`넥슨쇼핑에 로그인돼 있는지 확인하고 다시 눌러 주세요.<br>무엇이 막혔는지 기록을 남겼어요.`))
+          bye(20000)
+          return
+        }
+        if (acked) {
+          send({ kind: 'rows', rows: shop, ver: 2, part: 'shop', shopLog })
+          say(`<b>넥슨쇼핑 쿠폰 ${shop.length}건</b> 보냈어요.<br>` + dim('MapleMVP 탭에서 확인하세요.'))
+          // 넥슨캐시 때처럼 닫고 MapleMVP로 돌아간다. 사용자가 직접 연 탭이면 닫히지 않고 안내만 남는다
+          setTimeout(() => { try { target?.focus() } catch { /* 못 해도 닫히면 돌아간다 */ } window.close(); bye(6000) }, 1200)
+          return
+        }
+        offerCopy(JSON.stringify({ source: MARK, rows: shop, ver: 2, part: 'shop', shopLog }), shop.length)
+        return
+      }
+
       let empty = 0
       // 몇 달치가 있는지는 넥슨만 안다. 물어볼 방법이 없으니 빈 달이 이어질 때까지
       // 거슬러 올라간다. 미리 정해 둔 개월 수로 끊으면 남아 있는 내역을 두고 온다.
@@ -422,15 +454,18 @@ function collect(appOrigin: string) {
       const shop = await collectShop(now)
       rows.push(...shop)
 
-      // 넥슨쇼핑 로그인이 안 돼 있다. 넥슨캐시 내역은 보내고, 넥슨쇼핑을 한 번 열라고 안내한다
-      const noShop = shopLog.error === 'NO_SHOP_TOKEN'
-      if (acked && noShop) {
+      // 여기서는 넥슨쇼핑을 못 읽었다(로그인 토큰이 이 페이지에 없거나 거절됐다).
+      // 넥슨캐시 내역은 보내고, 넥슨쇼핑 구매내역 화면에서 북마크를 한 번 더 누르게 한다
+      if (acked && !shopLog.ok) {
         send({ kind: 'rows', rows, ver: 2, shopLog })
         say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>`
-          + `<b style="color:#ffc29e">넥슨쇼핑 쿠폰은 아직 못 가져왔어요</b><br>`
-          + dim(`아래를 눌러 넥슨쇼핑을 한 번 열고(로그인 상태면 바로 떠요),<br>${hi('이 페이지로 돌아와')} 북마크를 한 번 더 눌러 주세요.`)
-          + `<br><br><a href="https://shopping.nexon.com/kr/my/purchase?shopId=23" target="_blank" rel="noopener" `
-          + `style="display:inline-block;padding:8px 15px;border-radius:9px;background:#b9a6ff;color:#1b1c21;font-weight:600;text-decoration:none">넥슨쇼핑 열기</a>`)
+          + `<b style="color:#ffc29e">넥슨쇼핑에서 산 쿠폰은 여기서 못 가져왔어요</b><br>`
+          + dim(`아래 단추를 누르면 이 탭이<br>넥슨쇼핑 구매내역으로 바뀌어요.<br>${hi('거기서')} 북마크를 한 번 더 눌러 주세요.`)
+          + `<br><br><button id="mvpshop" style="appearance:none;cursor:pointer;font:inherit;font-weight:600;`
+          + `padding:8px 15px;border-radius:9px;border:0;background:#b9a6ff;color:#1b1c21">넥슨쇼핑 메이플 상점 구매내역 열기</button>`)
+        // 새 탭이 아니라 이 탭을 넘긴다. 이 탭은 MapleMVP가 열었으니, 넥슨쇼핑에서도 MapleMVP와 이어져
+        // 있어서 다 보내고 나면 스스로 닫히고 MapleMVP로 돌아간다
+        box.querySelector('#mvpshop')?.addEventListener('click', () => { location.href = SHOP_PAGE })
         bye(120000)
         return
       }

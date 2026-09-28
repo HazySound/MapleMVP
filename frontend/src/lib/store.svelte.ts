@@ -33,6 +33,7 @@ export const app = $state({
   importing: false,  // 북마클릿이 넥슨에서 읽어 보내는 중 (웹)
   importError: '',   // 북마클릿이 알려 온 실패 사유
   importNote: '',    // 가져오기는 됐지만 알려 줄 것 (넥슨쇼핑을 못 읽었거나 예전 북마크)
+  importNeedShop: false,   // 넥슨캐시 내역은 받았고 넥슨쇼핑 쿠폰만 남았다. 가져오기 창이 넥슨쇼핑 쪽으로 안내한다
   importPoke: 0,     // 북마클릿이 이 화면을 부른 횟수. 다음에 누를 곳을 짚어 준다
   maximized: false,
   web: false,        // 브라우저에서 도는 중 (넥슨 수집을 직접 못 한다)
@@ -345,6 +346,7 @@ async function listenWeb() {
     onConnect: () => {
       app.importError = ''
       app.importNote = ''
+      app.importNeedShop = false
       app.progress = null
       app.importing = true
       app.showImport = true
@@ -359,11 +361,12 @@ async function listenWeb() {
       keepImportLog(log)
       if (app.user) void (await import('./web/account')).sendLog(log)
       const ok = meta.shopLog?.ok === true
+      app.importNeedShop = meta.ver >= 2 && !ok
       app.importNote = meta.ver < 2
         ? '북마크가 예전 버전이라 넥슨쇼핑에서 산 쿠폰은 못 가져왔어요. 아래 단추를 북마크바에 다시 끌어다 놓고 한 번 더 눌러 주세요.'
-        : meta.shopLog?.error === 'NO_SHOP_TOKEN'
-          ? '넥슨캐시 내역은 가져왔어요. 넥슨쇼핑 쿠폰은 넥슨쇼핑(shopping.nexon.com)에 한 번 들어가야 읽을 수 있어요. 넥슨쇼핑을 한 번 연 뒤 넥슨 결제내역 페이지에서 북마크를 다시 눌러 주세요.'
-        : !ok ? '넥슨캐시 내역은 가져왔지만 넥슨쇼핑 쿠폰은 읽지 못했어요. 무엇이 막혔는지 기록을 남겨 뒀어요.'
+        : meta.part === 'shop'
+          ? (ok ? '' : '넥슨쇼핑 구매내역을 읽지 못했어요. 넥슨쇼핑에 로그인돼 있는지 확인하고 다시 눌러 주세요.')
+        : !ok ? '넥슨캐시 내역은 가져왔어요. 넥슨쇼핑 메이플 상점 구매내역 화면에서 북마크를 한 번 더 누르면 쿠폰까지 들어와요.'
         : ''
       await reloadWeb()
       void pushUp()

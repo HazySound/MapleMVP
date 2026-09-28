@@ -13,7 +13,8 @@ import type { Progress, Row } from '../types'
 import { APP_TAB, NEXON_USAGE_URL } from './bookmarklet'
 import { saveRows } from './api'
 
-const NEXON_ORIGIN = 'https://payment.nexon.com'
+/** 북마클릿이 도는 곳. 넥슨 결제내역 페이지와, 넥슨쇼핑 쿠폰을 읽는 넥슨쇼핑 구매내역 페이지 */
+const NEXON_ORIGINS = ['https://payment.nexon.com', 'https://shopping.nexon.com']
 const MARK = 'maplemvp-bookmarklet'
 const ROWS_KEY = 'maplemvp.rows'
 
@@ -53,12 +54,14 @@ export function claimTab(): void {
  * 북마클릿이 함께 보내는 넥슨쇼핑 진단 기록. 모양은 북마클릿이 정한다(bookmarklet.ts shopLog).
  * 예전 북마크(ver 없음)는 넥슨쇼핑을 읽지 않는다.
  */
-export interface ImportMeta { ver: number; shopLog: Record<string, unknown> | null }
+export interface ImportMeta { ver: number; shopLog: Record<string, unknown> | null; part: 'all' | 'shop' }
 
 function meta(data: unknown): ImportMeta {
-  const d = (data ?? {}) as { ver?: unknown; shopLog?: unknown }
+  const d = (data ?? {}) as { ver?: unknown; shopLog?: unknown; part?: unknown }
   return {
     ver: typeof d.ver === 'number' ? d.ver : 1,
+    // 넥슨쇼핑 페이지에서 쿠폰만 보낸 것
+    part: d.part === 'shop' ? 'shop' : 'all',
     shopLog: d.shopLog && typeof d.shopLog === 'object' ? d.shopLog as Record<string, unknown> : null,
   }
 }
@@ -78,12 +81,12 @@ export interface Incoming {
  */
 export function listen(h: Incoming): () => void {
   const onMessage = (e: MessageEvent) => {
-    if (e.origin !== NEXON_ORIGIN) return       // 다른 사이트가 보낸 것은 버린다
+    if (!NEXON_ORIGINS.includes(e.origin)) return       // 다른 사이트가 보낸 것은 버린다
     const d = e.data as { source?: unknown; kind?: unknown; label?: unknown; message?: unknown } | null
     if (!d || typeof d !== 'object' || d.source !== MARK) return
 
     // 받았다고 알려 줘야 북마클릿이 이 탭으로 보내기 시작한다
-    try { (e.source as Window | null)?.postMessage({ source: 'maplemvp-app', kind: 'ack' }, NEXON_ORIGIN) } catch { /* 이미 닫혔다 */ }
+    try { (e.source as Window | null)?.postMessage({ source: 'maplemvp-app', kind: 'ack' }, e.origin) } catch { /* 이미 닫혔다 */ }
 
     if (d.kind === 'ping') return void h.onConnect()
     if (d.kind === 'progress') {
