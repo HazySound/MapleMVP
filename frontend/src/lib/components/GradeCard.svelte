@@ -185,7 +185,8 @@
           ? '구매내역을 먼저 동기화해 주세요. 수집한 결제가 있어야 그 차이를 PC방으로 볼 수 있어요'
           : needPc
             ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
-            : pcCaveat(d.pcroom) || '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요'}>
+            : [pcCaveat(d.pcroom) || '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요',
+               ...(d.pcroom.missTotal ? ['', `수집 못 한 결제(넥슨쇼핑 쿠폰 등) ${won(d.pcroom.missTotal)}원도 인게임에 맞춰 넣어 뒀어요.`] : [])].join('\n')}>
         {#if d.pcroom.totalMax && !noRows}PC방 +{pcRange(d.pcroom)}원{:else}PC방 보정{/if}
       </button>
     {:else if d.pcroom.totalMax}

@@ -47,7 +47,11 @@ export function todayKst(now: Date = new Date()): string {
   return iso(new Date(now.getTime() + 9 * 3_600_000))
 }
 
-export interface Row { date: string; item: string; price: number; id?: string }
+/**
+ * 결제 한 건. date는 MVP 금액에 들어간 날로 본다.
+ * bought: 넥슨쇼핑 쿠폰처럼 산 날과 게임에 들어간 날이 다를 때, 인게임에 맞춰 옮기기 전의 원래 날
+ */
+export interface Row { date: string; item: string; price: number; id?: string; bought?: string }
 
 /** 이번 주를 마지막으로 하는 nWeeks개 주의 결제 합계 (오래된 주 → 이번 주). */
 export function weeklyAmounts(rows: Row[], thisWeek: string, nWeeks: number): number[] {

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
-  import { META, NO_CARRY, anchor, compare, restore, writeWeeks } from '../core/pcroom'
-  import { settleScan } from '../core/engine'
+  import { META, NO_CARRY, anchor, compare, readWeek, restore, writeWeeks } from '../core/pcroom'
+  import { buildBase, settleScan } from '../core/engine'
+  import { isCoupon, placeCoupons } from '../core/coupons'
+  import { weekStart } from '../core/mvp'
   import { type Solved, type TotalPick, acceptReading, carryFor, hasCarryColumn, isTop as topTier, panelFields, solveScan,
     usesCarry, whyReject } from '../core/scan'
   import HelpModal from './HelpModal.svelte'
@@ -36,6 +38,14 @@
    * 인게임 툴팁이 정답이라, 차액을 그대로 그 주에 넣으면 등급이 게임과 같아진다
    */
   let missed = $state<Record<string, boolean>>({})
+  /**
+   * 넥슨쇼핑 쿠폰을 인게임이 센 주로 옮긴 것(쿠폰 id → 옮길 주). 저장할 때 구매내역에도 적용한다.
+   * 쿠폰은 산 주가 아니라 캐시샵에 등록한 주에 게임에 들어가는데, 우리는 산 날만 안다
+   */
+  let moves = new Map<string, string>()
+  /** 주마다 옮겨 들어온 쿠폰 금액과, 쿠폰이 들어 있는 주 */
+  let movedIn = $state<Record<string, number>>({})
+  let couponWeeks = $state<Record<string, boolean>>({})
   let busy = $state(false)
   let error = $state('')
 
@@ -83,10 +93,12 @@
   const pcOf = (r: typeof rows[number], hi: boolean) => {
     const e = edited[r.start]
     if (e !== undefined) return e
-    if (r.unknown) return 0
+    if (r.unknown || missed[r.start]) return 0   // 수집 못 한 결제는 PC방이 아니다
     if (r.group) return r.gapMin ?? 0          // 묶음의 합은 첫 주에 몰려 있다
     return (hi ? r.pcMax : r.pcMin) ?? r.amount
   }
+  /** PC방이 아니라 수집 못 한 결제로 넣는 금액 (빼는 주는 음수) */
+  const missSum = $derived(rows.reduce((s, r) => s + (missed[r.start] && edited[r.start] === undefined ? (r.gapMin ?? r.amount) : 0), 0))
   const pcSum = $derived({
     total: rows.reduce((s, r) => s + pcOf(r, false), 0),
     totalMax: rows.reduce((s, r) => s + pcOf(r, true), 0),
@@ -105,9 +117,12 @@
     }),
   }))
   const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined && !missed[r.start]))
-  /** 수집 못 한 결제로 볼 수 있는 빨간 줄. 인게임보다 수집이 많으면 잘못 읽은 것이라 안 된다 */
-  const canMiss = (r: { note: string; nexon: number; spent: number; unknown?: boolean }) =>
-    !!r.note && !r.unknown && r.nexon >= r.spent
+  /**
+   * 수집 못 한 결제로 볼 수 있는 빨간 줄. 인게임보다 수집이 많으면 보통은 잘못 읽은 것이라 안 되지만,
+   * 그 주에 넥슨쇼핑 쿠폰이 있으면 쿠폰을 다른 주에 등록한 것일 수 있어 인게임 금액에 맞춰 뺀다
+   */
+  const canMiss = (r: { start: string; note: string; nexon: number; spent: number; unknown?: boolean }) =>
+    !!r.note && !r.unknown && (r.nexon >= r.spent || !!couponWeeks[r.start])
 
   function markMissed(start: string, on: boolean) {
     const keep = edited
@@ -120,9 +135,8 @@
   function calc(keepMissed = false) {
     error = ''
     edited = {}
-    if (!keepMissed) missed = {}
-    const b = getBase()
-    if (!b) return
+    const b0 = getBase()
+    if (!b0) return
     const [tierTh, total] = anchor(d.tiers.map(t => t.th), nextIndex, num(remainText))
     const r = restore(needTexts.map(num), tierTh, total, keepText.trim() ? num(keepText) : null, carry)
     if (!r.ok) {
@@ -131,11 +145,26 @@
       openInput = true
       return
     }
+    // 넥슨쇼핑 쿠폰을 인게임이 센 주로 옮겨 본 뒤에 견준다. 옮길 게 없으면 그대로다
+    moves = app.web ? placeCoupons(b0.rows, b0.starts, r.weeks, r.unknown) : new Map()
+    const rowsNow = moves.size
+      ? b0.rows.map(x => (x.id && moves.has(x.id) ? { ...x, bought: x.bought ?? x.date, date: moves.get(x.id)! } : x))
+      : b0.rows
+    const b = moves.size ? buildBase(rowsNow, b0.saved) : b0
+    movedIn = {}
+    for (const x of b0.rows) if (x.id && moves.has(x.id)) movedIn[moves.get(x.id)!] = (movedIn[moves.get(x.id)!] ?? 0) + x.price
+    couponWeeks = Object.fromEntries(rowsNow.filter(isCoupon).map(x => [weekStart(x.date), true]))
     // 목요일 갱신에서 이월이 쓰인 주는 그 금액이 사용 금액으로 채워져 100원 단위가 아니다.
     // 블랙의 이번 주는 앱이 모르는 사이에 그랬을 수 있어 늘 그렇게 본다
     const last = r.weeks.length - 1
     const mixed = b.used13.flatMap((u, i) => (u > 0 || (isTop && i === last) ? [i] : []))
     const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed)
+    // 지난번에 '수집 못 한 결제'로 저장한 주는 이번에도 그렇게 본다. 다시 누르게 하지 않는다
+    if (!keepMissed) {
+      missed = Object.fromEntries(gaps.filter(g => g.note && readWeek(b.saved, g.start)?.miss
+        && canMiss({ start: g.start, note: g.note, nexon: g.nexon, spent: g.collected, unknown: g.unknown }))
+        .map(g => [g.start, true]))
+    }
     // 블랙이면 1주 뒤 줄의 '사용 이월'이 지금 잔액이다(1주 뒤 '유지까지'가 남아 있으면 다 쓰니까).
     // 블랙이 아니면 이월은 없다. 떨어졌다면 다 쓴 것이다
     const carryNow = !isTop ? 0 : num(needTexts[0]) > 0 ? carry[0] : null
@@ -166,6 +195,11 @@
         const e = edited[r.start]
         if (e !== undefined) return { start: r.start, gapMin: e, gapMax: e, pcMin: e, pcMax: e, unknown: false }
         const gapMin = r.gapMin ?? r.amount
+        // PC방이 아니라 수집 못 한 결제. 금액은 그대로 넣고 PC방 합계에서는 뺀다
+        if (missed[r.start]) {
+          return { start: r.start, gapMin, gapMax: r.gapMax ?? gapMin, pcMin: 0, pcMax: 0, unknown: false,
+                   group: r.group, miss: true }
+        }
         return { start: r.start, gapMin, gapMax: r.gapMax ?? gapMin, pcMin: r.pcMin ?? r.amount,
                  pcMax: r.pcMax ?? r.amount, unknown: !!r.unknown, group: r.group }
       }))
@@ -177,6 +211,8 @@
       const used = carry.reduce((s, v) => s + v, 0)
       const anchor = result?.carry ?? (isTop && result?.conflict && used > 0 ? used : null)
       if (b && anchor != null) weeks[META.carry + b.thisWeek] = anchor
+      // 쿠폰을 옮긴 채로 계산했으니 구매내역에도 옮겨 둔다. 보정값보다 먼저 적어야 다시 계산할 때 맞는다
+      if (moves.size) (await import('../web/api')).moveRows(moves)
       await pcroomSave(weeks)
       app.showPcRoom = false
     } finally {
@@ -670,16 +706,20 @@
                   섞여 있어, PC방은 {won(r.pcMin ?? 0)}~{won(r.pcMax ?? 0)}원 사이까지만 알 수 있어요.</p>
               {:else if missed[r.start] && edited[r.start] === undefined}
                 <p class="msg ok">
-                  이 주 {won(v)}원은 수집하지 못한 결제(넥슨쇼핑 쿠폰 등)로 저장해요. 인게임과 같은 금액이 돼요.
+                  이 주 {v < 0 ? `${won(-v)}원을 빼서` : `${won(v)}원을 수집하지 못한 결제(넥슨쇼핑 쿠폰 등)로 넣어`} 인게임과 같은 금액으로 저장해요.
                   <button class="link" onclick={() => markMissed(r.start, false)}>되돌리기</button>
                 </p>
               {:else if !r.group && (r.note || r.warn)}
                 <p class="msg" class:bad={!!r.note}>
                   {r.note || r.warn}
                   {#if canMiss(r) && edited[r.start] === undefined}
-                    <button class="link" onclick={() => markMissed(r.start, true)}>이 금액 그대로 저장하기</button>
+                    <br>숫자를 잘못 읽었을 수도 있어요. 위 '읽어온 값 확인·수정'의 12줄이 게임 화면과 같은지 확인한 뒤 눌러 주세요.
+                    <button class="link" onclick={() => markMissed(r.start, true)}>인게임 금액 그대로 저장하기</button>
                   {/if}
                 </p>
+              {/if}
+              {#if movedIn[r.start]}
+                <p class="msg ok">넥슨쇼핑 쿠폰 {won(movedIn[r.start])}원을 인게임에 맞춰 이 주로 옮겼어요. 쿠폰은 산 날이 아니라 등록한 주에 들어가요.</p>
               {/if}
             {/each}
           </div>
@@ -692,6 +732,7 @@
           <div class="foot">
             <div class="sum">PC방 보정 합계
               <b class="mono">{pcRange(pcSum)}</b>원
+              {#if missSum}<small>· 수집 못 한 결제 {missSum < 0 ? '−' : '+'}{won(Math.abs(missSum))}원</small>{/if}
               {#if result?.total != null}<small>· 13주 합계가 {won(result.total)}원이 돼요</small>{/if}
             </div>
             <div class="foot-btns">
@@ -701,7 +742,7 @@
               <button class="btn primary" disabled={busy || blocked} onclick={save}>저장하고 반영</button>
             </div>
           </div>
-          {#if blocked}<p class="err">빨간 줄의 금액을 고치거나 '이 금액 그대로 저장하기'를 눌러야 저장할 수 있어요.</p>{/if}
+          {#if blocked}<p class="err">빨간 줄의 금액을 고치거나 '인게임 금액 그대로 저장하기'를 눌러야 저장할 수 있어요.</p>{/if}
         </section>
       {/if}
     </div>

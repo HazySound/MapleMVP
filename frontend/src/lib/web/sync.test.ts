@@ -75,6 +75,27 @@ describe('뒤늦게 가져온 결제 (넥슨쇼핑 쿠폰 등)', () => {
     expect(pc()['2026-09-17']).toBe(0)
   })
 
+  it('산 주에 뺄 것이 없으면 뒤쪽에 금액이 맞는 주에서 빼고, 결제도 그 주로 옮긴다', () => {
+    // 9월 3일 주에 샀는데 9월 17일 주에 등록했다. 스캔은 그 차액을 9월 17일 주에 넣어 뒀다
+    mem.set('maplemvp.pcroom', JSON.stringify({ '2026-09-03': 3_600, '2026-09-17': 150_000 }))
+    mem.set('maplemvp.pcroomAt', JSON.stringify({ '2026-09-03': Date.parse('2026-09-26T03:00:00Z'),
+                                                   '2026-09-17': Date.parse('2026-09-26T03:00:00Z') }))
+    saveRows([{ ...coupon, date: '2026-09-05' }])
+    expect(pc()['2026-09-03']).toBe(3_600)
+    expect(pc()['2026-09-17']).toBe(0)
+    const saved = JSON.parse(mem.get('maplemvp.rows')!).find((r: { id: string }) => r.id === 'shop:77')
+    expect(saved.date).toBe('2026-09-17')
+    expect(saved.bought).toBe('2026-09-05')
+  })
+
+  it('옮겨 둔 쿠폰은 다시 가져와도 옮긴 날짜를 지킨다', () => {
+    mem.set('maplemvp.rows', JSON.stringify([{ ...coupon, date: '2026-09-17', bought: '2026-09-05' }]))
+    saveRows([{ ...coupon, date: '2026-09-05' }])
+    const rows = JSON.parse(mem.get('maplemvp.rows')!)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].date).toBe('2026-09-17')
+  })
+
   it('계정에서 합칠 때는 빼지 않는다 (그 기기가 이미 뺐다)', () => {
     scanned()
     mergeVault([coupon], { pcroom: {}, syncedAt: null })

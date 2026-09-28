@@ -25,11 +25,13 @@ function parse(data: unknown): Row[] | null {
   const out: Row[] = []
   for (const r of d.rows) {
     if (!r || typeof r !== 'object') continue
-    const { date, item, price, id } = r as Row
+    const { date, item, price, id, bought } = r as Row
     if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
     if (typeof price !== 'number' || !Number.isFinite(price)) continue
     out.push({ date, item: typeof item === 'string' ? item : '', price: Math.round(price),
-               id: typeof id === 'string' ? id : undefined })
+               id: typeof id === 'string' ? id : undefined,
+               // 넥슨쇼핑 쿠폰을 등록한 날로 옮겨 왔으면 산 날을 같이 둔다
+               ...(typeof bought === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(bought) ? { bought } : {}) })
   }
   return out
 }

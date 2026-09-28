@@ -360,6 +360,8 @@ export function buildState(b: Base) {
         }
         return w.pcMax > w.pcMin ? [{ start: w.start, kind: 'range', min: w.pcMin, max: w.pcMax }] : []
       }),
+      /** PC방이 아니라 수집 못 한 결제(넥슨쇼핑 쿠폰 등)로 넣어 둔 금액. PC방 합계와 따로 센다 */
+      missTotal: saved.reduce((a, w) => a + (w?.miss ? w.gapMin : 0), 0),
       // 묶음은 주별로는 모르지만 합은 정확하다. 합을 첫 주에 몰아 두었으니 그 금액을 그대로 센다
       total: saved.reduce((a, w) => a + (w?.group ? w.gapMin : w?.pcMin ?? 0), 0),
       totalMax: saved.reduce((a, w) => a + (w?.group ? w.gapMin : w?.pcMax ?? 0), 0),

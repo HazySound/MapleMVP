@@ -50,9 +50,12 @@ function save(key: string, value: unknown): void {
 export function saveRows(rows: Row[], fresh = true): void {
   const before = load<Row[]>(KEY.rows, [])
   const had = new Set(before.map(r => r.id).filter(Boolean))
+  // 인게임에 맞춰 날짜를 옮겨 둔 쿠폰은 다시 가져와도 옮긴 쪽을 남긴다. 산 날로 돌아가면 또 어긋난다
+  const moved = new Set(before.filter(r => r.bought && r.id).map(r => r.id))
   const seen = new Set<string>()
   const merged: Row[] = []
-  for (const r of [...rows, ...before]) {
+  // 다만 넥슨쇼핑 쿠폰함에서 등록한 날을 알아 온 것(bought가 붙어 옴)은 그쪽이 더 정확하다
+  for (const r of [...rows.filter(r => !r.id || !moved.has(r.id) || r.bought), ...before]) {
     if (r.id) {
       if (seen.has(r.id)) continue
       seen.add(r.id)
@@ -64,8 +67,20 @@ export function saveRows(rows: Row[], fresh = true): void {
   if (fresh) {
     save('maplemvp.syncedAt', new Date().toISOString())
     // 계정에서 합칠 때는 하지 않는다. 그 기기가 이미 뺀 보정값이 같이 내려온다
-    settleLate(rows.filter(r => r.id && !had.has(r.id)))
+    const moves = settleLate(rows.filter(r => r.id && !had.has(r.id)))
+    if (moves.size) moveRows(moves)
   }
+}
+
+/** 결제의 날짜를 옮긴다(인게임이 센 주로). 원래 날은 bought에 남긴다 */
+export function moveRows(moves: Map<string, string>): void {
+  if (!moves.size) return
+  const rows = load<Row[]>(KEY.rows, []).map(r => {
+    const to = r.id ? moves.get(r.id) : undefined
+    return to && to !== r.date ? { ...r, bought: r.bought ?? r.date, date: to } : r
+  })
+  rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  save(KEY.rows, rows)
 }
 
 /**
@@ -74,31 +89,41 @@ export function saveRows(rows: Row[], fresh = true): void {
  * 보정값은 '그 주 인게임 − 그때까지 수집한 결제'라서, 스캔할 때 몰랐던 결제(넥슨쇼핑 쿠폰 등)는
  * 이미 보정값 안에 들어 있다. 그 결제를 나중에 가져오면 같은 돈을 두 번 센다. 그만큼 빼 준다.
  *
+ * 쿠폰은 산 주가 아니라 등록한 주에 게임에 들어간다. 그래서 산 주에 뺄 것이 없으면 뒤쪽 주들에서
+ * 찾는다. 차액이 쿠폰 금액과 딱 맞는 주, 없으면 그 금액이 들어갈 자리가 있는 가장 가까운 주다.
+ * 그 주로 옮겨 가면 결제 날짜도 그리로 옮긴다(돌려주는 값). 그래야 주별 금액이 인게임과 같다.
+ *
  * 스캔한 날부터 산 것은 빼지 않는다. 그건 스캔 뒤에 인게임에도 새로 더해진 돈이다.
  * 같은 날은 앞뒤를 가를 수 없어 빼지 않는다. 틀렸으면 다시 스캔하면 바로잡힌다.
  */
-export function settleLate(fresh: Row[]): void {
-  if (!fresh.length) return
+export function settleLate(fresh: Row[]): Map<string, string> {
+  const moves = new Map<string, string>()
+  if (!fresh.length) return moves
   const pc = load<Record<string, number>>(KEY.pcroom, {})
   const at = load<Record<string, number>>(KEY.pcroomAt, {})
   const kst = (t: number) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10)
   const now = Date.now()
   let changed = false
-  for (const r of fresh) {
+  // 보정해 둔 주(오래된 주부터). 부가 정보 키가 아닌 날짜 키만
+  const weeks = () => Object.keys(pc).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort()
+  for (const r of [...fresh].sort((a, b) => (a.date < b.date ? -1 : 1))) {
     const w = weekStart(r.date)
-    if (!(w in pc) || pc[META.unknown + w] || !at[w] || r.date >= kst(at[w])) continue
-    const cut = Math.min(pc[w], r.price)
-    if (cut <= 0) continue
-    pc[w] -= cut
+    const room = weeks().filter(j => j >= w && !pc[META.unknown + j] && at[j] && r.date < kst(at[j]) && pc[j] > 0)
+    const j = room.find(j => pc[j] === r.price) ?? room.find(j => pc[j] >= r.price) ?? (room.includes(w) ? w : undefined)
+    if (!j) continue
+    const cut = Math.min(pc[j], r.price)
+    pc[j] -= cut
     for (const m of [META.gapMax, META.pcMin, META.pcMax]) {
-      if (pc[m + w] != null) pc[m + w] = Math.max(0, pc[m + w] - cut)
+      if (pc[m + j] != null) pc[m + j] = Math.max(0, pc[m + j] - cut)
     }
-    at[w] = now
+    at[j] = now
     changed = true
+    if (j !== w && cut === r.price && r.id) moves.set(r.id, j)
   }
-  if (!changed) return
+  if (!changed) return moves
   save(KEY.pcroom, pc)
   save(KEY.pcroomAt, at)
+  return moves
 }
 
 /**

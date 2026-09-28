@@ -210,9 +210,10 @@ export function mergeSaved(saved: Record<string, number>, gaps: Gap[]): Record<s
  *   unk:주      1이면 끝내 알 수 없는 주 (블랙 첫 스캔의 가장 오래된 주)
  *   grp:주      합만 아는 묶음의 첫 주 (20260709처럼 숫자). 묶음의 합은 첫 주에 몰아 둔다
  *   carry:주    그 주에 인게임 툴팁으로 확인한 이월 잔액
+ *   miss:주     1이면 PC방이 아니라 수집 못 한 결제(넥슨쇼핑 쿠폰 등)로 넣은 주. PC방 합계에서 뺀다
  */
 export const META = { gapMax: 'gapmax:', pcMin: 'pcmin:', pcMax: 'pcmax:', unknown: 'unk:', group: 'grp:',
-                      carry: 'carry:' }
+                      carry: 'carry:', miss: 'miss:' }
 const groupKey = (iso: string) => Number(iso.replace(/-/g, ''))
 const groupIso = (n: number) => { const s = String(n); return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` }
 
@@ -226,6 +227,8 @@ export interface WeekPc {
   unknown: boolean    // 끝내 알 수 없는 주
   /** 합만 아는 묶음의 첫 주. 묶음의 합은 그 주의 gapMin에 몰려 있다 */
   group?: string
+  /** PC방이 아니라 수집 못 한 결제로 넣은 주. 금액(gapMin)은 그대로 13주 합계에 들어간다 */
+  miss?: boolean
 }
 
 /** 저장 맵에서 한 주를 읽는다. 아직 스캔하지 않은 주는 null */
@@ -239,7 +242,8 @@ export function readWeek(saved: Record<string, number>, s: string): WeekPc | nul
   const pcMin = saved[META.pcMin + s] ?? gapMin
   const pcMax = Math.max(pcMin, saved[META.pcMax + s] ?? gapMax)
   const g = saved[META.group + s]
-  return { start: s, gapMin, gapMax, pcMin, pcMax, unknown: false, ...(g ? { group: groupIso(g) } : {}) }
+  return { start: s, gapMin, gapMax, pcMin, pcMax, unknown: false, ...(g ? { group: groupIso(g) } : {}),
+           ...(saved[META.miss + s] ? { miss: true } : {}) }
 }
 
 /**
@@ -255,6 +259,7 @@ export function writeWeeks(weeks: WeekPc[]): Record<string, number> {
     out[META.pcMax + w.start] = w.pcMax
     out[META.unknown + w.start] = w.unknown ? 1 : 0
     out[META.group + w.start] = w.group ? groupKey(w.group) : 0
+    out[META.miss + w.start] = w.miss ? 1 : 0
   }
   return out
 }

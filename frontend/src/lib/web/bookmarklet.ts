@@ -204,9 +204,51 @@ function collect(appOrigin: string) {
     return { status: res.status, body }
   }
 
+  /*
+   * 쿠폰함의 '사용 완료' 목록. GET /api/v1/user/coupons?page=&shopId=&isUsed=true → { coupons: [...] }
+   * 화면 코드가 쓰는 칸은 couponId·productName·used·useBefore(사용 기한)뿐이라 등록한 날이 오는지는
+   * 모른다. 받은 칸 이름을 기록하고, 등록일처럼 보이는 날짜 칸과 구매 번호로 이어지는 칸이 있으면 쓴다.
+   */
+  const USED_DATE = /(use|used|regist|redeem|activ|confirm|pin)/i
+  const NOT_DATE = /(before|expire|limit|end|valid)/i
+  const asDate = (v: unknown) => {
+    const s = String(v ?? '')
+    return /^\d{4}[-./]\d{2}[-./]\d{2}/.test(s) ? s.slice(0, 10).replace(/[./]/g, '-') : ''
+  }
+  const collectUsedCoupons = async (token: string, uid: string) => {
+    const out: any[] = []
+    const log: any = { pages: 0, count: 0, keys: '', dateKey: '', linkKey: '', error: '' }
+    try {
+      for (let page = 0; page < 50; page++) {
+        say(`<b>MapleMVP</b><br>넥슨쇼핑 쿠폰함 읽는 중…<br>` + dim(`사용 완료 ${out.length}장`))
+        const r = await shopFetch(`/api/v1/user/coupons?page=${page}&shopId=${SHOP_ID}&isUsed=true`, token, uid)
+        const data = r.body?.data ?? r.body
+        const list = Array.isArray(data?.coupons) ? data.coupons
+          : Array.isArray(data?.content) ? data.content : Array.isArray(data) ? data : null
+        log.pages = page + 1
+        if (!list) { log.error = `HTTP ${r.status} code ${r.body?.code ?? '-'} keys ${Object.keys(data ?? {}).join(',')}`; break }
+        out.push(...list)
+        if (!list.length || data?.last === true || data?.hasNext === false) break
+      }
+    } catch (e) {
+      log.error = String((e as Error)?.message || e).slice(0, 160)
+    }
+    log.count = out.length
+    const first = out[0] ?? {}
+    log.keys = Object.keys(first).join(',')
+    log.dateKey = Object.keys(first).find(k => USED_DATE.test(k) && !NOT_DATE.test(k) && asDate(first[k])) ?? ''
+    log.linkKey = Object.keys(first).find(k => /purchase.*id|order.*id/i.test(k)) ?? ''
+    log.sample = out.slice(0, 20).map(c => ({ name: String(c?.productName ?? '').slice(0, 40),
+                                            used: c?.used ?? c?.isUsed ?? null,
+                                            date: log.dateKey ? asDate(c?.[log.dateKey]) : null }))
+    return { list: out, log }
+  }
+
   /** 넥슨쇼핑 메이플 상점에서 쿠폰을 등록한 결제를 읽는다. 실패해도 넥슨캐시 내역은 그대로 보낸다 */
   const collectShop = async (now: Date) => {
-    const out: { date: string; item: string; price: number; id: string }[] = []
+    const out: { date: string; item: string; price: number; id: string; bought?: string }[] = []
+    // 산 것 전부. 쿠폰함과 견주고 나서 넣을 것을 고른다
+    const all: { date: string; item: string; price: number; pid: string; status: string }[] = []
     try {
       const token = cookie('_ifwt')
       note(token ? '토큰(_ifwt): 있음' : '토큰(_ifwt): 이 페이지에서 읽을 수 없음')
@@ -249,13 +291,34 @@ function collect(appOrigin: string) {
                              shop: p?.shopName ?? null, id: String(p?.purchaseId ?? '').slice(-4) })
             // 응답에 어떤 칸이 있는지는 한 번만 적는다. 5년 치를 읽으면 기록이 불어난다
             if (!shopLog.keys) shopLog.keys = Object.keys(p ?? {}).join(',')
-            if (status !== 'USED' || !price || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
-            out.push({ date, item: String(p?.productName ?? '넥슨쇼핑 쿠폰').replace(/\s+/g, ' ').trim(),
-                       price, id: 'shop:' + String(p?.purchaseId ?? `${date}:${price}:${out.length}`) })
+            if (!price || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+            all.push({ date, item: String(p?.productName ?? '넥슨쇼핑 쿠폰').replace(/\s+/g, ' ').trim(),
+                       price, pid: String(p?.purchaseId ?? `${date}:${price}:${all.length}`), status })
           }
         }
         if (!log.items.length) delete log.items
         shopLog.months.push(log)
+      }
+      // 쿠폰함 '사용 완료'. 등록한 날이 있으면 그 날로, 없으면 산 날로 둔다(앱이 인게임에 맞춰 옮긴다)
+      const used = await collectUsedCoupons(token, uid)
+      ;(shopLog as any).coupons = used.log
+      const usedOn = new Map<string, string>()
+      const usedIds = new Set<string>()
+      if (used.log.linkKey) {
+        for (const c of used.list) {
+          const pid = String(c?.[used.log.linkKey] ?? '')
+          if (!pid) continue
+          usedIds.add(pid)
+          const d = used.log.dateKey ? asDate(c?.[used.log.dateKey]) : ''
+          if (d) usedOn.set(pid, d)
+        }
+      }
+      for (const a of all) {
+        // 구매내역에서 '사용 완료'이거나, 쿠폰함에서 사용 완료로 이어지는 것
+        if (a.status !== 'USED' && !usedIds.has(a.pid)) continue
+        const on = usedOn.get(a.pid)
+        out.push({ date: on && on >= a.date ? on : a.date, item: a.item, price: a.price, id: 'shop:' + a.pid,
+                   ...(on && on > a.date ? { bought: a.date } : {}) })
       }
       shopLog.ok = true
     } catch (e) {
