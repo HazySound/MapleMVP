@@ -41,8 +41,11 @@ function save(key: string, value: unknown): void {
  * 북마클릿이 보내온 구매내역을 저장한다.
  * 같은 날 같은 아이템을 여러 번 사는 일이 흔해서(솔 에르다 10,000원 4건 같은),
  * 중복은 넥슨이 주는 결제 고유번호로만 거른다. 번호가 없으면 그냥 남긴다.
+ *
+ * '마지막 동기화'는 넥슨에서 구매내역을 새로 가져온 때다. 계정에서 받아 합칠 때(fresh=false)는
+ * 찍지 않는다. 찍으면 로그인한 채로 접속할 때마다 동기화 시각이 접속 시각으로 바뀐다
  */
-export function saveRows(rows: Row[]): void {
+export function saveRows(rows: Row[], fresh = true): void {
   const seen = new Set<string>()
   const merged: Row[] = []
   for (const r of [...rows, ...load<Row[]>(KEY.rows, [])]) {
@@ -54,7 +57,7 @@ export function saveRows(rows: Row[]): void {
   }
   merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   save(KEY.rows, merged)
-  save('maplemvp.syncedAt', new Date().toISOString())
+  if (fresh) save('maplemvp.syncedAt', new Date().toISOString())
 }
 
 /**
@@ -68,7 +71,7 @@ export function saveRows(rows: Row[]): void {
  * 쪽이 있으면 그쪽이 이긴다.
  */
 export function mergeVault(rows: Row[], v: VaultIn): void {
-  if (rows.length) saveRows(rows)
+  if (rows.length) saveRows(rows, false)
 
   const mine = load<Record<string, number>>(KEY.pcroom, {})
   const mineAt = load<Record<string, number>>(KEY.pcroomAt, {})
