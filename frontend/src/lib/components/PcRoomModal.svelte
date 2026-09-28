@@ -165,9 +165,13 @@
         && canMiss({ start: g.start, note: g.note, nexon: g.nexon, spent: g.collected, unknown: g.unknown }))
         .map(g => [g.start, true]))
     }
-    // 블랙이면 1주 뒤 줄의 '사용 이월'이 지금 잔액이다(1주 뒤 '유지까지'가 남아 있으면 다 쓰니까).
+    // 블랙이면 툴팁에서 지금 이월 잔액을 읽는다. '유지까지'가 처음으로 남는 줄에서 이월이 바닥난다
+    // (모자라서 가진 것을 다 썼으니까). 그러니 그 줄까지의 '사용 이월'을 더하면 지금 잔액이다.
+    // 예) 1주 뒤 0 · 사용 93,090 / 2주 뒤 356,780 · 사용 117,620 → 잔액 210,710 (화면 아래 잔액과 같다).
+    // 12줄 내내 0이면 이월이 끝까지 남는다는 뜻이라 잔액을 알 수 없다.
     // 블랙이 아니면 이월은 없다. 떨어졌다면 다 쓴 것이다
-    const carryNow = !isTop ? 0 : num(needTexts[0]) > 0 ? carry[0] : null
+    const drained = needTexts.findIndex(t => num(t) > 0)
+    const carryNow = !isTop ? 0 : drained >= 0 ? carry.slice(0, drained + 1).reduce((s, v) => s + v, 0) : null
     // 빨간 줄이 있으면 숫자부터 바로잡아야 한다. 그 전에는 범위를 셈해 봐야 소용없다
     const st = gaps.some(g => g.note && !missed[g.start]) ? null : settleScan(b, r, carryNow)
     result = {

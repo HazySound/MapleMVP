@@ -227,7 +227,9 @@ function collect(appOrigin: string) {
           : Array.isArray(data?.content) ? data.content : Array.isArray(data) ? data : null
         log.pages = page + 1
         if (!list) { log.error = `HTTP ${r.status} code ${r.body?.code ?? '-'} keys ${Object.keys(data ?? {}).join(',')}`; break }
-        out.push(...list)
+        // 쿠폰번호·PIN처럼 쓰면 바로 돈이 되는 값은 받자마자 버린다. 어디에도(기록·계정) 남기지 않는다
+        out.push(...list.map((c: any) => Object.fromEntries(Object.entries(c ?? {})
+          .filter(([k]) => !/(pin|serial|coupon.?(no|num|code)|^code$|secret|token|password)/i.test(k)))))
         if (!list.length || data?.last === true || data?.hasNext === false) break
       }
     } catch (e) {
@@ -250,8 +252,20 @@ function collect(appOrigin: string) {
     // 산 것 전부. 쿠폰함과 견주고 나서 넣을 것을 고른다
     const all: { date: string; item: string; price: number; pid: string; status: string }[] = []
     try {
-      const token = cookie('_ifwt')
+      let token = cookie('_ifwt')
       note(token ? '토큰(_ifwt): 있음' : '토큰(_ifwt): 이 페이지에서 읽을 수 없음')
+      // 이 토큰은 넥슨쇼핑에 한 번 들어가야 생긴다(2026-09-28 제보자 기록). 보이지 않는 창으로 열어 본다
+      if (!token) {
+        say(`<b>MapleMVP</b><br>넥슨쇼핑 로그인 확인 중…`)
+        const f = document.createElement('iframe')
+        f.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px'
+        f.src = 'https://shopping.nexon.com/kr/my/purchase?shopId=' + SHOP_ID
+        document.body.appendChild(f)
+        for (let i = 0; i < 40 && !token; i++) { await sleep(250); token = cookie('_ifwt') }
+        f.remove()
+        note(token ? '토큰(_ifwt): 넥슨쇼핑을 숨겨 열어 받음' : '토큰(_ifwt): 숨겨 열어도 안 생김')
+        if (!token) throw new Error('NO_SHOP_TOKEN')
+      }
       const uid = await shopUid()
       let triedLogin = false
       for (let i = 0; i < SHOP_MONTHS; i++) {
@@ -408,6 +422,18 @@ function collect(appOrigin: string) {
       const shop = await collectShop(now)
       rows.push(...shop)
 
+      // 넥슨쇼핑 로그인이 안 돼 있다. 넥슨캐시 내역은 보내고, 넥슨쇼핑을 한 번 열라고 안내한다
+      const noShop = shopLog.error === 'NO_SHOP_TOKEN'
+      if (acked && noShop) {
+        send({ kind: 'rows', rows, ver: 2, shopLog })
+        say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>`
+          + `<b style="color:#ffc29e">넥슨쇼핑 쿠폰은 아직 못 가져왔어요</b><br>`
+          + dim(`아래를 눌러 넥슨쇼핑을 한 번 열고(로그인 상태면 바로 떠요),<br>${hi('이 페이지로 돌아와')} 북마크를 한 번 더 눌러 주세요.`)
+          + `<br><br><a href="https://shopping.nexon.com/kr/my/purchase?shopId=23" target="_blank" rel="noopener" `
+          + `style="display:inline-block;padding:8px 15px;border-radius:9px;background:#b9a6ff;color:#1b1c21;font-weight:600;text-decoration:none">넥슨쇼핑 열기</a>`)
+        bye(120000)
+        return
+      }
       if (acked) {
         send({ kind: 'rows', rows, ver: 2, shopLog })
         say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>`

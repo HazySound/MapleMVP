@@ -361,6 +361,8 @@ async function listenWeb() {
       const ok = meta.shopLog?.ok === true
       app.importNote = meta.ver < 2
         ? '북마크가 예전 버전이라 넥슨쇼핑에서 산 쿠폰은 못 가져왔어요. 아래 단추를 북마크바에 다시 끌어다 놓고 한 번 더 눌러 주세요.'
+        : meta.shopLog?.error === 'NO_SHOP_TOKEN'
+          ? '넥슨캐시 내역은 가져왔어요. 넥슨쇼핑 쿠폰은 넥슨쇼핑(shopping.nexon.com)에 한 번 들어가야 읽을 수 있어요. 넥슨쇼핑을 한 번 연 뒤 넥슨 결제내역 페이지에서 북마크를 다시 눌러 주세요.'
         : !ok ? '넥슨캐시 내역은 가져왔지만 넥슨쇼핑 쿠폰은 읽지 못했어요. 무엇이 막혔는지 기록을 남겨 뒀어요.'
         : ''
       await reloadWeb()
