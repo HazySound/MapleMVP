@@ -62,16 +62,12 @@ describe('충전 단위', () => {
     expect(used.cost).toBeCloseTo(105_000)
   })
 
-  it('일반 충전에 할인을 넣으면 한도 없이 그 비율로 센다', () => {
-    const f = fund(250_000, ctx({ plain: 0.95 }))
-    expect(f.parts.map(p => [p.name, p.cash])).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000]])
-    expect(f.cost).toBeCloseTo(180_000 + 47_500)
-  })
-
-  it('나머지 전부를 바코드로 두었어도 일반 충전이 더 싸면 일반 충전', () => {
-    const f = fund(105_000, ctx({ cards: [], plain: 0.9, barcode: { bonus: 0.05, capLeft: 5_000, want: null } }))
-    expect(f.parts.map(p => p.name)).toEqual(['일반 충전'])
-    expect(f.cost).toBeCloseTo(94_500)
+  it('직접 추가한 결제수단은 100원 단위로 쓴다', () => {
+    const pack = { key: 'pack', name: '넥슨팩', rate: 0.95, unit: 100 }
+    const f = fund(263_400, ctx({ cards: [nx, pack], limits: { nexon: 200_000, pack: Infinity } }))
+    expect(f.parts.map(p => [p.name, p.cash])).toEqual([['넥슨카드', 200_000], ['넥슨팩', 63_400]])
+    expect(f.parts[1].big).toBeUndefined()
+    expect(f.cost).toBeCloseTo(180_000 + 60_230)
   })
 })
 
@@ -176,21 +172,29 @@ describe('주별 상품권 한도', () => {
     expect(cash(0)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000], ['일반 충전', 5_000]])
     expect(cash(1)).toEqual([['도서문화상품권', 150_000], ['넥슨카드', 200_000], ['일반 충전', 50_000]])
   })
-  it('일반 충전보다 할인이 작은 상품권은 쓰지 않는다', () => {
+  it('직접 추가한 결제수단도 할인이 큰 것부터, 달 한도는 달마다 새로', () => {
     const res = planAll({
-      weeks: [{ start: '2026-10-01', amount: 250_000, tier: 'gold', month: '2026-10' }],
+      weeks: [
+        { start: '2026-10-22', amount: 250_000, tier: 'gold', month: '2026-10' },
+        { start: '2026-11-05', amount: 250_000, tier: 'gold', month: '2026-11' },
+      ],
       balance: 0,
       cards: [{ key: 'nexon', name: '넥슨카드', disc: 10, on: true }, { key: 'culture', name: '컬쳐랜드', disc: 4, on: true }],
-      plainRate: 0.95,
-      leftNow: { nexon: 100_000, culture: 200_000 },
+      methods: [
+        { key: 'a', name: '카드 할인', rate: 0.93, monthly: 30_000, on: true },
+        { key: 'b', name: '넥슨팩', rate: 0.95, monthly: null, on: true },
+        { key: 'c', name: '꺼 둔 것', rate: 0.5, monthly: null, on: false },
+      ],
+      leftNow: { nexon: 100_000, culture: 200_000, a: 20_000 },
       thisMonth: '2026-10',
       barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
       um: 1500, mk: 2250, items: [], fee: null, exact: true,
     })!
-    const f = fund(res[0].solved.best.pay, res[0].ctx)
-    expect(f.parts.map(p => [p.name, p.cash])).toEqual([['넥슨카드', 100_000], ['일반 충전', 150_000]])
-    expect(f.cost).toBeCloseTo(90_000 + 142_500)
+    const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
+    expect(cash(0)).toEqual([['넥슨카드', 100_000], ['카드 할인', 20_000], ['넥슨팩', 130_000]])
+    expect(cash(1)).toEqual([['넥슨카드', 200_000], ['카드 할인', 30_000], ['넥슨팩', 20_000]])
   })
+
 })
 
 describe('모든 조합을 다 따져 본 답과 같다', () => {

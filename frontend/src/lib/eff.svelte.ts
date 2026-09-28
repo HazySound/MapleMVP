@@ -33,9 +33,11 @@ interface Saved {
   /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
   balance: number
   cards: { key: string; name: string; disc: number; on: boolean }[]
-  /** 일반 충전 비율(넥슨팩 쿠폰 등). 적는 방식과 값. 값이 0이면 1:1 */
-  plainMode: PlainMode
-  plainVal: number
+  /**
+   * 직접 추가한 결제수단(넥슨팩 쿠폰 등). 할인을 적는 방식과 값, 달마다 한도(null이면 없음).
+   * 할인이 큰 것부터 쓰고, 딱 맞지 않는 끝자리만 일반 충전(1:1)
+   */
+  methods: PayMethod[]
   leftNow: Record<string, number>
   leftMonth: string
   barcodeOn: boolean
@@ -77,7 +79,7 @@ interface Saved {
 function fresh(): Saved {
   return {
     usePlan: true, amount: 0, balance: 0,
-    cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), plainMode: 'off', plainVal: 0,
+    cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), methods: [],
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
@@ -91,7 +93,11 @@ function load(): Saved {
     const raw = localStorage.getItem(KEY)
     if (!raw) return base
     const got = JSON.parse(raw) as Partial<Saved>
-    const s = { ...base, ...got } as Saved & { held?: { cash: number }; saleCost?: number }
+    const s = { ...base, ...got } as Saved & { held?: { cash: number }; saleCost?: number; plainMode?: PlainMode; plainVal?: number }
+    // 잠깐 있었던 '일반 충전 할인'은 한도 없는 결제수단 하나로 옮긴다
+    if (s.plainVal && plainRateOf(s.plainMode ?? 'off', s.plainVal) < 1 && !s.methods.length)
+      s.methods = [{ id: 'm-plain', name: '할인 충전', mode: s.plainMode ?? 'off', val: s.plainVal, monthly: null, on: true }]
+    delete s.plainMode; delete s.plainVal
     // 목록 고르기가 생기기 전부터 쓰던 사람: 갑자기 아이템이 빠지면 헷갈리니 그때 보던 목록을 그대로 둔다.
     // 기본 4종으로 시작하는 건 처음 쓰는 사람만
     if (!got.picked) {
@@ -197,6 +203,19 @@ export function saveCustom(x: Omit<ShopItem, 'id' | 'custom'>, id?: string) {
 }
 
 /** 크레딧샵 물건을 직접 추가한다. 거의 쓸 일은 없지만 새 물건이 나올 때를 위해 */
+export interface PayMethod { id: string; name: string; mode: PlainMode; val: number; monthly: number | null; on: boolean }
+
+export function addMethod(x: Omit<PayMethod, 'id' | 'on'>) {
+  eff.methods.push({ ...x, id: `pm${Date.now().toString(36)}`, on: true })
+  saveEff()
+}
+
+export function removeMethod(id: string) {
+  eff.methods = eff.methods.filter(m => m.id !== id)
+  delete eff.leftNow[id]
+  saveEff()
+}
+
 export function addCreditItem(x: { name: string; credits: number; days?: number }) {
   eff.creditCustom.push({ ...x, id: `cc${Date.now().toString(36)}`, custom: true })
   saveEff()
@@ -288,7 +307,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const all = sellables()
   const credit = eff.creditOn ? { balance: eff.creditBalance, items: creditItems(), keepRest: eff.creditKeep } : null
   const run = (items: Sellable[]) => planAll({
-    weeks, balance: eff.balance, cards: eff.cards, plainRate: plainRateOf(eff.plainMode, eff.plainVal), leftNow: eff.leftNow, thisMonth: thisMonth(),
+    weeks, balance: eff.balance, cards: eff.cards, methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on })), leftNow: eff.leftNow, thisMonth: thisMonth(),
     barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: eff.weekBarcode,
     um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit,
   })

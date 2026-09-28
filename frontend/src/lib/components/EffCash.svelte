@@ -1,19 +1,18 @@
 <script lang="ts">
-  /** 2. 캐시는 얼마에 — 캐시 잔액, 상품권 할인과 남은 한도, 바코드(이벤트 때만) */
+  /** 2. 캐시는 얼마에 — 캐시 잔액, 상품권 할인과 남은 한도, 직접 추가한 결제수단, 바코드(이벤트 때만) */
   import NumBox from './NumBox.svelte'
-  import { SHOP, eff, saveEff, thisMonth } from '../eff.svelte'
+  import { SHOP, addMethod, eff, removeMethod, saveEff, thisMonth, type PayMethod } from '../eff.svelte'
   import { plainRateOf, rateOf, type PlainMode } from '../core/efficiency'
   import { won } from '../format'
 
   const month = Number(thisMonth().slice(5))
-  const plainRate = $derived(plainRateOf(eff.plainMode, eff.plainVal))
-  /** 일반 충전 비율을 적는 방식. 칸 단위와 예시 */
+  /** 결제수단 할인을 적는 방식. 칸 단위와 예시 */
   const MODES: { key: PlainMode; name: string; unit: string; ph: string }[] = [
     { key: 'off', name: '할인율', unit: '%', ph: '7' },
     { key: 'ratio', name: '실제 비율', unit: '%', ph: '93' },
     { key: 'per10k', name: '1만 캐시당 가격', unit: '원', ph: '9,300' },
   ]
-  const mode = $derived(MODES.find(m => m.key === eff.plainMode) ?? MODES[0])
+  const modeOf = (k: PlainMode) => MODES.find(m => m.key === k) ?? MODES[0]
   const bc = SHOP.barcode
 
   function note(disc: number) {
@@ -23,6 +22,23 @@
     return off(r)
   }
   const off = (r: number) => `${((1 - r) * 100).toFixed(1).replace(/\.0$/, '')}% 할인`
+  /** '5% 할인 · 달마다 300,000' */
+  function methodNote(m: { mode: PlainMode; val: number; monthly: number | null }) {
+    const r = plainRateOf(m.mode, m.val)
+    return `${r < 1 ? off(r) : '할인을 넣으면 계산에 써요'} · ${m.monthly ? `달마다 ${won(m.monthly)}` : '한도 없음'}`
+  }
+
+  const offs = $derived(eff.methods.filter(m => !m.on))
+  let showOff = $state(false)
+  let adding = $state(false)
+  let form = $state({ name: '', mode: 'off' as PlainMode, val: 0, monthly: 0 })
+  const formOk = $derived(!!form.name.trim() && plainRateOf(form.mode, form.val) < 1)
+  function submit(e: Event) {
+    e.preventDefault()
+    if (!formOk) return
+    addMethod({ name: form.name.trim(), mode: form.mode, val: form.val, monthly: form.monthly || null })
+    adding = false; form = { name: '', mode: 'off', val: 0, monthly: 0 }
+  }
 </script>
 
 <article class="card">
@@ -49,19 +65,60 @@
       </div>
     {/each}
 
-    <!-- 일반 충전. 넥슨팩 쿠폰처럼 한도 없이 할인받아 충전하는 사람은 비율을 넣는다 -->
+    <!-- 직접 추가한 결제수단(넥슨팩 쿠폰 등). 할인이 큰 것부터 상품권과 섞어 쓴다 -->
+    {#snippet methodRow(m: PayMethod)}
+      {@const md = modeOf(m.mode)}
+      <div class="row m" class:off={!m.on}>
+        <input type="checkbox" id="eff-pm-{m.id}" bind:checked={m.on} onchange={saveEff} />
+        <span class="ml">
+          <label for="eff-pm-{m.id}">{m.name}<small>{methodNote(m)}</small></label>
+          <button class="del" onclick={() => removeMethod(m.id)} aria-label="{m.name} 지우기" title="지우기">×</button>
+        </span>
+        <NumBox id="eff-pm-val-{m.id}" label="{m.name} {md.name}" size="sm" decimal placeholder={md.ph} unit={md.unit}
+          value={m.val} set={v => { m.val = v; saveEff() }} disabled={!m.on} />
+        {#if m.monthly}
+          <NumBox id="eff-pm-left-{m.id}" label="{m.name} {month}월 남은 한도" size="sm"
+            value={eff.leftNow[m.id] ?? m.monthly} set={v => { eff.leftNow[m.id] = v; saveEff() }} disabled={!m.on} />
+        {:else}
+          <span class="nolimit">한도 없음</span>
+        {/if}
+      </div>
+    {/snippet}
+    {#if eff.methods.length}
+      <div class="row head sub"><span></span><span>직접 추가한 결제수단</span><span>할인</span><span>{month}월 남은 한도</span></div>
+      {#each eff.methods.filter(m => m.on) as m (m.id)}{@render methodRow(m)}{/each}
+      <!-- 꺼 둔 것은 계산에 안 쓰니 한 줄로 접어 둔다 -->
+      {#if offs.length}
+        <button class="fold" aria-expanded={showOff} onclick={() => (showOff = !showOff)}>
+          꺼 둔 결제수단 {offs.length}개 <span class="caret" class:open={showOff}>▾</span>
+        </button>
+        {#if showOff}{#each offs as m (m.id)}{@render methodRow(m)}{/each}{/if}
+      {/if}
+    {/if}
+
+    {#if adding}
+      <form class="add" onsubmit={submit}>
+        <input class="txt" type="text" placeholder="이름 (예: 넥슨팩 쿠폰)" bind:value={form.name} maxlength="30" aria-label="결제수단 이름" />
+        <select bind:value={form.mode} onchange={() => (form.val = 0)} aria-label="할인 적는 방식">
+          {#each MODES as x (x.key)}<option value={x.key}>{x.name}</option>{/each}
+        </select>
+        <NumBox id="eff-pm-new-val" label={modeOf(form.mode).name} size="sm" decimal placeholder={modeOf(form.mode).ph} unit={modeOf(form.mode).unit}
+          value={form.val} set={v => (form.val = v)} />
+        <NumBox id="eff-pm-new-limit" label="달마다 한도" size="sm" placeholder="달 한도 · 없으면 비움" value={form.monthly} set={v => (form.monthly = v)} />
+        <span class="acts">
+          <button type="button" class="btn" onclick={() => (adding = false)}>취소</button>
+          <button type="submit" class="btn primary" disabled={!formOk}>추가</button>
+        </span>
+      </form>
+    {:else}
+      <button class="addbtn" onclick={() => (adding = true)}>+ 할인받는 결제수단 직접 추가</button>
+    {/if}
+
     <div class="row plain">
       <span></span>
-      <span class="pl">
-        <label for="eff-plain">일반 충전</label>
-        <select aria-label="일반 충전 비율 적는 방식" bind:value={eff.plainMode} onchange={() => { eff.plainVal = 0; saveEff() }}>
-          {#each MODES as m (m.key)}<option value={m.key}>{m.name}</option>{/each}
-        </select>
-        <small>{plainRate < 1 ? `한도 없음 · 1만 캐시에 ${won(Math.round(plainRate * 10000))}원 (${off(plainRate)})` : '한도 없음 · 비우면 1:1'}</small>
-      </span>
-      <NumBox id="eff-plain" label="일반 충전 {mode.name}" size="sm" decimal placeholder={mode.ph} unit={mode.unit}
-        value={eff.plainVal} set={v => { eff.plainVal = v; saveEff() }} />
-      <span class="nolimit">-</span>
+      <span class="pl">일반 충전<small>할인 없음 · 1:1 · 위에서 못 채운 끝자리</small></span>
+      <span></span>
+      <span class="nolimit">한도 없음</span>
     </div>
 
     <div class="row bc" class:off={!bc.on}>
@@ -77,8 +134,7 @@
     </div>
   </div>
 
-  <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 딱 맞지 않는 끝자리는 {bc.on ? '바코드나 ' : ''}일반 충전({plainRate < 1 ? off(plainRate) : '1:1'})으로 채워요.
-    넥슨팩 쿠폰처럼 <b>한도 없이 할인받아 충전</b>한다면 일반 충전에 할인을 넣어 주세요. 그보다 할인이 작은 상품권은 쓰지 않아요.</p>
+  <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요. 상품권과 섞어 <b>할인이 큰 것부터</b> 쓰고(직접 추가한 것은 100원 단위), 딱 맞지 않는 끝자리는 {bc.on ? '바코드나 ' : ''}일반 충전(1:1)으로 채워요.</p>
 </article>
 
 <style>
@@ -94,10 +150,26 @@
   .row input[type=checkbox] { accent-color: var(--color-lav); width: 15px; height: 15px; margin: 0; cursor: pointer; }
   .row label { display: grid; line-height: 1.3; cursor: pointer; color: var(--color-tx); }
   .row small { font-size: 11px; color: var(--color-tx3); }
-  .plain { padding-top: 4px; border-top: 1px dashed var(--color-line); }
-  .pl { display: grid; line-height: 1.3; }
-  .pl label { color: var(--color-tx); }
-  .pl select { justify-self: start; margin: 2px 0; padding: 2px 6px; border-radius: 7px; border: 1px solid var(--color-line); background: var(--color-panel3); color: var(--color-tx); font: inherit; font-size: 12px; }
+  .row.sub { margin-top: 4px; padding-top: 8px; border-top: 1px dashed var(--color-line); }
+  .ml { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .ml label { flex: 0 1 auto; min-width: 0; }
+  .row.off .ml label { opacity: .55; }
+  .del { appearance: none; border: 0; background: none; color: var(--color-tx3); cursor: pointer; font-size: 15px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
+  .del:hover { background: var(--color-panel3); color: var(--color-tx); }
+  .fold { appearance: none; border: 0; background: none; font: inherit; font-size: 12px; color: var(--color-tx3); cursor: pointer; justify-self: start; padding: 2px 8px 2px 26px; border-radius: 6px; }
+  .fold:hover { color: var(--color-tx); }
+  .caret { display: inline-block; transition: transform .15s; }
+  .caret.open { transform: rotate(180deg); }
+  .addbtn { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--color-tx3); padding: 8px; border-radius: var(--radius-md); background: transparent; border: 1px dashed var(--color-line2); }
+  .addbtn:hover { border-color: var(--color-lav); color: var(--color-tx); }
+  .add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid var(--color-line); }
+  .add .txt { all: unset; box-sizing: border-box; flex: 1 1 100%; padding: 5px 10px; border-radius: 8px; font-size: 13px; color: var(--color-tx); background: var(--color-panel); border: 1px solid var(--color-line); user-select: text; }
+  .add .txt:focus { border-color: var(--color-lav); }
+  .add select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-tx); font: inherit; font-size: 12.5px; }
+  .add :global(.nb) { width: 140px; }
+  .add .acts { display: flex; gap: 6px; margin-left: auto; }
+  .plain { padding-top: 6px; border-top: 1px dashed var(--color-line); }
+  .pl { display: grid; line-height: 1.3; color: var(--color-tx); }
   .nolimit { text-align: right; color: var(--color-tx3); font-size: 12px; padding-right: 10px; }
   .bc { grid-template-columns: 18px minmax(0, 1fr) 216px; padding-top: 4px; border-top: 1px dashed var(--color-line); }
   .want { display: grid; gap: 3px; }
@@ -115,7 +187,9 @@
     .row.head span:nth-child(2) { display: none; }
     .row.head span:nth-child(n+3) { text-align: left; }
     .row + .row:not(.bc) { padding-top: 6px; border-top: 1px solid var(--color-line); }
-    .row.plain > .pl { grid-column: 2 / -1; }
-    .pl label { grid-column: auto; }
+    .row.plain > .pl, .row.m > .ml { grid-column: 2 / -1; }
+    .row.plain > :nth-child(3) { display: none; }
+    .ml label { grid-column: auto; }
+    .row.m > .nolimit { text-align: left; padding: 0; }
   }
 </style>

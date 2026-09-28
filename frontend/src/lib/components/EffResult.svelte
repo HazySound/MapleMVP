@@ -81,7 +81,9 @@
     return m
   })
   const firstOfMonth = (i: number) => !pick || i === 0 || pick.weeks[i - 1].w.month !== pick.weeks[i].w.month
-  const monthLine = (month: string) => eff.cards.filter(c => c.on).map(c => `${c.name} ${byMonth[month]?.[c.name]?.join(', ') ?? '안 씀'}`).join(' · ')
+  // 달 한도가 있는 결제수단만(상품권 + 직접 추가한 것 중 한도가 있는 것)
+  const monthLine = (month: string) => [...eff.cards.filter(c => c.on), ...eff.methods.filter(m => m.on && m.monthly)]
+    .map(c => `${c.name} ${byMonth[month]?.[c.name]?.join(', ') ?? '안 씀'}`).join(' · ')
   const setWeekBc = (start: string, v: number) => { if (v) eff.weekBarcode[start] = v; else delete eff.weekBarcode[start]; saveEff() }
 </script>
 
@@ -197,7 +199,7 @@
             <tbody>
               {#each pick.weeks as w, i (w.w.start)}
                 {#if firstOfMonth(i)}
-                  <tr class="month"><td colspan={7 + (SHOP.barcode.on ? 1 : 0) + (out.credit ? 1 : 0)}><b>{Number(w.w.month.slice(5))}월 상품권 한도</b> ({i === 0 ? '2번에 넣은 남은 한도' : '각 200,000원 새로'}) — {monthLine(w.w.month)}</td></tr>
+                  <tr class="month"><td colspan={7 + (SHOP.barcode.on ? 1 : 0) + (out.credit ? 1 : 0)}><b>{Number(w.w.month.slice(5))}월 결제수단 한도</b> ({i === 0 ? '2번에 넣은 남은 한도' : '달마다 새로'}) — {monthLine(w.w.month)}</td></tr>
                 {/if}
                 <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
                   <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}</td>
