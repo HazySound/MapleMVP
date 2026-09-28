@@ -13,6 +13,9 @@ export const SHOP = shop as { updated: string; barcode: BarcodeEvent; items: Sho
 
 const KEY = 'maplemvp.eff'
 
+/** 처음 목록. 나머지는 '아이템 추가'에서 골라 넣는다 */
+export const DEFAULT_PICK = [PG_ID, 'wonder1', 'wonder11', 'tiniping1', 'tiniping10', 'royal1', 'royal10', 'royal20']
+
 /** 한국 시간 기준 이번 달 'YYYY-MM' */
 export const thisMonth = () => new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 7)
 
@@ -44,8 +47,12 @@ interface Saved {
   feeOverride: number | null
   want: Want
   salesN: number
-  /** 플가 대비를 개수로 볼지(1.04플가), 플가 가격으로 볼지(3.12억) */
-  pgView: 'ratio' | 'price'
+  /** 효율 칸: 플가 몇 개(1.04플가), 플가 가격으로(3.12억), 회수율(82.4%) */
+  pgView: 'ratio' | 'price' | 'rate'
+  /** 가격표에 올려 둔 아이템. 여기 없는 아이템은 계산에서도 빠진다. 플가는 기준이라 늘 들어간다 */
+  picked: string[]
+  /** 목록 빼기가 생기기 전부터 쓰던 사람에게 한 번 알려 준다 */
+  listNews: boolean
   /** 사용자가 직접 추가한 아이템. 기본 목록에 없는 걸로 작하는 사람을 위해 */
   custom: ShopItem[]
   /** 가격표에서 플가보다 손해인 아이템을 접어 둔다 */
@@ -70,7 +77,7 @@ function fresh(): Saved {
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })),
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', custom: [], hideLoss: false,
+    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000,
   }
 }
@@ -80,7 +87,14 @@ function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return base
-    const s = { ...base, ...JSON.parse(raw) } as Saved & { held?: { cash: number }; saleCost?: number }
+    const got = JSON.parse(raw) as Partial<Saved>
+    const s = { ...base, ...got } as Saved & { held?: { cash: number }; saleCost?: number }
+    // 목록 고르기가 생기기 전부터 쓰던 사람: 갑자기 아이템이 빠지면 헷갈리니 그때 보던 목록을 그대로 둔다.
+    // 기본 4종으로 시작하는 건 처음 쓰는 사람만
+    if (!got.picked) {
+      s.picked = [...SHOP.items.map(x => x.id), ...(s.custom ?? []).map(c => c.id)]
+      s.listNews = true
+    }
     delete s.saleCost
     // 크레딧이 생기기 전에 저장한 값에는 큐브 가격이 없다. 기본값을 채워 둔다
     s.creditPrices = { ...base.creditPrices, ...s.creditPrices }
@@ -146,18 +160,35 @@ export function ageOf(k: string, now = Date.now()): string {
   return d <= 0 ? '오늘 넣은 값' : d === 1 ? '어제 넣은 값' : `${d}일 전에 넣은 값`
 }
 
-/** 기본 목록 + 직접 추가한 것. 판매 기간이 끝난 상품은 살 수 없으니 뺀다 */
-export const shopItems = (): ShopItem[] => [
+/** 고를 수 있는 아이템 전부: 프리셋 + 직접 만든 것. 판매 기간이 끝난 상품은 살 수 없으니 뺀다 */
+export const catalog = (): ShopItem[] => [
   ...SHOP.items.filter(x => !x.until || x.until >= new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10)),
   ...eff.custom,
 ]
 
-/** 직접 추가한 아이템을 넣거나 고친다 */
+/** 가격표에 올려 둔 아이템. 계산도 이것만 한다 */
+export const shopItems = (): ShopItem[] => catalog().filter(x => x.id === PG_ID || eff.picked.includes(x.id))
+
+/** 목록에 넣는다 */
+export function pickItem(id: string) {
+  if (!eff.picked.includes(id)) eff.picked.push(id)
+  saveEff()
+}
+
+/** 목록에서 뺀다. 넣어 둔 가격은 남겨 둬서 다시 넣으면 그대로 돌아온다 */
+export function unpickItem(id: string) {
+  if (id === PG_ID) return
+  eff.picked = eff.picked.filter(x => x !== id)
+  saveEff()
+}
+
+/** 직접 만든 아이템을 넣거나 고친다. 새로 만들면 목록에도 넣는다 */
 export function saveCustom(x: Omit<ShopItem, 'id' | 'custom'>, id?: string) {
   const item: ShopItem = { ...x, id: id ?? `c${Date.now().toString(36)}`, custom: true }
   const i = eff.custom.findIndex(c => c.id === item.id)
   if (i >= 0) eff.custom[i] = item
   else eff.custom.push(item)
+  if (!eff.picked.includes(item.id)) eff.picked.push(item.id)
   saveEff()
   return item.id
 }
@@ -174,9 +205,22 @@ export function removeCreditItem(id: string) {
   saveEff()
 }
 
+/** 직접 만든 아이템을 아예 지운다(추가 후보에서도 빠진다). 되돌리기용으로 지운 것을 돌려준다 */
 export function removeCustom(id: string) {
+  const item = eff.custom.find(c => c.id === id)
+  const price = eff.prices[id]
   eff.custom = eff.custom.filter(c => c.id !== id)
+  eff.picked = eff.picked.filter(x => x !== id)
   delete eff.prices[id]
+  saveEff()
+  return item ? { item, price } : null
+}
+
+/** 지운 직접 만든 아이템을 되살린다 */
+export function restoreCustom(x: { item: ShopItem; price?: number }, picked: boolean) {
+  if (!eff.custom.some(c => c.id === x.item.id)) eff.custom.push(x.item)
+  if (x.price) eff.prices[x.item.id] = x.price
+  if (picked && !eff.picked.includes(x.item.id)) eff.picked.push(x.item.id)
   saveEff()
 }
 

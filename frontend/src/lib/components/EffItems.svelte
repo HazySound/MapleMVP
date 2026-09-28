@@ -8,11 +8,15 @@
    *
    * 목록에는 플가도 한 줄로 들어가 경계선 노릇을 한다. 위는 플가보다 이득, 아래는 손해.
    * 플가 가격은 기준이라 왼쪽에서만 넣는다.
+   *
+   * 목록은 사람마다 고른다. 처음에는 자주 쓰는 몇 가지만 있고, 나머지는 '아이템 추가'에서
+   * 이름 일부를 치면 후보가 떠서 고른다. 없는 이름이면 그 자리에서 직접 만든다.
+   * 빼기는 한 번에 되고 되돌릴 수 있다. 넣어 둔 가격은 남겨 둬서 다시 넣으면 그대로다.
    */
   import NumBox from './NumBox.svelte'
-  import { ageOf, eff, removeCustom, saveCustom, saveEff, shopItems, touch } from '../eff.svelte'
+  import { ageOf, catalog, eff, pickItem, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, unpickItem } from '../eff.svelte'
   import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
-  import { won } from '../format'
+  import { eul, won } from '../format'
   import { tip } from '../tip'
 
   let { fee, used }: { fee: number; used: Set<string> } = $props()
@@ -43,21 +47,61 @@
   const rows = $derived([...order, ...items.map(x => x.id).filter(id => !order.includes(id))]
     .map(id => items.find(x => x.id === id)).filter(x => !!x))
 
-  // ---- 직접 추가 ----
+  // ---- 추가: 이름 일부를 치면 후보가 뜬다. 없는 이름이면 직접 만든다 ----
   let adding = $state(false)
   let editing = $state<string | null>(null)
   let form = $state({ name: '', cash: 0, set: 1, days: 0 })
-  const openAdd = () => { editing = null; form = { name: '', cash: 0, set: 1, days: 0 }; adding = true }
+  let hi = $state(0)
+  let nameEl = $state<HTMLInputElement>()
+  const openAdd = () => { editing = null; form = { name: '', cash: 0, set: 1, days: 0 }; hi = 0; adding = true; queueMicrotask(() => nameEl?.focus()) }
   const openEdit = (x: ShopItem) => { editing = x.id; form = { name: x.name, cash: x.cash, set: x.set, days: x.days ?? 0 }; adding = true }
+  const closeAdd = () => { adding = false; editing = null }
+  // 띄어쓰기·괄호를 무시하고 찾는다: '원더베리11' → '위습의 원더베리(11개)'
+  const norm = (t: string) => t.toLowerCase().replace(/[\s()]/g, '')
+  const outside = $derived(catalog().filter(x => x.id !== PG_ID && !eff.picked.includes(x.id)))
+  const q = $derived(norm(form.name))
+  const cands = $derived(editing ? [] : outside.filter(x => norm(itemLabel(x)).includes(q)).slice(0, 8))
+  const inList = $derived(!!q && items.some(x => norm(itemLabel(x)) === q || norm(x.name) === q))
+  const known = $derived(!!q && outside.some(x => norm(itemLabel(x)) === q || norm(x.name) === q))
+  // 후보에 없는 새 이름일 때만 캐시가·묶음·기간 칸을 연다
+  const making = $derived(!!editing || (!!q && !inList && !known && !cands.length))
   const canSave = $derived(form.name.trim().length > 0 && form.cash > 0 && form.set >= 1)
+  function choose(x: ShopItem) {
+    pickItem(x.id)
+    form.name = ''; hi = 0
+    nameEl?.focus()
+  }
+  function keys(e: KeyboardEvent) {
+    if (e.key === 'Escape') { closeAdd(); return }
+    if (!cands.length) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); hi = (hi + 1) % cands.length }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); hi = (hi - 1 + cands.length) % cands.length }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(cands[Math.min(hi, cands.length - 1)]) }
+  }
   function submit(e: Event) {
     e.preventDefault()
-    if (!canSave) return
+    if (!making || !canSave) return
     // 캐시가나 묶음 개수가 바뀌면 전에 넣은 경매장 가격은 다른 물건 값이라 비운다
     const old = editing ? items.find(x => x.id === editing) : null
     if (old && (old.cash !== Math.round(form.cash) || old.set !== Math.max(1, Math.round(form.set)))) delete eff.prices[old.id]
     saveCustom({ name: form.name.trim(), cash: Math.round(form.cash), set: Math.max(1, Math.round(form.set)), ...(form.days ? { days: form.days } : {}) }, editing ?? undefined)
-    adding = false; editing = null
+    if (editing) closeAdd()
+    else { form = { name: '', cash: 0, set: 1, days: 0 }; nameEl?.focus() }
+  }
+
+  // ---- 빼기: 확인 창 대신 바로 빼고 잠깐 되돌리기를 띄운다 ----
+  type Undo = { text: string; undo: () => void }
+  let undo = $state<Undo | null>(null)
+  let undoTimer: number | undefined
+  const offer = (u: Undo) => { undo = u; clearTimeout(undoTimer); undoTimer = window.setTimeout(() => (undo = null), 7000) }
+  function drop(x: ShopItem) {
+    unpickItem(x.id)
+    offer({ text: `${itemLabel(x)}${eul(itemLabel(x).replace(/\)$/, ''))} 목록에서 뺐어요. 넣어 둔 가격은 남아 있어요.`, undo: () => pickItem(x.id) })
+  }
+  function forget(x: ShopItem) {
+    const was = eff.picked.includes(x.id)
+    const r = removeCustom(x.id)
+    if (r) offer({ text: `내가 추가한 ${itemLabel(x)}${eul(itemLabel(x).replace(/\)$/, ''))} 지웠어요.`, undo: () => restoreCustom(r, was) })
   }
   const lossCount = $derived(rows.filter(x => zone(x) === 'down').length)
   const shown = $derived(eff.hideLoss ? rows.filter(x => zone(x) !== 'down') : rows)
@@ -67,10 +111,19 @@
   const mkEff = $derived(pg && eff.mk ? (1 / eff.mk) / (pg * (1 - fee) / pgItem.cash) : 0)
   const setPrice = (id: string, v: number) => { if (v) eff.prices[id] = v; else delete eff.prices[id]; touch(`p:${id}`); saveEff() }
   const fx = (v: number) => (Math.round(v * 100) / 100).toFixed(2)
-  const showRatio = $derived(eff.pgView === 'ratio')
-  /** 효율 칸: 몇 플가인지, 또는 플가를 얼마에 판 셈인지 */
-  const cell = (e: number) => showRatio ? `${e.toFixed(2)}플가` : `${fx(pg * e)}억`
-  const other = (e: number) => showRatio ? `플가를 ${fx(pg * e)}억에 판 것과 같아요` : `${e.toFixed(2)}플가 · 플가보다 ${e >= 1 ? `${((e - 1) * 100).toFixed(1)}% 이득` : `${((1 - e) * 100).toFixed(1)}% 손해`}`
+  /** 플가의 회수율. 효율 e인 아이템의 회수율은 그 e배다(캐시 1원어치를 팔아 받는 돈) */
+  const pgRate = $derived(pg && eff.um ? pg * (1 - fee) * eff.um / pgItem.cash : 0)
+  const VIEWS = { ratio: '플가 몇 개', price: '플가 가격으로', rate: '회수율' } as const
+  const head = $derived(({ ratio: '플가 대비', price: '플가로 치면', rate: '회수율' } as const)[eff.pgView])
+  const pct = (e: number) => pgRate ? `${(e * pgRate * 100).toFixed(1)}%` : '—'
+  /** 효율 칸: 몇 플가인지, 플가를 얼마에 판 셈인지, 회수율 */
+  const cell = (e: number) => eff.pgView === 'ratio' ? `${e.toFixed(2)}플가` : eff.pgView === 'price' ? `${fx(pg * e)}억` : pct(e)
+  // 말풍선에는 나머지 둘을 보여 준다
+  const other = (e: number) => [
+    eff.pgView !== 'ratio' ? `${e.toFixed(2)}플가(플가보다 ${e >= 1 ? `${((e - 1) * 100).toFixed(1)}% 이득` : `${((1 - e) * 100).toFixed(1)}% 손해`})` : '',
+    eff.pgView !== 'price' ? `플가를 ${fx(pg * e)}억에 판 셈` : '',
+    eff.pgView !== 'rate' && pgRate ? `회수율 ${pct(e)}` : '',
+  ].filter(Boolean).join(' · ')
 </script>
 
 <article class="card">
@@ -95,14 +148,22 @@
         <span><i class="down"></i>플가보다 손해</span>
         <span><em class="buy">구매</em>지금 고른 루트에서 사는 아이템</span>
         <label class="hide"><input type="checkbox" bind:checked={eff.hideLoss} onchange={saveEff} />플가보다 손해인 것 숨기기{#if lossCount} ({lossCount}){/if}</label>
-        <div class="ef-seg view" role="group" aria-label="플가 대비 보기">
-          <button aria-pressed={showRatio} onclick={() => { eff.pgView = 'ratio'; saveEff() }}>플가 몇 개</button>
-          <button aria-pressed={!showRatio} onclick={() => { eff.pgView = 'price'; saveEff() }}>플가 가격으로</button>
-        </div>
+        <label class="view" use:tip={'회수율: 수수료 빼고 받는 메소를 엄 시세로 바꾼 돈 ÷ 캐시가'}>
+          효율 보기
+          <select bind:value={eff.pgView} onchange={saveEff}>
+            {#each Object.entries(VIEWS) as [k, t] (k)}<option value={k}>{t}</option>{/each}
+          </select>
+        </label>
       </div>
+      {#if eff.listNews}
+        <div class="news" role="note">
+          <span><b>새로 생겼어요</b> 필요 없는 아이템은 줄 오른쪽 <b>×</b>로 목록에서 뺄 수 있어요. 넣어 둔 가격은 남아서, <b>아이템 추가</b>에서 다시 넣으면 그대로 돌아와요.</span>
+          <button type="button" onclick={() => { eff.listNews = false; saveEff() }}>알겠어요</button>
+        </div>
+      {/if}
       <div class="tbl">
         <table>
-          <thead><tr><th>아이템</th><th>캐시가</th><th>이 가격 넘으면 플가보다 이득</th><th>경매장 실제 가격</th><th>{showRatio ? '플가 대비' : '플가로 치면'}</th></tr></thead>
+          <thead><tr><th>아이템</th><th>캐시가</th><th>이 가격 넘으면 플가보다 이득</th><th>경매장 실제 가격</th><th>{head}</th></tr></thead>
           <tbody>
             {#each shown as x (x.id)}
               {@const e = effOf(x)}
@@ -117,12 +178,14 @@
                     {#if x.until}<em class="tag" use:tip={`캐시샵 판매는 ${Number(x.until.slice(5, 7))}월 ${Number(x.until.slice(8))}일까지`}>~{Number(x.until.slice(5, 7))}/{Number(x.until.slice(8))}</em>{/if}
                     {#if x.custom}<em class="tag mine">내가 추가</em>{/if}
                     {#if used.has(x.id)}<em class="buy">구매</em>{/if}
-                    {#if x.custom}
+                    {#if x.id !== PG_ID}
                       <span class="acts">
-                        <button type="button" onclick={() => openEdit(x)} aria-label="{itemLabel(x)} 고치기" use:tip={'고치기'}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-                        </button>
-                        <button type="button" onclick={() => removeCustom(x.id)} aria-label="{itemLabel(x)} 지우기" use:tip={'지우기'}>
+                        {#if x.custom}
+                          <button type="button" onclick={() => openEdit(x)} aria-label="{itemLabel(x)} 고치기" use:tip={'고치기'}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                          </button>
+                        {/if}
+                        <button type="button" class="out" onclick={() => drop(x)} aria-label="{itemLabel(x)} 목록에서 빼기" use:tip={'목록에서 빼기 (가격은 남아요)'}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
                         </button>
                       </span>
@@ -161,13 +224,47 @@
         </table>
       </div>
 
+      {#if undo}
+        <div class="undo" role="status">
+          <span>{undo.text}</span>
+          <button type="button" onclick={() => { undo?.undo(); undo = null }}>되돌리기</button>
+        </div>
+      {/if}
+
       {#if adding}
         <form class="add" onsubmit={submit}>
-          <b class="at">{editing ? '추가한 아이템 고치기' : '아이템 직접 추가'}</b>
+          <b class="at">{editing ? '직접 만든 아이템 고치기' : '아이템 추가'}</b>
           <div class="ef-field nm2">
-            <label for="eff-add-name">이름</label>
-            <input id="eff-add-name" class="txt" type="text" placeholder="예: 골드 애플" bind:value={form.name} maxlength="40" />
+            <label for="eff-add-name">이름 {#if !editing}<span class="u">일부만 쳐도 후보가 떠요</span>{/if}</label>
+            <input id="eff-add-name" class="txt" type="text" autocomplete="off" placeholder={editing ? '' : '예: 원더베리, 로얄, 골드 애플'}
+              bind:this={nameEl} bind:value={form.name} maxlength="40" oninput={() => (hi = 0)} onkeydown={keys}
+              role="combobox" aria-expanded={cands.length > 0} aria-controls="eff-add-list" aria-autocomplete="list" />
+            {#if !editing && cands.length}
+              <ul class="cands" id="eff-add-list" role="listbox">
+                {#each cands as x, i (x.id)}
+                  <li role="option" aria-selected={i === hi} class:on={i === hi}>
+                    <button type="button" class="pick" onclick={() => choose(x)} onmouseenter={() => (hi = i)}>
+                      <span>{itemLabel(x)}</span>
+                      <em class="tag" class:short={isShort(x)} class:forever={!x.days}>{daysLabel(x)}</em>
+                      {#if x.custom}<em class="tag mine">내가 추가</em>{/if}
+                      <span class="c mono">{won(x.cash)}캐시</span>
+                      {#if eff.prices[x.id]}<span class="c mono">· {eff.prices[x.id]}억</span>{/if}
+                    </button>
+                    {#if x.custom}
+                      <button type="button" class="forget" onclick={() => forget(x)} aria-label="{itemLabel(x)} 아예 지우기" use:tip={'내가 추가한 아이템을 아예 지워요'}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                      </button>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {:else if !editing && inList}
+              <span class="ef-hint">이미 목록에 있어요.</span>
+            {:else if !editing && !q && !outside.length}
+              <span class="ef-hint">프리셋은 모두 목록에 있어요. 새 이름을 치면 직접 만들 수 있어요.</span>
+            {/if}
           </div>
+          {#if making}
           <div class="ef-field">
             <label for="eff-add-cash">캐시 가격 <span class="u">묶음이면 묶음 전체</span></label>
             <NumBox id="eff-add-cash" label="캐시 가격" unit="캐시" placeholder="예: 5,900" value={form.cash} set={v => (form.cash = v)} />
@@ -184,23 +281,26 @@
               {/each}
             </div>
           </div>
+          {/if}
           <div class="btns">
-            <button type="button" class="btn" onclick={() => { adding = false; editing = null }}>취소</button>
-            <button type="submit" class="btn primary" disabled={!canSave}>{editing ? '고치기' : '추가'}</button>
+            <button type="button" class="btn" onclick={closeAdd}>{making ? '취소' : '닫기'}</button>
+            {#if making}<button type="submit" class="btn primary" disabled={!canSave}>{editing ? '고치기' : '새로 만들어 추가'}</button>{/if}
           </div>
-          <p class="ef-hint wide">
-            {#if canSave && pg}이 가격이면 플가 기준가는 <b>{fx(minPrice(pg, form.cash))}억</b>이에요. 추가한 뒤 경매장 실제 가격을 넣으면 계산에 들어가요.{:else}이름과 캐시 가격을 넣으면 플가 기준가가 자동으로 붙어요. 이 브라우저에만 저장돼요.{/if}
-          </p>
+          {#if making}
+            <p class="ef-hint wide">
+              {#if canSave && pg}이 가격이면 플가 기준가는 <b>{fx(minPrice(pg, form.cash))}억</b>이에요. 추가한 뒤 경매장 실제 가격을 넣으면 계산에 들어가요.{:else}후보에 없는 이름이에요. 캐시 가격을 넣으면 새로 만들어요. 다음부터는 후보에 떠요.{/if}
+            </p>
+          {/if}
         </form>
       {:else}
         <button class="addbtn" onclick={openAdd}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          목록에 없는 아이템 직접 추가
+          아이템 추가{#if outside.length}<span class="more">{outside.length}개 더 있어요</span>{/if}
         </button>
       {/if}
     </div>
   </div>
-  <p class="ef-hint">흐린 숫자가 기준이에요. 경매장에서 확인한 실제 가격을 넣으면(기준보다 높아도, 낮아도) 그 값으로 계산하고, 칸을 벗어나면 효율 순으로 다시 줄 서요. 비워 둔 아이템은 계산에서 빠져요. 효율 칸에 마우스를 올리면 플가를 얼마에 판 셈인지(또는 몇 플가인지) 나와요.</p>
+  <p class="ef-hint">흐린 숫자가 기준이에요. 경매장에서 확인한 실제 가격을 넣으면(기준보다 높아도, 낮아도) 그 값으로 계산하고, 칸을 벗어나면 효율 순으로 다시 줄 서요. 비워 둔 아이템은 계산에서 빠져요. 효율 칸에 마우스를 올리면 다른 보기 값도 나와요. 목록에서 뺀 아이템은 계산에서도 빠져요.</p>
 </article>
 
 <style>
@@ -221,7 +321,12 @@
   .legend i.up { background: var(--color-mint); }
   .legend i.down { background: var(--color-peach); }
   .legend i.pgk { background: var(--color-lav); }
-  .view { margin-left: auto; }
+  .view { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--color-tx3); cursor: help; }
+  .view select {
+    font: inherit; font-size: 12.5px; color: var(--color-tx); padding: 4px 8px; border-radius: 8px; cursor: pointer;
+    background: var(--color-bg2); border: 1px solid var(--color-line);
+  }
+  .view select:focus { outline: none; border-color: var(--color-lav); }
   .hide { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--color-tx2); }
   .hide input { accent-color: var(--color-lav); margin: 0; }
   .folded td { text-align: center; padding: 4px; background: var(--color-bg2); }
@@ -269,6 +374,39 @@
   .acts button { appearance: none; border: 0; background: none; cursor: pointer; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--color-tx3); }
   .acts button:hover { background: var(--color-panel3); color: var(--color-tx); }
   .acts svg { width: 13px; height: 13px; }
+  /* 빼기 단추는 줄에 마우스를 올렸을 때만 또렷하게. 손가락 화면은 늘 보인다 */
+  .acts .out { opacity: .55; }
+  tr:hover .acts .out, .acts .out:focus-visible { opacity: 1; }
+  .acts .out:hover { color: var(--color-bad); }
+  @media (hover: none) { .acts .out { opacity: .8; } }
+  .undo {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px;
+    font-size: 12.5px; color: var(--color-tx2); background: var(--color-panel3); border: 1px solid var(--color-line2);
+  }
+  .undo button { appearance: none; border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color-lav); background: none; padding: 2px 6px; border-radius: 6px; }
+  .undo button:hover { background: color-mix(in oklab, var(--color-lav) 14%, transparent); }
+  .news {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 9px 12px; border-radius: 10px;
+    font-size: 12.5px; color: var(--color-tx2); line-height: 1.5;
+    background: color-mix(in oklab, var(--color-lav) 12%, transparent); border: 1px solid color-mix(in oklab, var(--color-lav) 40%, transparent);
+  }
+  .news b { color: var(--color-lav); font-weight: 600; }
+  .news button { appearance: none; border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--color-on-accent); background: var(--color-lav); padding: 4px 12px; border-radius: 8px; }
+  .addbtn .more { font-size: 11.5px; color: var(--color-tx3); margin-left: 4px; }
+  .cands {
+    list-style: none; margin: 4px 0 0; padding: 4px; display: grid; gap: 1px; max-height: 280px; overflow-y: auto;
+    border-radius: 10px; background: var(--color-panel); border: 1px solid var(--color-line2);
+  }
+  .cands li { display: flex; align-items: center; border-radius: 8px; }
+  .cands li.on { background: color-mix(in oklab, var(--color-lav) 14%, transparent); }
+  .cands .pick {
+    flex: 1; min-width: 0; appearance: none; border: 0; background: none; cursor: pointer; font: inherit; font-size: 13px; color: var(--color-tx);
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 10px; text-align: left;
+  }
+  .cands .c { font-size: 11.5px; color: var(--color-tx3); }
+  .cands .forget { appearance: none; border: 0; background: none; cursor: pointer; width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--color-tx3); }
+  .cands .forget:hover { color: var(--color-bad); background: var(--color-panel3); }
+  .cands .forget svg { width: 14px; height: 14px; }
   .addbtn {
     appearance: none; cursor: pointer; font: inherit; font-size: 13px; color: var(--color-tx2);
     display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: var(--radius-md);
