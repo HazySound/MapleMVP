@@ -96,7 +96,7 @@
   const offer = (u: Undo) => { undo = u; clearTimeout(undoTimer); undoTimer = window.setTimeout(() => (undo = null), 7000) }
   function drop(x: ShopItem) {
     unpickItem(x.id)
-    offer({ text: `${itemLabel(x)}${eul(itemLabel(x).replace(/\)$/, ''))} 목록에서 뺐어요. 넣어 둔 가격은 남아 있어요.`, undo: () => pickItem(x.id) })
+    offer({ text: `${itemLabel(x)}${eul(itemLabel(x).replace(/\)$/, ''))} 목록에서 뺐어요. 다시 추가하면 입력값이 그대로 돌아와요.`, undo: () => pickItem(x.id) })
   }
   function forget(x: ShopItem) {
     const was = eff.picked.includes(x.id)
@@ -185,7 +185,7 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
                           </button>
                         {/if}
-                        <button type="button" class="out" onclick={() => drop(x)} aria-label="{itemLabel(x)} 목록에서 빼기" use:tip={'목록에서 빼기 (가격은 남아요)'}>
+                        <button type="button" class="out" onclick={() => drop(x)} aria-label="{itemLabel(x)} 목록에서 빼기" use:tip={'목록에서 빼기'}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
                         </button>
                       </span>
