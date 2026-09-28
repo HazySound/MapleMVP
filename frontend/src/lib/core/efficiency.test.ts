@@ -43,17 +43,16 @@ describe('충전 단위', () => {
     expect(f.cost).toBeCloseTo(230_000)
   })
 
-  it('5만 원이 안 되는 부분은 3천 원 단위, 넘치게 사지 않고 끝자리는 일반 충전', () => {
+  it('상품권은 5만원권만, 넘치게 사지 않고 끝자리는 일반 충전', () => {
     const f = fund(120_000, ctx())
-    expect(f.parts[0]).toMatchObject({ cash: 118_000, big: 2, small: 18_000 })
-    expect(f.parts[1]).toMatchObject({ name: '일반 충전', cash: 2_000 })
-    expect(f.cost).toBeCloseTo(118_000 * 0.9 + 2_000)
+    expect(f.parts[0]).toMatchObject({ cash: 100_000, big: 2 })
+    expect(f.parts[1]).toMatchObject({ name: '일반 충전', cash: 20_000 })
+    expect(f.cost).toBeCloseTo(100_000 * 0.9 + 20_000)
   })
 
-  it('남은 한도가 5만 원보다 적으면 3천 원 단위로만', () => {
+  it('남은 한도가 5만 원보다 적으면 상품권은 못 쓴다', () => {
     const f = fund(100_000, ctx({ limits: { nexon: 31_000 } }))
-    expect(f.parts[0]).toMatchObject({ cash: 30_000, big: 0, small: 30_000 })
-    expect(f.parts[1].cash).toBe(70_000)
+    expect(f.parts.map(p => [p.name, p.cash])).toEqual([['일반 충전', 100_000]])
   })
 
   it('바코드 추가분이 한도를 넘으면 그 뒤는 1:1', () => {
@@ -156,8 +155,7 @@ describe('주별 상품권 한도', () => {
     expect(cash(2)).toEqual([['컬쳐랜드', 150_000], ['일반 충전', 100_000]])
     for (const w of res) expect(w.solved.best.pay).toBe(250_000)
   })
-  it('한 달 한도는 5만원권으로 먼저 나눠 쓰고, 3천 원 단위가 뒤 주의 5만원권을 막지 않게 한다', () => {
-    // 첫 주에 도서 5만원권 1장 + 3천 원 1장을 사면 한도가 3천 원 깎여 둘째 주에 5만원권 한 장이 안 들어간다
+  it('한 달 한도를 5만원권으로 주마다 나눠 쓰고, 끝자리는 일반 충전', () => {
     const res = planAll({
       weeks: [
         { start: '2026-10-01', amount: 255_000, tier: 'gold', month: '2026-10' },

@@ -8,7 +8,7 @@
  * - 효율의 기준은 플가(플래티넘 카르마의 가위). 다른 아이템의 기준 가격은 플가 가격에 캐시가 비율을 곱한 것
  * - 묶음은 통째로 사고 통째로 판다. 가격은 묶음 전체 가격이고 판매 1회
  * - 경매장 수수료는 사는 순간 오를 등급으로 정한다. 실버 이상 3%, 아니면 5%
- * - 상품권은 권 단위로 산다. 5만원권이 먼저, 5만 원이 안 되는 부분은 3천 원 단위. 넘치게 사지 않는다
+ * - 상품권은 5만원권으로만 산다(2026-09-28 사용자 결정: 작은 권은 할인도 적고 MVP작에선 잘 안 쓴다). 넘치게 사지 않는다
  * - 권으로 딱 맞지 않는 끝자리는 바코드(이벤트 때만) 또는 일반 충전(기본 1:1, 할인을 넣으면 그 비율)
  * - 상품권 한도는 달마다 새로 생긴다(각 20만 원)
  */
@@ -17,7 +17,6 @@ import type { TierKey } from './mvp'
 export const PG_ID = 'karma'
 export const MONTHLY = 200_000
 export const BIG = 50_000
-export const SMALL = 3_000
 /** 계산 단위. 캐시템 값이 모두 100원 단위다 */
 const U = 100
 
@@ -78,9 +77,8 @@ export interface Part {
   cash: number
   won: number
   card?: boolean
-  /** 5만원권 장수, 3천 원 단위로 채운 금액 */
+  /** 5만원권 장수 */
   big?: number
-  small?: number
   /** 바코드로 더 받은 캐시 */
   bonus?: number
   held?: boolean
@@ -116,10 +114,9 @@ export function fund(c: number, x: FundCtx): Funding {
     if (left <= 0) break
     const L = x.limits[k.key] ?? 0
     const big = Math.floor(Math.min(left, L) / BIG) * BIG
-    const small = Math.floor(Math.min(left - big, L - big) / SMALL) * SMALL
-    const use = big + small
+    const use = big
     if (use <= 0) continue
-    parts.push({ name: k.name, cash: use, won: use * k.rate, card: true, big: big / BIG, small })
+    parts.push({ name: k.name, cash: use, won: use * k.rate, card: true, big: big / BIG })
     left -= use; cost += use * k.rate
   }
   const plain = x.plain ?? 1
@@ -423,15 +420,14 @@ export interface WeekResult {
 
 /**
  * 한 달 치 상품권을 그 달의 주들에 나눈다. needs는 주마다 충전해야 할 캐시, left는 그 달 남은 한도.
- * 5만원권을 먼저 모든 주에 나눠 주고, 남은 한도로만 3천 원 단위를 채운다.
- * 주마다 5만원권·3천 원을 섞어 사면 앞 주의 3천 원 단위가 한도를 깎아 뒤 주의 5만원권 한 장을 막는다.
+ * 5만원권을 할인이 큰 상품권부터 주마다 나눠 준다.
  * 돌려주는 것: 주마다 상품권별로 쓸 금액
  */
 export function splitMonth(needs: number[], cards: Card[], left: Record<string, number>): Record<string, number>[] {
   const rest = [...needs], lim = { ...left }
   const out = needs.map(() => ({}) as Record<string, number>)
-  for (const unit of [BIG, SMALL]) for (const k of cards) for (let i = 0; i < rest.length; i++) {
-    const n = Math.floor(Math.min(rest[i], lim[k.key] ?? 0) / unit) * unit
+  for (const k of cards) for (let i = 0; i < rest.length; i++) {
+    const n = Math.floor(Math.min(rest[i], lim[k.key] ?? 0) / BIG) * BIG
     if (n <= 0) continue
     out[i][k.key] = (out[i][k.key] ?? 0) + n
     rest[i] -= n; lim[k.key] -= n

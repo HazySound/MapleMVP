@@ -73,7 +73,7 @@
     return [...m].sort((a, b) => a[1] - b[1]).map(([k, d]) => `${k}(${d}일)`)
   })
 
-  const cardDetail = (q: Part) => q.card ? [q.big ? `5만원권 ${q.big}장` : '', q.small ? `3천 원 단위 ${won(q.small)}` : ''].filter(Boolean).join(' + ') : ''
+  const cardDetail = (q: Part) => q.card && q.big ? `5만원권 ${q.big}장` : ''
   const discount = (w: WeekPick) => w.funding.parts.filter(q => !q.held).reduce((a, q) => a + q.cash - q.won, 0)
   const byMonth = $derived.by(() => {
     const m: Record<string, Record<string, string[]>> = {}
@@ -190,7 +190,7 @@
     {#if out.mode === 'plan'}
       <section class="weeks">
         <h4>주별로 보면 <span>줄을 누르면 아래 순서가 그 주로 바뀌어요</span></h4>
-        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 상품권은 그 달 한도를 <b>5만원권으로 먼저</b> 할인이 큰 것부터 주마다 나눠 쓰고, 남은 한도로만 3천 원 단위를 채워요. 3천 원 단위가 다른 주의 5만원권 자리를 먹지 않게 해요. 권으로 딱 맞지 않는 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 채워요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
+        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 상품권은 그 달 한도를 <b>5만원권으로</b> 할인이 큰 것부터 주마다 나눠 써요. 5만원권으로 딱 맞지 않는 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 채워요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
         <div class="tbl">
           <table>
             <thead><tr><th>주</th><th>결제</th><th>충전</th>{#if SHOP.barcode.on}<th>바코드로 받을 캐시</th>{/if}<th>할인 받음</th><th>판매</th>{#if out.credit}<th>크레딧</th>{/if}<th>낸 현금</th><th>실제로 나감</th></tr></thead>

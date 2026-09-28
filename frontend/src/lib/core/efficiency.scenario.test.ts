@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import shop from './cashshop.json'
 import {
-  BIG, MONTHLY, PG_ID, SMALL, feeOf, fund, planAll, routesOf,
+  BIG, MONTHLY, PG_ID, feeOf, fund, planAll, routesOf,
   type CardSetting, type CreditItem, type Plan, type RoutePick, type Sellable, type ShopItem, type WeekResult,
 } from './efficiency'
 
@@ -53,13 +53,12 @@ function checkPick(p: RoutePick, res: WeekResult[], c: Plan) {
     // 계획이면 계획 금액 그대로. 메포가 1,000원 단위라 딱 못 맞추면 1,000원 안쪽으로만 넘긴다
     if (c.exact && c.mk > 0) expect(route.pay).toBeLessThan(target + 1000)
     expect(route.market % 1000).toBe(0)
-    // 충전: 합이 결제액, 상품권은 5만원권 + 3천 원 단위, 그 주 한도 안
+    // 충전: 합이 결제액, 상품권은 5만원권만, 그 주 한도 안
     near(funding.parts.reduce((a, q) => a + q.cash, 0), route.pay)
     for (const q of funding.parts) {
       expect(q.cash).toBeGreaterThan(0)
       if (q.card) {
-        expect(q.cash).toBe((q.big ?? 0) * BIG + (q.small ?? 0))
-        expect((q.small ?? 0) % SMALL).toBe(0)
+        expect(q.cash).toBe((q.big ?? 0) * BIG)
         const key = c.cards.find(k => k.name === q.name)!.key
         expect(q.cash).toBeLessThanOrEqual(w.ctx.limits[key] ?? 0)
       }
@@ -119,12 +118,9 @@ function run(c: Case) {
 const fundOf = (x: ReturnType<typeof run>, i = 0) => x.r.best.weeks[i].funding.parts.map(q => [q.name, q.cash])
 
 describe('금액 직접: 자주 쓸 금액들', () => {
-  it('다이아까지 12,400원: 5만 원이 안 돼 3천 원 단위, 끝자리는 일반 충전', () => {
-    const x = run({ weeks: once(12_400) })
-    // 계획이 없으면 조금 넘겨 사는 게 더 남을 수 있어 결제액이 늘 수 있다. 그래도 상품권은 3천 원 단위
-    const parts = x.r.best.weeks[0].funding.parts
-    expect(parts[0]).toMatchObject({ name: '컬쳐랜드', big: 0 })
-    expect(parts[0].cash % SMALL).toBe(0)
+  it('다이아까지 12,400원: 5만 원이 안 돼 상품권 없이 일반 충전', () => {
+    const x = run({ weeks: once(12_400), exact: true })
+    expect(x.r.best.weeks[0].funding.parts.map(q => q.name)).toEqual(['일반 충전'])
   })
 
   it('25만 원: 할인 큰 컬쳐랜드 20만 + 도서문화 5만', () => {
@@ -197,9 +193,9 @@ describe('캐시 잔액·결제수단', () => {
     near(a.r.best.cost, b.r.best.cost)
   })
 
-  it('남은 한도가 31,000원이면 3천 원 단위로 30,000원만', () => {
+  it('남은 한도가 5만 원이 안 되면 상품권은 못 쓰고 일반 충전', () => {
     const x = run({ weeks: once(100_000), exact: true, cards: [CARDS[0]], leftNow: { nexon: 31_000 } })
-    expect(fundOf(x)).toEqual([['넥슨카드', 30_000], ['일반 충전', 70_000]])
+    expect(fundOf(x)).toEqual([['일반 충전', 100_000]])
   })
 
   it('바코드 이벤트: 추가분 한도에 닿으면 그 뒤는 1:1', () => {
