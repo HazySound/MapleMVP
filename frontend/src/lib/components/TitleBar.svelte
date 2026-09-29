@@ -187,6 +187,8 @@
   .tabs button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--color-tx3); padding: 5px 16px; white-space: nowrap; transition: color .25s; }
   .tabs button[aria-pressed="true"] { color: var(--color-tx); }
   .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); transform: translateX(calc(100% * var(--i, 0))); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
+  /* 게시판에서는 가리킬 탭이 없다(--i가 -1). 안 보이는 채로 왼쪽으로 밀려 로고 글자를 덮고 클릭을 가로챘다 */
+  .ind { pointer-events: none; }
   .ind.off { opacity: 0; }
   /* 문의 게시판. 넓을 때는 글자까지, 좁아지면 말풍선만 */
   .qna {
