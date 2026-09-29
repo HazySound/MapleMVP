@@ -99,7 +99,8 @@
   <!-- 이름이 비어 있다는 것은 이 계정으로 처음 왔다는 뜻이다 -->
   {#if app.web && app.user && !app.user.nick}<NameModal />{/if}
 </div>
-<ResizeHandles />
+<!-- 창 가장자리 잡는 곳은 exe에만. 웹에서는 가장자리 클릭(로고·스크롤바)을 가로챘다 -->
+{#if !app.web}<ResizeHandles />{/if}
 
 <style>
   /*

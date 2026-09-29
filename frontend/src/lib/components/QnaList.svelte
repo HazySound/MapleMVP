@@ -10,6 +10,7 @@
   import { app } from '../store.svelte'
   import { ago, board, go, loginHere } from '../qna.svelte'
   import { KIND_NAME, STATUS_NAME, TOPIC_NAME, list, type Item, type Kind } from '../web/qna'
+  import { cached, keep, keyOf, forget } from '../qnaCache'
 
   const FILTERS: { key: Kind | ''; name: string }[] = [
     { key: '', name: '전체' }, { key: 'bug', name: '버그·오류' }, { key: 'idea', name: '건의' },
@@ -25,22 +26,56 @@
   let error = $state('')
   let now = $state(Date.now())
 
+  /** 받는 중인 마지막 요청. 탭을 빨리 옮기면 늦게 온 옛 답이 새 목록을 덮지 않게 */
+  let seq = 0
+
+  /**
+   * 탭을 옮길 때마다 서버에 묻기를 기다리면 한참 가만히 있다가 바뀐다.
+   * 한 번 받은 탭은 들고 있다가 바로 보여 주고, 뒤에서 새로 받아 바꾼다.
+   * 처음 보는 탭은 옛 목록을 흐리게 하고 위에 받는 중 막대를 띄운다.
+   */
   async function load(append = false) {
-    loading = true
+    const my = ++seq
+    const key = keyOf(app.user?.id, kind, mine)
     error = ''
+    if (!append) {
+      const c = cached(key)
+      if (c) { pins = c.pins; items = c.items; more = c.more }
+      loading = !c
+    } else loading = true
     const before = append ? items[items.length - 1]?.id : 0
     const r = await list({ kind, mine, before })
+    if (my !== seq) return
     loading = false
     now = Date.now()
     if (!r.data) { error = r.error ?? '목록을 받지 못했어요'; return }
     if (!append) pins = r.data.pins
     items = append ? [...items, ...r.data.items] : r.data.items
     more = r.data.more
+    keep(key, { pins, items, more })
+    if (!append && !kind && !mine) warm()
   }
 
+  /** 전체를 받고 나면 다른 탭도 미리 받아 둔다. 눌렀을 때 바로 바뀌게 */
+  let warmed = ''
+  function warm() {
+    const uid = app.user?.id
+    if (warmed === `${uid}|${board.stale}`) return
+    warmed = `${uid}|${board.stale}`
+    for (const f of FILTERS) {
+      if (!f.key) continue
+      const key = keyOf(uid, f.key, false)
+      if (cached(key)) continue
+      void list({ kind: f.key }).then(r => { if (r.data) keep(key, r.data) })
+    }
+  }
+
+  // 글을 쓰고 지운 뒤에는 들고 있던 목록을 버린다
+  let stale = board.stale
   // 거르는 조건이 바뀌거나, 글을 쓰고 지운 뒤, 로그인이 바뀌면 다시 받는다
   $effect(() => {
-    void kind; void mine; void board.stale; void app.user?.id
+    void kind; void mine; void app.user?.id
+    if (board.stale !== stale) { stale = board.stale; forget() }
     void load()
   })
 
@@ -104,7 +139,7 @@
     {/if}
   </div>
 
-  <ul class="list">
+  <ul class="list" class:busy={loading && items.length > 0} aria-busy={loading}>
     {#each pins as p (p.id)}{@render row(p, true)}{/each}
     {#each items as p (p.id)}{@render row(p)}{/each}
   </ul>
@@ -135,7 +170,15 @@
   .mine { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--color-tx2); cursor: pointer; }
   .mine input { accent-color: var(--color-lav); margin: 0; }
 
-  .list { list-style: none; margin: 0 -6px; padding: 0; display: grid; }
+  .list { position: relative; list-style: none; margin: 0 -6px; padding: 0; display: grid; transition: opacity .15s; }
+  /* 처음 보는 탭을 받는 동안: 옛 목록은 흐리게, 위에 움직이는 막대 */
+  .list.busy { opacity: .45; pointer-events: none; }
+  .list.busy::before {
+    content: ""; position: absolute; top: -8px; left: 6px; right: 6px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-lav), transparent); background-size: 40% 100%;
+    background-repeat: no-repeat; animation: slide 1s ease-in-out infinite;
+  }
+  @keyframes slide { from { background-position: -40% 0; } to { background-position: 140% 0; } }
   .list li + li { border-top: 1px solid var(--color-line); }
   .row {
     display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 12px;

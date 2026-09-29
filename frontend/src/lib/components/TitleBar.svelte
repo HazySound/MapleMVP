@@ -42,6 +42,18 @@
     leaveBoard()
     app.view = v
   }
+
+  /**
+   * 로고를 누르면 첫 화면(현황)으로. 주소로 다시 들어가면 페이지를 통째로 새로 받느라
+   * 한동안 멈춘 것처럼 보이고, 이미 '/'에 있으면 아무 일도 없는 것처럼 보였다.
+   * 새 탭으로 열기(ctrl·가운데 단추)는 그대로 둔다
+   */
+  function home(e: MouseEvent) {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    tab('dash')
+    document.querySelector('main')?.scrollTo(0, 0)
+  }
 </script>
 
 <header class="bar">
@@ -55,7 +67,7 @@
   <!-- 웹에서는 여느 사이트처럼 첫 화면으로 돌아가는 길이다.
        exe에는 돌아갈 '홈'이 따로 없어서 그냥 이름표로 둔다 -->
   {#if app.web}
-    <a class="brand" href="/" aria-label="MapleMVP 첫 화면">{@render brand()}</a>
+    <a class="brand" href="/" onclick={home} aria-label="MapleMVP 첫 화면">{@render brand()}</a>
   {:else}
     <div class="brand">{@render brand()}</div>
   {/if}
