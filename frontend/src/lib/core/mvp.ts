@@ -10,6 +10,13 @@ export const WINDOW = 13
 export const CARRY_MAX = 10_000_000
 /** 블랙 이월 제도가 시작된 주(목요일). 그 전에는 250만을 넘긴 금액이 그냥 사라졌다 */
 export const CARRY_START = '2026-09-17'
+/**
+ * 넥슨이 '블랙 산정 구매 금액이 이월 금액에 중복 적용되는 현상'을 고친 때(2026-09-24 목 11:59, 공지).
+ * 그 전(9/17 주)에는 250만을 넘긴 결제가 합계에도 들고 이월에도 쌓였고, 인게임에 아직 그대로 남아 있다
+ * (후속 조치 공지 전). 고친 뒤로는 넘긴 몫이 이월로만 가고, 목요일에 꺼내 쓸 때 그 주 실적이 된다.
+ * 앞으로의 결제(예측·목표 계획)는 모두 고친 규칙을 따른다. 지난 기록은 후속 공지가 나오면 맞춘다
+ */
+export const CARRY_FIX = '2026-09-24'
 
 export const TIERS: Tier[] = [
   { key: 'bronze', name: '브론즈', th: 150_000 },
@@ -93,8 +100,11 @@ export function grade(total: number, carry: number): Refresh {
  * (2026-09 블랙 제보: 목요일에 쌓는다고 보면 그사이 빠져나간 주 몫을 놓친다)
  */
 export function accrue(live: number, spent: number, carry: number): number {
-  return Math.min(CARRY_MAX, carry + Math.min(spent, Math.max(0, live - BLACK.th))) - carry
+  return Math.min(CARRY_MAX, carry + over(live, spent)) - carry
 }
+
+/** 그 주 결제 중 블랙 기준을 넘긴 몫. 고친 규칙에서는 이만큼이 그 주 금액에서 빠져 이월로만 간다 */
+export const over = (live: number, spent: number) => Math.min(spent, Math.max(0, live - BLACK.th))
 
 /**
  * amounts(오래된 주 → 이번 주)로 지난 목요일 갱신들을 재현한다.
@@ -151,8 +161,9 @@ export function tierNow(last13: number[], carry: number): Tier | null {
  */
 export function forecast(last13: number[], carry: number, extra = 0): Refresh[] {
   const w = [...last13.slice(0, -1), last13[last13.length - 1] + extra]
-  // extra로 기준을 넘으면 그 몫은 바로 쌓인다
+  // extra로 기준을 넘으면 그 몫은 이월로만 간다. 그 주 금액에는 들지 않는다(CARRY_FIX)
   const added = accrue(sumOf(w), extra, carry)
+  w[w.length - 1] -= over(sumOf(w), extra)
   carry += added
   const out: Refresh[] = []
   for (let k = 0; k < WINDOW; k++) {
@@ -238,8 +249,8 @@ export interface PlanResult {
  * keep을 주면 달성 뒤 keep.weeks주 동안 매주 13주 합계(그 주 결제까지)가 기준 이상이도록
  * keep.every주마다 같은 금액을 결제하게 짠다. 첫 유지 결제 전까지는 달성 주들의 결제로 버텨야 하므로
  * 모자라면 달성 주 금액도 올린다. 고정 금액 때문에 어떻게 해도 안 되는 주는 blocked로 알려 준다.
- * 유지를 켜면 블랙 이월도 주마다 따라간다(carry = 지금 이월). 250만을 넘긴 몫은 쌓이고,
- * 목요일 갱신에서 모자라면 꺼내 그 주 금액으로 채운다(grade·accrue와 같은 규칙).
+ * 유지를 켜면 블랙 이월도 주마다 따라간다(carry = 지금 이월). 250만을 넘긴 몫은 그 주 금액에서 빠져
+ * 이월로만 가고(CARRY_FIX), 목요일 갱신에서 모자라면 꺼내 그 주 금액으로 채운다.
  */
 export function plan(last13: number[], target: Tier, t: number, fixed: Record<number, number>,
                      skipThisWeek = false, unit = 1000, keep: KeepOpt | null = null, carry = 0): PlanResult {
@@ -293,6 +304,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     win[WINDOW - 1] += amt(0)
     let c = carry
     c += accrue(sumOf(win), amt(0), c)
+    win[WINDOW - 1] -= over(sumOf(win), amt(0))
     const vals = [...win], sums = [sumOf(win)], used = [0]
     for (let o = 1; o <= end; o++) {
       win.shift()
@@ -300,9 +312,10 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
       c = r.carry
       const pay = amt(o)
       win.push(r.carryUsed + pay)
-      const live = sumOf(win)
-      c += accrue(live, pay, c)
-      vals.push(r.carryUsed + pay); sums.push(live); used.push(r.carryUsed)
+      const full = sumOf(win)
+      c += accrue(full, pay, c)
+      win[WINDOW - 1] -= over(full, pay)
+      vals.push(win[WINDOW - 1]); sums.push(sumOf(win)); used.push(r.carryUsed)
     }
     return { vals, sums, used }
   }

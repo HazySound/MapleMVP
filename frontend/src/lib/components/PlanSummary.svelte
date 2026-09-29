@@ -85,7 +85,7 @@
             <b>달성 뒤 {k.every === 1 ? '매주' : `${k.every}주마다`} <span class="mono">{won(k.per)}</span>원</b>
             {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 등급이 끊기지 않아요{k.every > 1 ? ` (주당 평균 ${won(Math.round(k.per / k.every))}원)` : ''}.
             {#if k.reachExtra}첫 유지 결제 전까지 버티도록 달성하는 주에 주당 {won(k.reachExtra)}원을 더 넣었어요.{/if}
-            {#if k.carryUsed}모자라는 목요일마다 이월에서 모두 {won(k.carryUsed)}원을 꺼내 채우는 것까지 넣었어요.{/if}
+            {#if k.carryUsed}250만을 넘긴 결제는 이월로 쌓였다가 모자라는 목요일에 채워지는 것까지 넣었어요.{/if}
           {/if}
         </div>
       </div>

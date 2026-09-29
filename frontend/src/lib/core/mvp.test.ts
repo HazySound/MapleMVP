@@ -124,6 +124,15 @@ describe('지금 등급과 지난 갱신 재현', () => {
 })
 
 describe('예측', () => {
+  it('기준을 넘긴 결제는 이월로만 간다(9/24 수정): 합계는 250만, 넘친 몫은 이월', () => {
+    const last13 = [...Array(12).fill(0), 2_500_000]
+    const f = forecast(last13, 0, 100_000)
+    expect(f[0].carryAdded).toBe(100_000)
+    expect(f[0].sum).toBe(2_500_000)
+    // 250만 주가 빠지는 13번째 갱신에 이월 10만을 꺼내 쓴다
+    expect(f[12].carryUsed).toBe(100_000)
+  })
+
   it('갱신마다 가장 오래된 주가 빠진다', () => {
     const last13 = Array(13).fill(100_000)
     const f = forecast(last13, 0)
@@ -181,13 +190,17 @@ describe('목표 계획', () => {
         tight(plan(last13, BLACK, 1, {}, true, unit, { every, weeks: 26 }), unit, 0, every)
     })
 
-    it('이월 규칙대로면 매주 유지는 빠지는 금액(250만/13)의 절반쯤이면 된다', () => {
-      // 블랙일 때 낸 결제는 합계에도 들고 넘친 만큼 이월에도 쌓인다. 모자라는 갱신에서 그 이월이 다시 채운다
+    it('기준을 넘긴 결제는 이월로만 가서(9/24 수정) 매주 유지는 250만/13쯤 든다', () => {
+      // 버그 기간처럼 합계와 이월에 두 번 들면 절반으로 줄어 보인다. 고친 규칙에서는 그렇지 않다
       const p = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 })
-      expect(p.keep!.per).toBeGreaterThan(90_000)
-      expect(p.keep!.per).toBeLessThan(110_000)
-      expect(p.keep!.carryUsed).toBeGreaterThan(0)
-      expect(p.timeline.some(w => w.carryUsed > 0)).toBe(true)
+      expect(p.keep!.per).toBeGreaterThanOrEqual(185_000)
+      expect(p.keep!.per).toBeLessThanOrEqual(200_000)
+    })
+
+    it('유지 계획의 13주 합계에는 기준을 넘긴 몫이 들지 않는다', () => {
+      const p = plan(last13, BLACK, 1, { 1: 2_000_000 }, true, 1000, { every: 1, weeks: 26 })
+      // 1주 뒤 90만 + 200만 = 290만이지만 넘긴 40만은 이월로 가서 합계는 250만
+      expect(p.timeline[1].sum).toBe(BLACK.th)
     })
 
     it('지금 가진 이월이 있으면 그만큼 덜 낸다', () => {
