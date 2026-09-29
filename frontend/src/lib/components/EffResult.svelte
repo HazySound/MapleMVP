@@ -7,9 +7,10 @@
    * 계획을 따르면 주별 표가 붙고, 줄을 누르면 순서가 그 주로 바뀐다.
    */
   import NumBox from './NumBox.svelte'
+  import EffCombo from './EffCombo.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { SHOP, eff, saveEff, type EffOut, type Pick, type Summary, type Want, type WeekPick } from '../eff.svelte'
+  import { SHOP, eff, saveEff, type EffOut, type Pick, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
   import { PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun } from '../format'
   import { won } from '../format'
@@ -48,13 +49,26 @@
     const part = (ws: WeekPick[]) => {
       const cost = ws.reduce((a, w) => a + w.route.cost, 0)
       const back = ws.reduce((a, w) => a + w.route.back + (w.credit?.back ?? 0), 0)
-      return { n: ws.length, cost, back, loss: ws.reduce((a, w) => a + w.loss, 0), rate: cost ? back / cost * 100 : 0 }
+      const sales = ws.reduce((a, w) => a + w.route.sales, 0)
+      return { n: ws.length, cost, back, sales, loss: ws.reduce((a, w) => a + w.loss, 0), rate: cost ? back / cost * 100 : 0 }
     }
     const keep = pick.weeks.filter(w => keepStarts.has(w.w.start))
     if (!keep.length) return null
-    return { reach: part(pick.weeks.filter(w => !keepStarts.has(w.w.start))), keep: part(keep) }
+    // 같은 구간을 최저가로 했을 때 잃는 돈. 그 차이를 주당으로도 보여 준다
+    const bestOf = (k: boolean) => out!.best.weeks.filter(w => keepStarts.has(w.w.start) === k).reduce((a, w) => a + w.loss, 0)
+    const withGap = (p: ReturnType<typeof part>, k: boolean) => ({ ...p, gap: Math.max(0, p.loss - bestOf(k)) })
+    return { reach: withGap(part(pick.weeks.filter(w => !keepStarts.has(w.w.start))), false), keep: withGap(part(keep), true) }
   })
   const choose = (w: Want) => { eff.want = w; saveEff() }
+  // 달성·유지를 따로 정할 수 있는 때: 목표 계획에서 유지를 켰을 때
+  const canSplit = $derived(out?.mode === 'plan' && !!out.keepStarts?.size)
+  const apart = $derived(canSplit && eff.split)
+  /** 구간별 설정 한 벌. 달성은 eff의 기본 설정을, 유지는 eff.keep을 고친다 */
+  const phaseSet = (k: 'reach' | 'keep'): RouteSet => k === 'keep' ? eff.keep
+    : { get want() { return eff.want }, set want(v) { eff.want = v }, get salesN() { return eff.salesN }, set salesN(v) { eff.salesN = v },
+        get sellCost() { return eff.sellCost }, set sellCost(v) { eff.sellCost = v }, get combo() { return eff.combo }, set combo(v) { eff.combo = v } }
+  const WANTS: [Want, string][] = [['best', '최저가'], ['knee', '최적화'], ['count', '횟수 정하기'], ['custom', '직접 짜기']]
+  const weeksOf = (k: 'reach' | 'keep') => (out?.weeks ?? []).filter(w => (out?.keepStarts?.has(w.start) ?? false) === (k === 'keep')).length
 
   // ---- 판매 횟수별 곡선 ----
   // 그래프는 칸 너비에 맞춰 그린다. 늘려 그리면 글자까지 커진다
@@ -120,6 +134,45 @@
   {:else if out && pick && cur}
     <p class="q">{question}</p>
 
+    {#if canSplit}
+      <label class="together" for="eff-split">
+        <input id="eff-split" type="checkbox" checked={!eff.split} onchange={e => { eff.split = !e.currentTarget.checked; saveEff() }} />
+        <span class="sw" aria-hidden="true"></span>
+        <span class="tx"><b>달성과 유지를 같이 설정</b><small>{eff.split ? '달성과 유지를 따로 정하고 있어요' : '끄면 달성과 유지의 루트를 따로 정해요'}</small></span>
+      </label>
+    {/if}
+
+    {#if apart}
+      <div class="phases">
+        {#each [['reach', '달성'], ['keep', '유지']] as const as [k, name] (k)}
+          {@const s = phaseSet(k)}
+          <div class="phase">
+            <div class="ph-h"><b>{name}</b><small>{weeksOf(k)}주</small></div>
+            <div class="seg" role="group" aria-label="{name} 루트">
+              {#each WANTS as [w, t] (w)}
+                <button aria-pressed={s.want === w} onclick={() => { s.want = w; saveEff() }}>{t}</button>
+              {/each}
+            </div>
+            {#if s.want === 'count'}
+              <div class="srow">
+                <label for="eff-sales-{k}">주마다 경매장에 최대</label>
+                <b class="mono n">{s.salesN}회</b>
+                <input id="eff-sales-{k}" type="range" min={out.lo} max={out.hi} value={Math.min(s.salesN, out.hi)}
+                  oninput={e => { s.salesN = Number(e.currentTarget.value); saveEff() }} />
+              </div>
+            {:else if s.want === 'knee'}
+              <div class="kcost">
+                <span>판매를 한 번 줄일 때 더 내는 돈이</span>
+                <span class="box"><NumBox id="eff-sale-cost-{k}" label="{name} 판매 1회 수고비" size="sm" unit="원" placeholder="2,000" value={s.sellCost} set={v => { s.sellCost = v; saveEff() }} /></span>
+                <span>이하일 때만 줄여요</span>
+              </div>
+            {:else if s.want === 'custom'}
+              <EffCombo combo={s.combo} title="{name} · 매주 이 조합" id="eff-combo-{k}" />
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {:else}
     <div class="routes" role="group" aria-label="루트 고르기">
       <button class:on={eff.want === 'best'} onclick={() => choose('best')}>
         <span class="rn">최저가 루트</span>
@@ -136,7 +189,19 @@
         <b class="mono">{won(out.count.loss)}원</b>
         <span class="rs">{per}최대 {out.count.n}회 · 판매 {out.count.sales}회</span>
       </button>
+      <button class:on={eff.want === 'custom'} onclick={() => choose('custom')}>
+        <span class="rn">직접 짜기</span>
+        {#if out.custom}
+          <b class="mono">{won(out.custom.loss)}원</b>
+          <span class="rs">판매 {out.custom.sales}회 · 최저가보다 {out.custom.loss >= out.best.loss ? '+' : '−'}{won(Math.abs(out.custom.loss - out.best.loss))}원</span>
+        {:else}
+          <b class="mono dim">—</b>
+          <span class="rs">살 아이템과 개수를 직접 적어요</span>
+        {/if}
+      </button>
     </div>
+    {#if eff.want === 'custom'}<EffCombo combo={eff.combo} title="{out.mode === 'plan' ? '매주 이 조합' : '이 조합으로'}" id="eff-combo-all" />{/if}
+    {/if}
 
     <div class="headline">
       <div class="big mono">{won(pick.loss)}<small>원</small></div>
@@ -148,7 +213,13 @@
       {#if split}
         <div class="split">
           {#each [['달성', split.reach], ['유지', split.keep]] as const as [name, s] (name)}
-            <div><span>{name} <small>{s.n}주</small></span><b class="mono">{won(s.loss)}원</b><em>현금 {won(s.cost)}원 · 회수율 {s.rate.toFixed(1)}%</em></div>
+            {@const low = s.gap < 1}
+            <div class:low>
+              <span>{name} <small>{s.n}주</small>{#if low}<i class="badge">최저가</i>{/if}</span>
+              <b class="mono">{won(s.loss)}원</b>
+              {#if !low}<strong class="gap">최저가보다 <span class="mono">+{won(s.gap)}원</span>{#if s.n > 1}{' · 주당 '}<span class="mono">+{won(s.gap / s.n)}원</span>{/if}</strong>{/if}
+              <em>현금 {won(s.cost)}원 · 회수율 {s.rate.toFixed(1)}% · 판매 {s.sales}회{s.n > 1 ? ` (주당 ${Math.round(s.sales / s.n)}회)` : ''}</em>
+            </div>
           {/each}
         </div>
       {/if}
@@ -186,7 +257,7 @@
       </figure>
     {/if}
 
-    {#if eff.want === 'count'}
+    {#if eff.want === 'count' && !apart}
       <div class="sales">
         <div class="srow">
           <label for="eff-sales">{per}경매장에 최대</label>
@@ -314,6 +385,30 @@
 </article>
 
 <style>
+  .together { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--color-line); background: var(--color-bg2); cursor: pointer; width: max-content; max-width: 100%; }
+  .together input { position: absolute; opacity: 0; pointer-events: none; }
+  .together .sw { position: relative; flex: none; width: 38px; height: 22px; border-radius: 99px; background: var(--color-panel3); border: 1px solid var(--color-line2); transition: background .25s, border-color .25s; }
+  .together .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--color-tx2); transition: transform .3s cubic-bezier(.3, 1.4, .5, 1), background .25s; }
+  .together input:checked + .sw { background: color-mix(in oklab, var(--color-lav) 40%, var(--color-panel3)); border-color: var(--color-lav); }
+  .together input:checked + .sw::after { transform: translateX(16px); background: #fff; }
+  .together input:focus-visible + .sw { outline: 2px solid var(--color-lav); outline-offset: 2px; }
+  .together .tx { display: grid; line-height: 1.35; }
+  .together .tx b { font-size: 13px; }
+  .together .tx small { font-size: 11.5px; color: var(--color-tx3); }
+  .phases { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); align-items: start; }
+  .phase { display: grid; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--color-line); background: var(--color-bg2); min-width: 0; }
+  .ph-h { display: flex; justify-content: space-between; align-items: baseline; }
+  .ph-h b { font-size: 14px; }
+  .ph-h small { font-size: 12px; color: var(--color-tx3); }
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .seg button { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 6px 11px; border-radius: 9px; border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-tx2); }
+  .seg button[aria-pressed="true"] { border-color: var(--color-lav); color: var(--color-tx); background: color-mix(in oklab, var(--color-lav) 16%, var(--color-panel)); }
+  .phase .srow { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--color-tx3); }
+  .phase .srow input { flex: 1; min-width: 0; accent-color: var(--color-peach); }
+  .phase .srow .n { font-size: 15px; color: var(--color-tx); }
+  .kcost { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: var(--color-tx3); }
+  .kcost .box { width: 110px; }
+  .routes .dim { color: var(--color-tx3); }
   .vsp { display: block; margin-top: 2px; font-size: 11.5px; color: var(--color-tx3); }
   .vs .vsp b { display: inline; font-size: 12px; font-weight: 600; color: var(--color-tx2); }
   .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 10px; }
@@ -322,6 +417,10 @@
   .split small { font-size: 11px; }
   .split b { font-size: 17px; font-weight: 700; color: var(--color-bad); }
   .split em { font-style: normal; font-size: 12px; color: var(--color-tx2); }
+  .split .low b { color: var(--color-mint); }
+  .split .badge { font-style: normal; margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: var(--color-mint); background: color-mix(in oklab, var(--color-mint) 16%, transparent); }
+  .split .gap { font-weight: 500; font-size: 12.5px; color: var(--color-peach); }
+  .split .gap span { font-size: 12.5px; color: inherit; }
   .ef-chip em.sp { color: var(--color-lav); }
   .answer > * { min-width: 0; }
   .answer {
@@ -336,7 +435,8 @@
   .empty span { font-size: 13px; color: var(--color-tx3); }
   .q { margin: 0; font-size: 14px; color: var(--color-tx2); }
 
-  .routes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .routes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  @media (max-width: 1100px) { .routes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 672px) { .routes { grid-template-columns: 1fr; } }
   .routes button {
     appearance: none; cursor: pointer; font: inherit; text-align: left; color: var(--color-tx3);

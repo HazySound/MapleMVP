@@ -225,7 +225,8 @@ export function spendCredits(have: number, earned: number, items: CreditItem[], 
 const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a)
 
 /** 팔 수 있는 것. price는 경매장 한 번 판매 가격(억, 묶음이면 묶음 전체). 0이면 계산에서 뺀다 */
-export interface Sellable extends ShopItem { price: number }
+/** cap: 한 주에 팔 수 있는(그래서 살) 최대 개수(세트). 회전율. 없으면 제한 없음 */
+export interface Sellable extends ShopItem { price: number; cap?: number }
 export interface Line { item: Sellable; n: number }
 export interface Route {
   /** 이번에 결제하는 캐시 */
@@ -262,6 +263,10 @@ export interface SolveIn {
   exact: boolean
   /** 크레딧 1개의 값(원). 캐시템을 살 때 쌓이는 크레딧만큼 그 아이템이 더 이득이 된다 */
   creditPer?: number
+  /** 직접 짜기: 아이템 id → 살 개수. 적은 아이템은 그 개수 그대로, 나머지(items에 있는 것)는 알아서 고르고 메소마켓으로 마저 채운다 */
+  fixed?: Record<string, number>
+  /** 가장 싼 조합 하나만 필요할 때(비교 칸·직접 짜기). 판매 횟수별 계산을 건너뛴다 */
+  bestOnly?: boolean
 }
 
 export interface Solved {
@@ -275,6 +280,8 @@ export interface Solved {
 
 /** 판매 횟수를 이만큼까지만 층으로 쌓는다. 그 위는 최저가 루트와 같다고 본다 */
 const MAX_LAYERS = 600
+/** 상한 있는 아이템의 개수 조합을 늘어놓을 때 최대 몇 개까지. 넘으면 앞쪽(적게 사는 쪽)만 본다 */
+const MAX_COMBOS = 400
 /** 메이플포인트는 1,000원 단위로만 산다(계산 단위 100원의 10배) */
 const MU = 10
 
@@ -282,27 +289,58 @@ export function solve(o: SolveIn): Solved | null {
   const keep = (1 - o.fee) * o.um
   const cp = o.creditPer ?? 0
   // back: 경매장에서 돌려받는 돈, val: 거기에 쌓이는 크레딧 값까지 더한 것(조합 고르기용)
-  const usable = o.items.filter(x => x.price > 0).map(x => ({ x, u: Math.round(x.cash / U), back: x.price * keep, val: x.price * keep + x.cash * CREDIT_RATE * cp }))
+  let usable = o.items.filter(x => x.price > 0).map(x => ({ x, u: Math.round(x.cash / U), back: x.price * keep, val: x.price * keep + x.cash * CREDIT_RATE * cp }))
+  // 직접 짜기: 개수를 적은 아이템은 그 개수 그대로 산다(0이면 빠진다)
+  const forced = (j: number) => o.fixed?.[usable[j].x.id]
+  usable = usable.filter(q => o.fixed?.[q.x.id] !== 0)
+  /** 한 주에 살 수 있는 개수 상한(개수를 정했으면 그 개수). 없으면 제한 없음 */
+  const capOf = (j: number) => forced(j) ?? usable[j].x.cap
+  const freeIdx = usable.flatMap((_, j) => (capOf(j) == null ? [j] : []))
+  const capIdx = usable.flatMap((_, j) => (capOf(j) != null ? [j] : []))
   const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
   // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다. 조합을 고를 때는 그 값까지 본다
   const mkVal = mk1 ? mk1 + U * CREDIT_RATE * cp : 0
   const need = Math.ceil(o.target / U)
   if (need <= 0) return null
   if (!usable.length && !mk1) return null
+  const fixedUnits = capIdx.reduce((a, j) => a + (forced(j) ?? 0) * usable[j].u, 0)
   // 계획을 따를 때는 먼저 계획 금액에 딱 맞춰 본다. 메포가 1,000원 단위라 안 맞으면 1,000원 안쪽으로 넘기고,
   // 그래도 안 되면(메소마켓 시세가 없을 때 등) 필요한 만큼 넘겨 산다
   const run = (mode: 'tight' | 'near' | 'free') => {
-    const A = mode === 'tight' ? need : mode === 'near' ? need + MU - 1 : need + Math.max(MU - 1, ...usable.map(v => v.u))
+    let A = mode === 'tight' ? need : mode === 'near' ? need + MU - 1 : need + Math.max(MU - 1, ...usable.map(v => v.u))
+    // 정해 둔 개수가 결제액보다 크면 그만큼은 산다
+    A = Math.max(A, fixedUnits)
     const cost = new Float64Array(A + 1)
     for (let a = 0; a <= A; a++) cost[a] = o.costOf(a * U)
     return { A, cost }
   }
-  let { A, cost } = run(o.exact ? 'tight' : 'free')
+  let { A, cost } = run(fixedUnits > need ? 'free' : o.exact ? 'tight' : 'free')
+
+  /**
+   * 상한이 있는 아이템은 살 개수 조합을 늘어놓는다(C: 캐시 단위 합, V: 값, n: 개수 합).
+   * 상한이 없으면 조합은 '하나도 안 삼' 하나뿐이라 예전 계산과 같다
+   */
+  type Combo = { cnt: number[]; C: number; V: number; n: number }
+  const combosOf = (lim: number) => {
+    const out: Combo[] = []
+    const walk = (i: number, cnt: number[], C: number, V: number, n: number) => {
+      if (out.length >= MAX_COMBOS) return
+      if (i === capIdx.length) { out.push({ cnt: [...cnt], C, V, n }); return }
+      const q = usable[capIdx[i]], cap = capOf(capIdx[i])!
+      for (let c = forced(capIdx[i]) ?? 0; c <= cap && C + c * q.u <= lim; c++) {
+        cnt.push(c); walk(i + 1, cnt, C + c * q.u, V + c * q.val, n + c); cnt.pop()
+      }
+    }
+    walk(0, [], 0, 0, 0)
+    return out
+  }
+  let combos = combosOf(A)
 
   const finish = (counts: Map<number, number>, market: number, pay: number): Route => {
     let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = market * CREDIT_RATE
     const lines: Line[] = []
     for (const [j, n] of counts) {
+      if (!n) continue
       back += n * usable[j].back; sales += n; meso += n * usable[j].x.price * (1 - o.fee)
       credits += n * usable[j].x.cash * CREDIT_RATE
       lines.push({ item: usable[j].x, n })
@@ -311,61 +349,74 @@ export function solve(o: SolveIn): Solved | null {
     const c = cost[pay / U], creditEst = credits * cp
     return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market, fee: o.fee, meso, credits, creditEst }
   }
+  const comboCounts = (c: Combo) => new Map(capIdx.map((j, i) => [j, c.cnt[i]] as [number, number]))
 
-  // 최저가 루트. 판매 한 번마다 아주 작은 값을 빼서, 남는 돈이 같으면 적게 파는 쪽을 고른다
+  // 최저가 루트. 판매 한 번마다 아주 작은 값을 빼서, 남는 돈이 같으면 적게 파는 쪽을 고른다.
+  // 상한 없는 아이템과 메소마켓으로 만든 표에 상한 있는 조합을 하나씩 얹어 본다
   const EPS = 0.01, NEG = -1e18
   const best1 = () => {
     const v = new Float64Array(A + 1).fill(NEG), how = new Int16Array(A + 1).fill(-3), mkIn = new Uint8Array(A + 1)
     v[0] = 0
     for (let a = 1; a <= A; a++) {
       if (mk1 && a >= MU && v[a - MU] > NEG) { v[a] = v[a - MU] + MU * mkVal - (mkIn[a - MU] ? 0 : EPS); how[a] = -2; mkIn[a] = 1 }
-      for (let j = 0; j < usable.length; j++) {
+      for (const j of freeIdx) {
         const q = usable[j]
         if (q.u > a || v[a - q.u] <= NEG) continue
         const val = v[a - q.u] + q.val - EPS
         if (val > v[a]) { v[a] = val; how[a] = j; mkIn[a] = mkIn[a - q.u] }
       }
     }
-    let pick = -1, net = -Infinity
-    for (let a = need; a <= A; a++) if (v[a] > NEG && v[a] - cost[a] > net) { net = v[a] - cost[a]; pick = a }
+    let pick = -1, pc = -1, net = -Infinity
+    combos.forEach((c, ci) => {
+      for (let a = Math.max(0, need - c.C); a + c.C <= A; a++) {
+        if (v[a] <= NEG) continue
+        const x = v[a] + c.V - c.n * EPS - cost[a + c.C]
+        if (x > net) { net = x; pick = a; pc = ci }
+      }
+    })
     if (pick < 0) return null
-    const counts = new Map<number, number>(); let m = 0
+    const counts = comboCounts(combos[pc]); let m = 0
     for (let a = pick; a > 0;) {
       const h = how[a]
       if (h === -2) { m += MU * U; a -= MU } else { counts.set(h, (counts.get(h) ?? 0) + 1); a -= usable[h].u }
     }
-    return finish(counts, m, pick * U)
+    return finish(counts, m, (pick + combos[pc].C) * U)
   }
   let best = best1()
-  if (!best && o.exact) { ({ A, cost } = run('near')); best = best1() }
-  if (!best && o.exact) { ({ A, cost } = run('free')); best = best1() }
+  if (!best && o.exact) { ({ A, cost } = run('near')); combos = combosOf(A); best = best1() }
+  if (!best && o.exact) { ({ A, cost } = run('free')); combos = combosOf(A); best = best1() }
   if (!best) return null
+  if (o.bestOnly) { const b = best; return { best: b, lossAt: [b.loss], routeAt: () => b } }
   const K = best.sales
 
-  // 판매 횟수별: 경매장 k번으로 정확히 a를 만들 때 가장 많이 돌려받는 값을 층층이 쌓는다.
-  // 값은 두 층만 들고, 되짚을 선택만 층마다 남긴다. 메소마켓을 쓰면 판매가 1회 늘어난다
-  type At = { k: number; a: number; m: number; tot: number }
+  // 판매 횟수별: 상한 없는 아이템 k번으로 정확히 a를 만들 때 가장 많이 돌려받는 값을 층층이 쌓고,
+  // 층마다 상한 있는 조합을 얹는다. 값은 두 층만 들고, 되짚을 선택만 층마다 남긴다. 메소마켓을 쓰면 판매가 1회 는다
+  type At = { k: number; a: number; m: number; tot: number; c: number }
   const L = Math.min(K, MAX_LAYERS)
   const top = new Array<number>(L + 1).fill(-Infinity)
   const atS = new Array<At | null>(L + 1).fill(null)
   const hows: Int8Array[] = []
   const put = (s: number, val: number, at: At) => { if (s <= L && val > top[s] + 0.5) { top[s] = val; atS[s] = at } }
   const consider = (row: Float64Array, k: number) => {
-    for (let a = 0; a <= A; a++) {
-      if (row[a] <= NEG) continue
-      if (a >= need) put(k, row[a] - cost[a], { k, a, m: 0, tot: a })
-      else if (mk1) {
-        // 모자라는 만큼 메포로. 1,000원 단위로 올려 산다
-        const m = Math.ceil((need - a) / MU) * MU, tot = a + m
-        if (tot <= A) put(k + 1, row[a] + m * mkVal - cost[tot], { k, a, m, tot })
+    combos.forEach((cb, c) => {
+      if (k + cb.n > L) return
+      for (let a = 0; a + cb.C <= A; a++) {
+        if (row[a] <= NEG) continue
+        const got = a + cb.C
+        if (got >= need) put(k + cb.n, row[a] + cb.V - cost[got], { k, a, m: 0, tot: got, c })
+        else if (mk1) {
+          // 모자라는 만큼 메포로. 1,000원 단위로 올려 산다
+          const m = Math.ceil((need - got) / MU) * MU, tot = got + m
+          if (tot <= A) put(k + cb.n + 1, row[a] + cb.V + m * mkVal - cost[tot], { k, a, m, tot, c })
+        }
       }
-    }
+    })
   }
   let prev = new Float64Array(A + 1).fill(NEG); prev[0] = 0
   consider(prev, 0)
-  for (let k = 1; k <= L; k++) {
+  for (let k = 1; k <= L && freeIdx.length; k++) {
     const cur = new Float64Array(A + 1).fill(NEG), h = new Int8Array(A + 1).fill(-1)
-    for (let a = 1; a <= A; a++) for (let j = 0; j < usable.length; j++) {
+    for (let a = 1; a <= A; a++) for (const j of freeIdx) {
       const q = usable[j]
       if (q.u > a || prev[a - q.u] <= NEG) continue
       const val = prev[a - q.u] + q.val
@@ -387,7 +438,7 @@ export function solve(o: SolveIn): Solved | null {
     const at = pickAt[Math.max(0, k)]
     if (!at) return best!
     if (built.has(k)) return built.get(k)!
-    const counts = new Map<number, number>()
+    const counts = comboCounts(combos[at.c])
     for (let i = at.k, a = at.a; i > 0; i--) {
       const j = hows[i - 1][a]
       counts.set(j, (counts.get(j) ?? 0) + 1); a -= usable[j].u
@@ -445,6 +496,13 @@ export interface Plan {
   exact: boolean
   /** 크레딧을 쓸지와 크레딧샵 물건. 없으면 크레딧은 계산에 넣지 않는다 */
   credit?: { items: CreditItem[] } | null
+  /**
+   * 직접 짜기: 주(순서)마다 그 주 조합. 아이템 id → 개수(null이면 개수는 알아서). 조합에 없는 아이템은 안 쓴다.
+   * undefined인 주는 모든 아이템에서 알아서 고른다
+   */
+  fixedFor?: (i: number) => Record<string, number | null> | undefined
+  /** 가장 싼 조합 하나만(비교 칸·직접 짜기) */
+  bestOnly?: boolean
 }
 
 export interface WeekResult {
@@ -504,7 +562,10 @@ export function planAll(p: Plan): WeekResult[] | null {
     }
     const fee = p.fee ?? feeOf(w.tier)
     const creditPer = p.credit ? creditWonPer(p.credit.items, fee, p.um) : 0
-    const solved = solve({ target: w.amount, costOf: c => fund(c, ctx).cost, fee, um: p.um, mk: p.mk, items: p.items, exact: p.exact, creditPer })
+    const combo = p.fixedFor?.(wi)
+    const items = combo ? p.items.filter(x => x.id in combo) : p.items
+    const fixed = combo ? Object.fromEntries(Object.entries(combo).filter(([, n]) => n != null)) as Record<string, number> : undefined
+    const solved = solve({ target: w.amount, costOf: c => fund(c, ctx).cost, fee, um: p.um, mk: p.mk, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
     if (!solved) return null
     const f = fund(solved.best.pay, ctx)
     for (const q of f.parts) {

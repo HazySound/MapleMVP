@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, isShort, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, isShort, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
@@ -25,7 +25,16 @@ const CARDS = [
   { key: 'book', name: '도서문화상품권' },
 ]
 
-export type Want = 'best' | 'knee' | 'count'
+/** 직접 짜기 조합: 아이템 id → 한 주에 살 개수(null이면 개수는 알아서). 조합에 없는 아이템은 안 쓴다 */
+export type Combo = Record<string, number | null>
+
+/** 계산 결과 재사용(입력 → 결과). 최근 것만 둔다 */
+const runs = new Map<string, WeekResult[] | null>()
+
+/** 최저가 · 최적화 · 횟수 정하기 · 직접 짜기 */
+export type Want = 'best' | 'knee' | 'count' | 'custom'
+/** 루트 설정 한 벌. 달성·유지를 따로 정하면 두 벌을 쓴다 */
+export interface RouteSet { want: Want; salesN: number; sellCost: number; combo: Combo }
 
 interface Saved {
   usePlan: boolean
@@ -74,6 +83,13 @@ interface Saved {
    * 기본값을 1,000원에서 2,000원으로 바꾸며 이름도 바꿨다. 옛 이름에 남은 1,000원은 버리고 새 기본값에서 시작한다
    */
   sellCost: number
+  /** 직접 짜기: 아이템 id → 한 주에 살 개수(null이면 알아서) */
+  combo: Combo
+  /** 아이템 id → 한 주에 팔 수 있는(그래서 살) 최대 개수. 회전율. 없으면 제한 없음 */
+  caps: Record<string, number>
+  /** 목표 계획에서 유지를 켰을 때, 달성과 유지를 따로 정할지. 위 want·salesN·sellCost·combo가 달성용이 된다 */
+  split: boolean
+  keep: RouteSet
 }
 
 function fresh(): Saved {
@@ -84,6 +100,7 @@ function fresh(): Saved {
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000,
+    combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
   }
 }
 
@@ -258,7 +275,10 @@ export function restoreCustom(x: { item: ShopItem; price?: number }, picked: boo
   saveEff()
 }
 
-export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0 }))
+export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0, ...(eff.caps[x.id] ? { cap: eff.caps[x.id] } : {}) }))
+
+/** 달성(또는 같이 설정) 루트 설정 */
+export const reachSet = (): RouteSet => ({ want: eff.want, salesN: eff.salesN, sellCost: eff.sellCost, combo: eff.combo })
 
 /** 크레딧샵 물건(기본 + 직접 추가)과 넣어 둔 경매장 가격 */
 export const creditItems = (): CreditItem[] =>
@@ -289,8 +309,12 @@ export interface EffOut {
   best: Pick
   knee: Pick
   count: Pick
-  /** 지금 고른 루트 */
+  /** 지금 고른 루트. 달성·유지를 따로 정했으면 주마다 그 구간 설정대로 고른 것 */
   sel: Pick
+  /** 직접 짜기(같이 설정일 때 루트 카드용). 조합이 비었으면 null */
+  custom: Pick | null
+  /** 유지를 켠 계획이면 유지 구간의 주 시작일 */
+  keepStarts: Set<string> | null
   /** 크레딧을 쓸 때 그 조건. 안 쓰면 null */
   credit: { balance: number; items: CreditItem[]; keepRest: boolean } | null
   pgOnly: Summary | null
@@ -319,11 +343,22 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const fee = mode === 'amount' ? (eff.feeOverride ?? (weeks[0].tier && weeks[0].tier !== 'bronze' ? 0.03 : 0.05)) : eff.feeOverride
   const all = sellables()
   const credit = eff.creditOn ? { balance: eff.creditBalance, items: creditItems(), keepRest: eff.creditKeep } : null
-  const run = (items: Sellable[]) => planAll({
-    weeks, balance: eff.balance, cards: eff.cards, methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on, unit: m.unit })), leftNow: eff.leftNow, thisMonth: thisMonth(),
-    barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: eff.weekBarcode,
-    um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit,
-  })
+  // 같은 입력이면 앞서 계산한 것을 다시 쓴다. 루트·횟수·스위치만 바꿀 때는 조합을 다시 찾을 필요가 없다
+  const run = (items: Sellable[], fixedFor?: (i: number) => Combo | undefined, bestOnly = false) => {
+    const input = {
+      weeks, balance: eff.balance, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on, unit: m.unit })),
+      leftNow: $state.snapshot(eff.leftNow), thisMonth: thisMonth(),
+      barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: $state.snapshot(eff.weekBarcode),
+      um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit, bestOnly,
+    }
+    const combos = fixedFor ? weeks.map((_, i) => fixedFor(i) ?? null) : null
+    const key = JSON.stringify([input, combos])
+    if (runs.has(key)) { const v = runs.get(key)!; runs.delete(key); runs.set(key, v); return v }
+    const v = planAll({ ...input, fixedFor: combos ? i => combos[i] ?? undefined : undefined })
+    runs.set(key, v)
+    if (runs.size > 24) runs.delete(runs.keys().next().value!)
+    return v
+  }
   const res = run(all)
   if (!res) return null
 
@@ -332,9 +367,36 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
 
   // 유지를 켰으면 목표 주 뒤의 주가 유지 구간이다
   const keepStarts = mode === 'plan' && plan?.keep ? new Set(plan.timeline.filter(w => w.keep).map(w => w.start)) : null
+  const hasCombo = (c: Combo) => Object.keys(c).length > 0
+  // 주마다 그 주 구간의 설정. 따로 정하지 않았으면 모두 한 벌
+  const setOf = (i: number): RouteSet => eff.split && keepStarts?.has(weeks[i].start) ? eff.keep : reachSet()
+  /**
+   * 설정대로 주마다 고른 루트. 직접 짜기인 주는 그 조합으로 가장 싼 것 하나만 다시 푼다(가볍게).
+   * 나머지 주는 기본 계산을 그대로 쓴다
+   */
+  const compose = (sets: RouteSet[]) => {
+    const custom = sets.map(s => s.want === 'custom' && hasCombo(s.combo))
+    let r = res
+    if (custom.some(Boolean)) {
+      const c = run(all, i => (custom[i] ? sets[i].combo : undefined), true)
+      if (!c) return null
+      r = res.map((w, i) => (custom[i] ? c[i] : w))
+    }
+    const hiN = Math.max(1, ...r.map(w => w.solved.best.sales))
+    const memo = new Map<number, (number | null)[]>()
+    const per = (cost: number) => memo.get(cost) ?? (memo.set(cost, perWeek(r, cost)), memo.get(cost)!)
+    const ns = sets.map((s, i) => s.want === 'best' ? per(0)[i] : s.want === 'knee' ? per(s.sellCost)[i]
+      : s.want === 'count' ? (s.salesN >= hiN ? null : s.salesN) : custom[i] ? null : per(0)[i])
+    return pickAt(r, ns, credit)
+  }
+  const sets = weeks.map((_, i) => setOf(i))
+  const linked = !eff.split || !keepStarts
+  const simple = linked && eff.want !== 'custom'
+  const sel = simple ? (eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best) : compose(sets) ?? best
+  const custom = hasCombo(eff.combo) ? (linked && eff.want === 'custom' ? sel : compose(weeks.map(() => ({ ...reachSet(), want: 'custom' as const })))) : null
   const alt = (items: Sellable[]): Summary | null => {
     if (!items.some(x => x.price > 0) && !eff.mk) return null
-    const r = run(items)
+    const r = run(items, undefined, true)
     if (!r) return null
     const p = pickAt(r, null, credit)
     const part = (keep: boolean) => {
@@ -348,7 +410,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
   return {
     mode, target: weeks.reduce((a, w) => a + w.amount, 0), weeks: res, curve, lo, hi, credit,
-    best, knee: kp, count: cp, sel: eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best,
+    best, knee: kp, count: cp, sel, custom, keepStarts,
     pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID)) : null,
     mkOnly: eff.mk > 0 ? alt([]) : null,
     waitOnly: wait.length ? alt(wait) : null,

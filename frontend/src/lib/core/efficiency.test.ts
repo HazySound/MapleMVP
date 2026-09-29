@@ -291,6 +291,127 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       }
     }
   })
+
+  it('아이템마다 주당 최대 개수가 있어도 같다', () => {
+      seed = 11
+    for (let t = 0; t < 250; t++) {
+      const n = pickInt(1, 3)
+      const items: Sellable[] = Array.from({ length: n }, (_, i) => {
+        const cash = pickInt(10, 90) * 100
+        return { id: `i${i}`, name: `i${i}`, set: 1, cash, price: Math.round(cash / 5900 * 3 * (0.8 + rnd() * 0.4) * 100) / 100, ...(rnd() < 0.6 ? { cap: pickInt(0, 3) } : {}) }
+      })
+      const mk = rnd() < 0.2 ? 0 : pickInt(2000, 2600)
+      const rate = [1, 0.95, 0.9][pickInt(0, 2)]
+      const target = pickInt(5, 250) * 100
+      const exact = rnd() < 0.5
+      const o = { target, costOf: (c: number) => c * rate, fee: 0.03, um: 1500, mk, items, exact }
+      const r = solve(o)
+
+      // 다 대입: 아이템 개수 조합 + 남는 금액은 메소마켓(있으면 1회)
+      const keep = 0.97 * 1500, mk1 = mk ? 1500 / mk : 0
+      const T100 = Math.ceil(target / 100) * 100
+      const top = T100 + Math.max(900, ...items.map(x => x.cash))
+      let bySales = new Map<number, number>()
+      let bestLoss = Infinity
+      // 앱과 같은 순서: 계획이면 딱 맞게 → 1,000원 안쪽 → 자유롭게
+      let tier = exact ? 0 : 2
+      const walk = (j: number, cash: number, back: number, sales: number) => {
+        if (j === items.length) {
+          const cands: [number, number, number][] = []
+          const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
+          if (cash >= T100 && cash <= limit) cands.push([cash, back, sales])
+          if (mk1 && cash < T100) {
+            const m = Math.ceil((T100 - cash) / 1000) * 1000
+            if (cash + m <= limit) cands.push([cash + m, back + m * mk1, sales + 1])
+          }
+          for (const [pay, b, s] of cands) {
+            const loss = pay * rate - b
+            bestLoss = Math.min(bestLoss, loss)
+            bySales.set(s, Math.min(bySales.get(s) ?? Infinity, loss))
+          }
+          return
+        }
+        for (let k = 0; cash + k * items[j].cash <= top && k <= (items[j].cap ?? Infinity); k++) walk(j + 1, cash + k * items[j].cash, back + k * items[j].price * keep, sales + k)
+      }
+      walk(0, 0, 0, 0)
+      // 계획처럼 딱 맞춰야 하는데 안 되면 앱은 넘겨 사는 쪽으로 물러선다. 정답도 똑같이 다시 구한다
+      while (!Number.isFinite(bestLoss) && tier < 2) { tier++; bySales = new Map(); walk(0, 0, 0, 0) }
+      if (!Number.isFinite(bestLoss)) { expect(r).toBeNull(); continue }
+      expect(r).not.toBeNull()
+      if (!r) continue
+      expect(r.best.loss).toBeCloseTo(bestLoss, 0)
+      // k회 이하에서 가장 적게 잃는 값
+      let run = Infinity
+      for (let k = 0; k < r.lossAt.length; k++) {
+        run = Math.min(run, bySales.get(k) ?? Infinity)
+        if (Number.isFinite(run)) expect(r.lossAt[k]).toBeCloseTo(run, 0)
+        const route = r.routeAt(k)
+        if (Number.isFinite(run) && k < r.lossAt.length - 1) {
+          expect(route.sales).toBeLessThanOrEqual(k)
+          expect(route.loss).toBeCloseTo(run, 0)
+        }
+      }
+    }
+  })
+
+  it('직접 짜기: 개수를 적은 건 그대로, 비워 둔 건 상한 안에서 알아서', () => {
+    seed = 31
+    for (let t = 0; t < 200; t++) {
+      const n = pickInt(2, 3)
+      const items: Sellable[] = Array.from({ length: n }, (_, i) => {
+        const cash = pickInt(10, 300) * 100
+        return { id: `i${i}`, name: `i${i}`, set: 1, cash, price: Math.round(cash / 5900 * 3 * (0.8 + rnd() * 0.4) * 100) / 100, ...(rnd() < 0.5 ? { cap: pickInt(1, 3) } : {}) }
+      })
+      const fixed: Record<string, number> = { i0: pickInt(0, 2) }
+      const mk = pickInt(2000, 2600)
+      const target = pickInt(5, 900) * 100
+      const r = solve({ target, costOf: (c: number) => c * 0.95, fee: 0.03, um: 1500, mk, items, exact: false, fixed })
+      const keep = 0.97 * 1500, mk1 = 1500 / mk, T100 = Math.ceil(target / 100) * 100
+      const top = Math.max(T100, fixed.i0 * items[0].cash) + Math.max(900, ...items.map(x => x.cash))
+      let bestLoss = Infinity
+      const walk = (j: number, cash: number, back: number) => {
+        if (j === items.length) {
+          if (cash >= T100 && cash <= top) bestLoss = Math.min(bestLoss, cash * 0.95 - back)
+          if (cash < T100) { const m = Math.ceil((T100 - cash) / 1000) * 1000; if (cash + m <= top) bestLoss = Math.min(bestLoss, (cash + m) * 0.95 - back - m * mk1) }
+          return
+        }
+        const lo = j === 0 ? fixed.i0 : 0, hi = j === 0 ? fixed.i0 : (items[j].cap ?? Infinity)
+        for (let k = lo; k <= hi && cash + k * items[j].cash <= top; k++) walk(j + 1, cash + k * items[j].cash, back + k * items[j].price * keep)
+      }
+      walk(0, 0, 0)
+      expect(r).not.toBeNull()
+      expect(r!.best.loss).toBeCloseTo(bestLoss, 0)
+      expect(r!.best.lines.find(l => l.item.id === 'i0')?.n ?? 0).toBe(fixed.i0)
+    }
+  })
+
+  it('직접 짠 조합은 그대로 사고 모자라는 만큼만 메소마켓', () => {
+    seed = 23
+    for (let t = 0; t < 200; t++) {
+      const n = pickInt(1, 3)
+      const items: Sellable[] = Array.from({ length: n }, (_, i) => {
+        const cash = pickInt(10, 900) * 100
+        return { id: `i${i}`, name: `i${i}`, set: 1, cash, price: Math.round(cash / 5900 * 3 * (0.8 + rnd() * 0.4) * 100) / 100 }
+      })
+      const fixed = Object.fromEntries(items.map(x => [x.id, pickInt(0, 2)]))
+      const mk = rnd() < 0.2 ? 0 : pickInt(2000, 2600)
+      const target = pickInt(5, 2500) * 100
+      const r = solve({ target, costOf: (c: number) => c * 0.95, fee: 0.03, um: 1500, mk, items, exact: rnd() < 0.5, fixed })
+      const keep = 0.97 * 1500, T100 = Math.ceil(target / 100) * 100
+      const C = items.reduce((a, x) => a + fixed[x.id] * x.cash, 0)
+      const B = items.reduce((a, x) => a + fixed[x.id] * x.price * keep, 0)
+      const S = items.reduce((a, x) => a + fixed[x.id], 0)
+      if (C < T100 && !mk) { expect(r).toBeNull(); continue }
+      expect(r).not.toBeNull()
+      if (!r) continue
+      const m = C >= T100 ? 0 : Math.ceil((T100 - C) / 1000) * 1000
+      expect(r.best.market).toBe(m)
+      expect(r.best.pay).toBe(C + m)
+      expect(r.best.sales).toBe(S + (m ? 1 : 0))
+      expect(r.best.loss).toBeCloseTo((C + m) * 0.95 - B - (m ? m / mk * 1500 : 0), 0)
+      for (const l of r.best.lines) expect(l.n).toBe(fixed[l.item.id])
+    }
+  })
 })
 
 describe('메이플 크레딧', () => {
