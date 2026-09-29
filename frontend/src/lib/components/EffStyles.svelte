@@ -52,6 +52,7 @@
         <div class="sum">
           {#if s.sum}
             <span>이 아이템만 쓰면</span><b class="mono">{won(s.sum.loss)}원</b><span>판매 {s.sum.sales}회</span>
+            {#if s.sum.split}<span class="sp">달성 {won(s.sum.split.reach.loss)}원 · 유지 {won(s.sum.split.keep.loss)}원</span>{/if}
           {:else}
             <span>4번에서 이 아이템 가격을 넣으면 얼마 나가는지 보여 드려요</span>
           {/if}
@@ -77,4 +78,5 @@
   .why { margin: 0; font-size: 12px; color: var(--color-tx3); line-height: 1.5; }
   .sum { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--color-line2); font-size: 12px; color: var(--color-tx3); }
   .sum b { font-size: 16px; color: var(--color-tx); }
+  .sum .sp { flex-basis: 100%; font-size: 11.5px; }
 </style>

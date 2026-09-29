@@ -9,8 +9,8 @@
   import NumBox from './NumBox.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { SHOP, eff, saveEff, type EffOut, type Pick, type Want, type WeekPick } from '../eff.svelte'
-  import { PG_ID, countLabel, itemLabel, type Part } from '../core/efficiency'
+  import { SHOP, eff, saveEff, type EffOut, type Pick, type Summary, type Want, type WeekPick } from '../eff.svelte'
+  import { PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun } from '../format'
   import { won } from '../format'
 
@@ -33,10 +33,27 @@
 
   const question = $derived.by(() => {
     if (!out) return ''
-    if (out.mode === 'plan' && planner.input) return `${tierName(planner.input.target)} 달성까지 실제로 나가는 돈`
+    if (out.mode === 'plan' && planner.input) {
+      const k = planner.result?.keep
+      return `${tierName(planner.input.target)} 달성${k ? ` + ${k.weeks}주 유지` : ''}까지 실제로 나가는 돈`
+    }
     return `${won(out.target)}원 결제하면 실제로 나가는 돈`
   })
   const rate = (p: Pick) => p.cost ? p.back / p.cost * 100 : 0
+
+  // 유지를 켰으면 달성하는 주와 유지하는 주를 나눠 본다. 유지 주는 주차별 계획에서 목표 주 뒤의 주
+  const split = $derived.by(() => {
+    if (!pick || out?.mode !== 'plan' || !planner.result?.keep) return null
+    const keepStarts = new Set(planner.result.timeline.filter(w => w.keep).map(w => w.start))
+    const part = (ws: WeekPick[]) => {
+      const cost = ws.reduce((a, w) => a + w.route.cost, 0)
+      const back = ws.reduce((a, w) => a + w.route.back + (w.credit?.back ?? 0), 0)
+      return { n: ws.length, cost, back, loss: ws.reduce((a, w) => a + w.loss, 0), rate: cost ? back / cost * 100 : 0 }
+    }
+    const keep = pick.weeks.filter(w => keepStarts.has(w.w.start))
+    if (!keep.length) return null
+    return { reach: part(pick.weeks.filter(w => !keepStarts.has(w.w.start))), keep: part(keep) }
+  })
   const choose = (w: Want) => { eff.want = w; saveEff() }
 
   // ---- 판매 횟수별 곡선 ----
@@ -54,8 +71,9 @@
     const Y = (v: number) => PY + (1 - (v - y0) / span) * (H - PY * 2)
     const line = xs.map((n, i) => `${i ? 'L' : 'M'}${X(n).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join('')
     const area = `${line}L${X(xs.at(-1)!).toFixed(1)},${H - PY}L${X(xs[0]).toFixed(1)},${H - PY}Z`
-    const dot = (n: number) => ({ x: X(n), y: Y(out.curve[n]) })
-    return { line, area, X, Y, y0, y1, best: dot(out.best.n ?? out.hi), knee: dot(out.knee.n ?? out.hi), count: dot(out.count.n ?? out.hi) }
+    const dot = (n: number, loss = out.curve[n]) => ({ x: X(Math.max(out.lo, Math.min(n, out.hi))), y: Y(Math.min(y1, Math.max(y0, loss))) })
+    // 최저가·최적화는 주마다 따로 고른 값이라 곡선 위가 아닐 수 있다. 실제 금액 높이에 찍는다
+    return { line, area, X, Y, y0, y1, best: dot(out.best.n ?? out.hi, out.best.loss), knee: dot(out.knee.n ?? out.hi, out.knee.loss), count: dot(out.count.n ?? out.hi) }
   })
 
   // 싼 낱개(1만 원 미만)를 여러 번 파는 루트면 주 초반·월초 시세 경고. 보통 플가·원더베리가 이렇게 된다
@@ -73,7 +91,7 @@
     return [...m].sort((a, b) => a[1] - b[1]).map(([k, d]) => `${k}(${d}일)`)
   })
 
-  const cardDetail = (q: Part) => q.card && q.big ? `5만원권 ${q.big}장` : ''
+  const cardDetail = (q: Part) => q.card && q.unit ? `${unitName(q.unit)} ${q.cash / q.unit}장` : ''
   const discount = (w: WeekPick) => w.funding.parts.filter(q => !q.held).reduce((a, q) => a + q.cash - q.won, 0)
   const byMonth = $derived.by(() => {
     const m: Record<string, Record<string, string[]>> = {}
@@ -86,6 +104,10 @@
     .map(c => `${c.name} ${byMonth[month]?.[c.name]?.join(', ') ?? '안 씀'}`).join(' · ')
   const setWeekBc = (start: string, v: number) => { if (v) eff.weekBarcode[start] = v; else delete eff.weekBarcode[start]; saveEff() }
 </script>
+
+{#snippet vsSplit(s: Summary)}
+  {#if s.split}<small class="vsp">달성 <b class="mono">{won(s.split.reach.loss)}원</b> ({s.split.reach.sales}회) · 유지 <b class="mono">{won(s.split.keep.loss)}원</b> ({s.split.keep.sales}회)</small>{/if}
+{/snippet}
 
 <article class="card answer" id="eff-answer">
   {#if missing.length}
@@ -121,6 +143,13 @@
         <span class="dot">·</span> 회수율 <b class="mono">{rate(pick).toFixed(1)}%</b>
         <span class="dot">·</span> 경매장 판매 <b class="mono">{pick.sales}회</b>
       </p>
+      {#if split}
+        <div class="split">
+          {#each [['달성', split.reach], ['유지', split.keep]] as const as [name, s] (name)}
+            <div><span>{name} <small>{s.n}주</small></span><b class="mono">{won(s.loss)}원</b><em>현금 {won(s.cost)}원 · 회수율 {s.rate.toFixed(1)}%</em></div>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     {#if chart}
@@ -139,7 +168,7 @@
           {#if eff.want === 'count'}<circle cx={chart.count.x} cy={chart.count.y} r="5" class="m count" />{/if}
           <text x={PX} y={H + 12} class="xl">{out.lo}회</text>
           <text x={W - 12} y={H + 12} class="xl" text-anchor="end">{out.hi}회</text>
-          <text x={chart.knee.x} y={chart.knee.y - 10} class="kl" text-anchor="middle">최적화 {out.knee.n}회</text>
+          <text x={chart.knee.x} y={chart.knee.y - 10} class="kl" text-anchor="middle">최적화 {out.mode === 'plan' ? '· 주마다 최대 ' : ''}{out.knee.n}회</text>
         </svg>
         <div class="ef-hint cost">
           <span><b>최적화</b>는 판매를 한 번 줄일 때 더 내는 돈이</span>
@@ -185,14 +214,14 @@
     {/if}
 
     <div class="vs">
-      {#if out.pgOnly}<div>플가만 ({out.pgOnly.sales}회)<b class="mono">{won(out.pgOnly.loss)}원</b></div>{/if}
-      {#if out.mkOnly}<div>전부 메소마켓 ({out.mkOnly.sales}회)<b class="mono">{won(out.mkOnly.loss)}원</b></div>{/if}
+      {#if out.pgOnly}<div>플가만 ({out.pgOnly.sales}회)<b class="mono">{won(out.pgOnly.loss)}원</b>{@render vsSplit(out.pgOnly)}</div>{/if}
+      {#if out.mkOnly}<div>전부 메소마켓 ({out.mkOnly.sales}회)<b class="mono">{won(out.mkOnly.loss)}원</b>{@render vsSplit(out.mkOnly)}</div>{/if}
     </div>
 
     {#if out.mode === 'plan'}
       <section class="weeks">
         <h4>주별로 보면 <span>줄을 누르면 아래 순서가 그 주로 바뀌어요</span></h4>
-        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 상품권은 그 달 한도를 <b>5만원권으로</b> 할인이 큰 것부터 주마다 나눠 써요. 5만원권으로 딱 맞지 않는 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 채워요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
+        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 결제수단은 할인이 큰 것부터 그 달 남은 한도 안에서 권 단위로 써요. 한 권보다 작은 끝자리는 한 권 더 사서 <b>남는 캐시를 다음 주에</b> 쓰고, 마지막 주만 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 딱 맞춰요. 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
         <div class="tbl">
           <table>
             <thead><tr><th>주</th><th>결제</th><th>충전</th>{#if SHOP.barcode.on}<th>바코드로 받을 캐시</th>{/if}<th>할인 받음</th><th>판매</th>{#if out.credit}<th>크레딧</th>{/if}<th>낸 현금</th><th>실제로 나감</th></tr></thead>
@@ -204,7 +233,7 @@
                 <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
                   <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}</td>
                   <td class="mono" data-l="결제">{won(w.route.pay)}</td>
-                  <td class="pt"><div class="parts">{#each w.funding.parts as q (q.name)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}</span>{/each}</div></td>
+                  <td class="pt"><div class="parts">{#each w.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if q.spare}<em class="sp">{won(q.spare)} 남김</em>{/if}</span>{/each}</div></td>
                   {#if SHOP.barcode.on}
                     <td data-l="바코드로 받을 캐시" onclick={e => e.stopPropagation()}>
                       <NumBox id="eff-wbc-{w.w.start}" label="{md(w.w.start)} 주 바코드 캐시" size="sm" placeholder={eff.barcodeWant ? won(eff.barcodeWant) : '나머지 전부'}
@@ -231,7 +260,8 @@
       <ol>
         <li>
           <div class="t">캐시 {won(cur.route.pay)} 충전 → 현금 {won(cur.route.cost)}원</div>
-          <div class="chips">{#each cur.funding.parts as q (q.name)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}</span>{/each}</div>
+          <div class="chips">{#each cur.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}</span>{/each}</div>
+          {#if cur.funding.spare}<div class="dd">끝자리 때문에 한 권 더 사서 <b>{won(cur.funding.spare.cash)}캐시가 남아요</b>. 다음 주에 먼저 쓰고, 그 값은 다음 주에 세요.</div>{/if}
         </li>
         {#if cur.route.lines.length}
           <li>
@@ -281,6 +311,15 @@
 </article>
 
 <style>
+  .vsp { display: block; margin-top: 2px; font-size: 11.5px; color: var(--color-tx3); }
+  .vs .vsp b { display: inline; font-size: 12px; font-weight: 600; color: var(--color-tx2); }
+  .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 10px; }
+  .split div { display: grid; gap: 1px; padding: 9px 12px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid var(--color-line); }
+  .split span { font-size: 12px; color: var(--color-tx3); }
+  .split small { font-size: 11px; }
+  .split b { font-size: 17px; font-weight: 700; color: var(--color-bad); }
+  .split em { font-style: normal; font-size: 12px; color: var(--color-tx2); }
+  .ef-chip em.sp { color: var(--color-lav); }
   .answer > * { min-width: 0; }
   .answer {
     display: grid; gap: 16px; padding: 22px;

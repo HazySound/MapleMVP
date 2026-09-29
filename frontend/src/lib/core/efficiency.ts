@@ -9,9 +9,11 @@
  * - 묶음은 통째로 사고 통째로 판다. 가격은 묶음 전체 가격이고 판매 1회
  * - 경매장 수수료는 사는 순간 오를 등급으로 정한다. 실버 이상 3%, 아니면 5%
  * - 상품권은 5만원권으로만 산다(2026-09-28 사용자 결정: 작은 권은 할인도 적고 MVP작에선 잘 안 쓴다). 넘치게 사지 않는다
- * - 사용자가 직접 추가한 결제수단(넥슨팩 쿠폰 등)은 할인율과 달 한도(없을 수도 있다)대로, 100원 단위로 쓴다
- * - 할인이 큰 결제수단부터 쓴다. 딱 맞지 않는 끝자리는 바코드(이벤트 때만) 또는 일반 충전 1:1
+ * - 사용자가 직접 추가한 결제수단(넥슨팩 쿠폰 등)은 할인율과 달 한도(없을 수도 있다)대로, 정한 판매 단위(권)로 쓴다
+ * - 할인이 큰 결제수단부터 쓴다. 권 단위보다 작은 끝자리는 할인되는 결제수단으로 한 권 더 사고,
+ *   남는 캐시는 산 값 그대로 다음 주로 넘긴다(2026-09-29 사용자 결정). 마지막 주만 바코드나 일반 충전 1:1로 딱 맞춘다
  * - 상품권 한도는 달마다 새로 생긴다(각 20만 원)
+ * - 넥슨카드는 그 달 마지막 20만 원에만 쓴다. 먼저 쓰면 그 달에 현대카드 포인트·중고 캐시 충전을 못 한다(2026-09-29 사용자)
  */
 import type { TierKey } from './mvp'
 
@@ -72,6 +74,9 @@ export function rateOf(disc: number): number | null {
   return null
 }
 
+/** 한 권 금액의 이름: 50000 → '5만원권', 5000 → '5천원권' */
+export const unitName = (u: number) => u >= 10_000 ? `${u / 10_000}만원권` : u >= 1_000 ? `${u / 1_000}천원권` : `${u}원권`
+
 /** 결제수단. unit은 사는 단위(상품권은 5만원권, 직접 추가한 것은 100원) */
 export interface Card { key: string; name: string; rate: number; unit?: number }
 export interface Part {
@@ -81,11 +86,18 @@ export interface Part {
   card?: boolean
   /** 5만원권 장수 */
   big?: number
+  /** 권 단위로 사는 결제수단이면 한 권 금액(장수 = cash / unit) */
+  unit?: number
   /** 바코드로 더 받은 캐시 */
   bonus?: number
   held?: boolean
+  /** 결제수단 키(한도를 깎을 때 쓴다) */
+  key?: string
+  /** 끝자리 때문에 한 권 더 사서 이 주에 쓰지 않고 남는 캐시 */
+  spare?: number
 }
-export interface Funding { cost: number; parts: Part[] }
+/** cost는 이 주에 쓴 캐시의 값이다. 남는 캐시(spare)는 산 값(won)과 함께 다음 주로 넘어가서 거기서 센다 */
+export interface Funding { cost: number; parts: Part[]; spare: { cash: number; won: number } | null }
 
 export interface FundCtx {
   /** 이미 충전해 둔 캐시와 그때 쓴 현금 */
@@ -96,6 +108,8 @@ export interface FundCtx {
   cards: Card[]
   /** 바코드 이벤트. null이면 없음. want가 null이면 남는 금액 전부 */
   barcode: { bonus: number; capLeft: number; want: number | null } | null
+  /** 끝자리를 한 권 더 사서 남겨도 되는지. 다음 주가 있어야 남는 캐시를 쓴다 */
+  spareOk?: boolean
 }
 
 /** 캐시 c를 마련하는 데 드는 현금과 그 내역 */
@@ -107,14 +121,44 @@ export function fund(c: number, x: FundCtx): Funding {
     parts.push({ name: '가진 캐시', cash: use, won: use * r, held: true })
     left -= use; cost += use * r
   }
+  const used: Record<string, number> = {}
+  const put = (k: Card, n: number) => {
+    const u = k.unit ?? BIG
+    const q = parts.find(p => p.key === k.key)
+    if (q) { q.cash += n; q.won += n * k.rate } else parts.push({ name: k.name, key: k.key, cash: n, won: n * k.rate, card: true })
+    const r = q ?? parts[parts.length - 1]
+    if (u === BIG) r.big = r.cash / BIG
+    if (u > U) r.unit = u
+    used[k.key] = (used[k.key] ?? 0) + n
+    return r
+  }
   for (const k of x.cards) {
     if (left <= 0) break
     const L = x.limits[k.key] ?? 0
     const u = k.unit ?? BIG
     const use = Math.floor(Math.min(left, L) / u) * u
     if (use <= 0) continue
-    parts.push({ name: k.name, cash: use, won: use * k.rate, card: true, ...(u === BIG ? { big: use / BIG } : {}) })
+    put(k, use)
     left -= use; cost += use * k.rate
+  }
+  // 끝자리: 할인되는 결제수단으로 한 권 더 사고 남는 캐시는 다음 주로. 할인이 크고, 같으면 덜 남는 쪽
+  let spare: Funding['spare'] = null
+  if (x.spareOk && left > 0) {
+    const bc = x.barcode && x.barcode.want == null ? 1 / (1 + x.barcode.bonus) : 1
+    let pick: { k: Card; n: number } | null = null
+    for (const k of x.cards) {
+      const u = k.unit ?? BIG
+      const n = Math.ceil(left / u) * u
+      if (k.rate >= bc || (x.limits[k.key] ?? 0) - (used[k.key] ?? 0) < n) continue
+      if (!pick || k.rate < pick.k.rate || (k.rate === pick.k.rate && n < pick.n)) pick = { k, n }
+    }
+    if (pick) {
+      const q = put(pick.k, pick.n)
+      q.spare = pick.n - left
+      spare = { cash: q.spare, won: q.spare * pick.k.rate }
+      cost += left * pick.k.rate
+      left = 0
+    }
   }
   if (x.barcode && left > 0) {
     const use = x.barcode.want == null ? left : Math.min(left, x.barcode.want)
@@ -127,7 +171,7 @@ export function fund(c: number, x: FundCtx): Funding {
     }
   }
   if (left > 0) { parts.push({ name: '일반 충전', cash: left, won: left }); cost += left }
-  return { cost, parts }
+  return { cost, parts, spare }
 }
 
 // ---- 메이플 크레딧 ----
@@ -376,7 +420,7 @@ export function balancePoint(loss: number[], sales: number[], lo: number, hi: nu
 
 export interface CardSetting { key: string; name: string; disc: number; on: boolean }
 /** 직접 추가한 결제수단. rate는 캐시 1원에 드는 현금, monthly는 달마다 한도(null이면 없음) */
-export interface MethodSetting { key: string; name: string; rate: number; monthly: number | null; on: boolean }
+export interface MethodSetting { key: string; name: string; rate: number; monthly: number | null; on: boolean; unit?: number }
 export interface Plan {
   /** 결제할 주. 계획이 없으면 한 줄 */
   weeks: { start: string; amount: number; tier: TierKey | null; month: string }[]
@@ -415,53 +459,48 @@ export interface WeekResult {
   ctx: FundCtx
 }
 
-/**
- * 한 달 치 결제수단 한도를 그 달의 주들에 나눈다. needs는 주마다 충전해야 할 캐시, left는 그 달 남은 한도.
- * 할인이 큰 결제수단부터 그 단위(상품권은 5만원권)로 주마다 나눠 준다.
- * 돌려주는 것: 주마다 결제수단별로 쓸 금액
- */
-export function splitMonth(needs: number[], cards: Card[], left: Record<string, number>): Record<string, number>[] {
-  const rest = [...needs], lim = { ...left }
-  const out = needs.map(() => ({}) as Record<string, number>)
-  for (const k of cards) for (let i = 0; i < rest.length; i++) {
-    const u = k.unit ?? BIG
-    const n = Math.floor(Math.min(rest[i], lim[k.key] ?? 0) / u) * u
-    if (n <= 0) continue
-    out[i][k.key] = (out[i][k.key] ?? 0) + n
-    rest[i] -= n; lim[k.key] -= n
-  }
-  return out
-}
+/** 그 달 마지막 충전에만 쓰는 결제수단 */
+export const LAST_KEY = 'nexon'
 
 export function planAll(p: Plan): WeekResult[] | null {
   const methods = (p.methods ?? []).filter(m => m.on && m.rate > 0 && m.rate < 1)
   const cards: Card[] = [
     ...p.cards.filter(c => c.on).map(c => ({ key: c.key, name: c.name, rate: rateOf(c.disc) ?? 0 })).filter(c => c.rate > 0),
-    ...methods.map(m => ({ key: m.key, name: m.name, rate: m.rate, unit: U })),
+    ...methods.map(m => ({ key: m.key, name: m.name, rate: m.rate, unit: m.unit ?? U })),
   ].sort((a, b) => a.rate - b.rate)
   /** 그 달에 처음 쓸 수 있는 한도 */
   const full = (key: string) => { const m = methods.find(x => x.key === key); return m ? (m.monthly ?? Infinity) : MONTHLY }
-  // 상품권은 달마다 먼저 나눠 둔다. 잔액을 먼저 쓰니 주마다 충전할 캐시는 잔액을 뺀 만큼
-  const weekLimits: Record<string, number>[] = []
-  {
-    let bal = p.balance
-    const needs = p.weeks.map(w => { const use = Math.min(bal, w.amount); bal -= use; return w.amount - use })
-    for (const m of new Set(p.weeks.map(w => w.month))) {
-      const idx = p.weeks.map((w, i) => (w.month === m ? i : -1)).filter(i => i >= 0)
-      const left = Object.fromEntries(cards.map(c => [c.key, full(c.key) === Infinity ? Infinity : m === p.thisMonth ? (p.leftNow[c.key] ?? full(c.key)) : full(c.key)]))
-      splitMonth(idx.map(i => needs[i]), cards, left).forEach((l, j) => (weekLimits[idx[j]] = l))
+  // 달마다 남은 한도. 주를 차례로 지나며 쓴 만큼 깎는다(앞 주가 할인 큰 것부터 먼저 쓴다)
+  const lim: Record<string, Record<string, number>> = {}
+  const monthLim = (m: string) => lim[m] ??= Object.fromEntries(cards.map(c => [c.key,
+    full(c.key) === Infinity ? Infinity : m === p.thisMonth ? (p.leftNow[c.key] ?? full(c.key)) : full(c.key)]))
+  // 넥슨카드는 달마다 마지막 주부터 거꾸로 한도만큼(5만원권) 잡아 두고, 잡아 둔 주에만 먼저 쓴다.
+  // 결제가 한 번뿐이면 그 뒤 충전을 모르니 맨 뒤 순서로만 둔다(다른 한도를 다 쓰고 모자랄 때)
+  const last = cards.find(c => c.key === LAST_KEY)
+  const others = cards.filter(c => c !== last)
+  const once = p.weeks.length === 1
+  const reserve = p.weeks.map(() => 0)
+  if (last && !once) for (const m of new Set(p.weeks.map(w => w.month))) {
+    let left = monthLim(m)[LAST_KEY]
+    for (let i = p.weeks.length - 1; i >= 0; i--) {
+      if (p.weeks[i].month !== m) continue
+      reserve[i] = Math.floor(Math.min(left, p.weeks[i].amount) / BIG) * BIG
+      left -= reserve[i]
     }
   }
-  let balance = p.balance, capLeft = p.barcode.cap
+  // 가진 캐시: 처음 잔액(1:1)에 끝자리로 남긴 캐시(산 값)가 더해진다
+  const held = { cash: p.balance, won: p.balance }
+  let capLeft = p.barcode.cap
   const out: WeekResult[] = []
   for (const [wi, w] of p.weeks.entries()) {
-    // 한도 없는 결제수단은 나눈 금액보다 더 결제할 때도 쓸 수 있다
-    const limits = { ...weekLimits[wi], ...Object.fromEntries(methods.filter(m => m.monthly == null).map(m => [m.key, Infinity])) }
+    const L = monthLim(w.month)
     const want = w.start in p.weekBarcode ? p.weekBarcode[w.start] : p.barcodeWant
     // 이 주의 사정을 떠 둔다. 뒤 주가 한도를 깎아도 이 주 계산은 그대로여야 한다
     const ctx: FundCtx = {
-      held: { cash: balance, won: balance }, limits: { ...limits }, cards,
+      held: { ...held }, limits: { ...L, ...(last && !once ? { [LAST_KEY]: reserve[wi] } : {}) },
+      cards: !last ? others : once ? [...others, last] : reserve[wi] ? [last, ...others] : others,
       barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft, want } : null,
+      spareOk: wi < p.weeks.length - 1,
     }
     const fee = p.fee ?? feeOf(w.tier)
     const creditPer = p.credit ? creditWonPer(p.credit.items, fee, p.um) : 0
@@ -470,8 +509,10 @@ export function planAll(p: Plan): WeekResult[] | null {
     const f = fund(solved.best.pay, ctx)
     for (const q of f.parts) {
       if (q.bonus) capLeft -= q.bonus
-      if (q.held) balance -= q.cash
+      if (q.held) { held.cash -= q.cash; held.won -= q.won }
+      if (q.key) L[q.key] -= q.cash
     }
+    if (f.spare) { held.cash += f.spare.cash; held.won += f.spare.won }
     out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, fee, um: p.um, solved, ctx })
   }
   return out
@@ -500,16 +541,17 @@ export interface RoutePick {
 export interface CreditUse { balance: number; items: CreditItem[]; keepRest?: boolean }
 
 /**
- * 판매 횟수 제한(주마다 n회)으로 루트를 고른다.
+ * 판매 횟수 제한(주마다 n회)으로 루트를 고른다. n이 배열이면 주마다 따로 정한 상한이다.
  * 크레딧은 주마다 쌓인 만큼(남아 있던 것 포함) 가장 많이 돌려받게 털고, 남는 건 다음 주로 넘긴다.
  */
-export function pickAt(weeks: WeekResult[], n: number | null, credit: CreditUse | null = null): RoutePick {
+export function pickAt(weeks: WeekResult[], n: number | null | (number | null)[], credit: CreditUse | null = null): RoutePick {
   let carry = credit?.balance ?? 0
   // 중간 주에는 크레딧당 가장 많이 받는 물건만 산다. 모자라면 모아 둔다.
   // 마지막 주에 남은 것으로 가장 많이 받는 조합을 사면, 계획 전체를 한 번에 턴 것과 같다
   const top = credit ? [...credit.items].filter(x => x.price > 0 && x.credits > 0).sort((a, b) => b.price / b.credits - a.price / a.credits).slice(0, 1) : []
   const ps: WeekPick[] = weeks.map((w, i) => {
-    const route = n == null ? w.solved.best : w.solved.routeAt(n)
+    const k = Array.isArray(n) ? n[i] : n
+    const route = k == null ? w.solved.best : w.solved.routeAt(k)
     let spend: CreditSpend | null = null
     if (credit) {
       carry += route.credits
@@ -521,7 +563,7 @@ export function pickAt(weeks: WeekResult[], n: number | null, credit: CreditUse 
   const sum = (f: (p: WeekPick) => number) => ps.reduce((a, p) => a + f(p), 0)
   const creditBack = sum(p => p.credit?.back ?? 0)
   return {
-    n, weeks: ps, cost: sum(p => p.route.cost), back: sum(p => p.route.back) + creditBack, loss: sum(p => p.loss),
+    n: Array.isArray(n) ? Math.max(0, ...ps.map(p => p.route.sales)) : n, weeks: ps, cost: sum(p => p.route.cost), back: sum(p => p.route.back) + creditBack, loss: sum(p => p.loss),
     sales: sum(p => p.route.sales), pay: sum(p => p.route.pay),
     creditBack, creditLeft: carry, creditSales: sum(p => p.credit?.sales ?? 0),
   }
@@ -531,7 +573,27 @@ export function pickAt(weeks: WeekResult[], n: number | null, credit: CreditUse 
  * 최저가·최적화·횟수 정하기 세 루트와 판매 횟수별 곡선.
  * curve[n] = 주마다 판매 n회까지로 할 때 전체 잃는 돈 (n은 lo..hi)
  */
-/** perSale: 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
+/**
+ * 주마다 따로: 그 주의 '잃는 돈 + 판매 횟수 × perSale'이 가장 작은 판매 상한.
+ * 모든 주에 같은 상한을 걸면, 금액이 큰 주(목표 달성 주)가 작은 주 여럿에 끌려 메소마켓을 크게 섞게 된다
+ * (2026-09-29 사용자 제보: 달성 1주 + 유지 52주에서 달성 주 회수율이 89.6% → 80.9%)
+ */
+export function perWeek(res: WeekResult[], perSale: number): (number | null)[] {
+  return res.map(w => {
+    const L = w.solved.lossAt.length - 1
+    if (L < 1) return null
+    const loss = [Infinity], sales = [0]
+    for (let k = 1; k <= L; k++) {
+      const ok = Number.isFinite(w.solved.lossAt[k])
+      const r = ok ? w.solved.routeAt(k) : null
+      loss.push(r ? r.loss : Infinity); sales.push(r ? r.sales : 0)
+    }
+    const k = balancePoint(loss, sales, 1, L, perSale)
+    return k >= L ? null : k
+  })
+}
+
+/** perSale: 판매 1회 수고비. 최적화 루트는 주마다, 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
 export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 2000) {
   const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
   // 크레딧을 쓰면 조합은 크레딧 어림값으로 골랐어도, 곡선은 큐브를 실제로 살 수 있는 만큼 산 값으로 그린다.
@@ -549,7 +611,9 @@ export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | 
   let bn = hi
   for (let k = lo; k <= hi; k++) if (curve[k] < curve[bn] - 0.5) bn = k
   for (let k = lo; k < bn; k++) if (curve[k] <= curve[bn] + 0.5) { bn = k; break }
-  const kn = balancePoint(curve, picks.map(p => p?.sales ?? 0), lo, bn, perSale)
   const n = Math.max(lo, Math.min(salesN, hi))
-  return { curve, lo, hi, best: picks[bn]!, knee: picks[kn]!, count: picks[n]! }
+  // 최저가·최적화는 주마다 따로 고른다(최저가는 같으면 적게 파는 쪽). 곡선과 횟수 정하기는 모든 주에 같은 상한
+  const best = res.length > 1 ? pickAt(res, perWeek(res, 0), credit) : picks[bn]!
+  const knee = res.length > 1 ? pickAt(res, perWeek(res, perSale), credit) : picks[balancePoint(curve, picks.map(p => p?.sales ?? 0), lo, bn, perSale)]!
+  return { curve, lo, hi, best, knee, count: picks[n]! }
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../store.svelte'
-  import { planner, setDate, setSkipThisWeek, setTarget } from '../plan.svelte'
+  import { KEEP_DEFAULT, planner, setDate, setKeep, setSkipThisWeek, setTarget, setUnit } from '../plan.svelte'
   import { TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, md, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
@@ -10,19 +10,21 @@
   const weekStart = $derived(addDays(d.thisWeek, weeksAhead * 7))
   const DOW = ['일', '월', '화', '수', '목', '금', '토']
   const dow = (iso: string) => DOW[new Date(iso + 'T00:00:00Z').getUTCDay()]
+  const keep = $derived({ ...KEEP_DEFAULT, ...p.keep })
+  const tierName = $derived(d.tiers.find(t => t.key === p.target)!.name)
 </script>
 
 <article class="card" use:spotlight>
   <h3 class="card-title">목표</h3>
 
   <div class="label">달성할 등급</div>
-  <div class="tiers" role="group" aria-label="목표 등급">
+  <div class="tiers-wrap"><div class="tiers" role="group" aria-label="목표 등급">
     {#each d.tiers as t (t.key)}
       <button class="tier" aria-pressed={p.target === t.key} style="--c:{TIER_VAR[t.key]};--ink:{TIER_INK_VAR[t.key]}" onclick={() => setTarget(t.key)}>
         <i></i>{t.name}<small class="mono">{t.th / 10000}만</small>
       </button>
     {/each}
-  </div>
+  </div></div>
 
   <label class="label" for="plan-date">이 날짜까지</label>
   <div class="daterow">
@@ -35,6 +37,13 @@
     {/each}
   </div>
 
+  <label class="unitrow" for="plan-unit">
+    <span>충전 단위<small>자동으로 나누는 금액을 이 단위로 올려 맞춰요</small></span>
+    <select id="plan-unit" value={p.unit ?? 1000} onchange={e => setUnit(Number(e.currentTarget.value))}>
+      {#each [[1000, '1천 원'], [10_000, '1만 원'], [50_000, '5만 원'], [100_000, '10만 원']] as [v, t] (v)}<option value={v}>{t}</option>{/each}
+    </select>
+  </label>
+
   <label class="toggle" for="skip-week">
     <input id="skip-week" type="checkbox" checked={p.skipThisWeek} onchange={e => setSkipThisWeek(e.currentTarget.checked, d.thisWeek)} />
     <span class="sw" aria-hidden="true"></span>
@@ -44,6 +53,29 @@
     </span>
   </label>
 
+  <label class="toggle" for="keep-on">
+    <input id="keep-on" type="checkbox" checked={keep.on} onchange={e => setKeep({ on: e.currentTarget.checked })} />
+    <span class="sw" aria-hidden="true"></span>
+    <span class="tx">
+      <b>달성한 뒤에도 {tierName} 유지</b>
+      <small>{keep.on ? `${keep.every === 1 ? '매주' : `${keep.every}주마다`} 한 번 결제해서 ${keep.weeks}주 동안 지켜요` : '켜면 유지에 필요한 금액까지 주차별 계획에 넣어요'}</small>
+    </span>
+  </label>
+  {#if keep.on}
+    <div class="keep">
+      <label for="keep-every">충전 주기
+        <select id="keep-every" value={keep.every} onchange={e => setKeep({ every: Number(e.currentTarget.value) })}>
+          {#each Array.from({ length: 12 }, (_, i) => i + 1) as n (n)}<option value={n}>{n === 1 ? '매주' : `${n}주마다`}</option>{/each}
+        </select>
+      </label>
+      <label for="keep-weeks">유지 기간
+        <select id="keep-weeks" value={keep.weeks} onchange={e => setKeep({ weeks: Number(e.currentTarget.value) })}>
+          {#each [[13, '13주 (약 3개월)'], [26, '26주 (약 6개월)'], [52, '52주 (약 1년)']] as [n, t] (n)}<option value={n}>{t}</option>{/each}
+        </select>
+      </label>
+    </div>
+  {/if}
+
   <div class="facts">
     <div><span>목표 주</span><b class="mono">{md(weekStart)}(목) – {md(p.date)}({dow(p.date)})</b></div>
     <div><span>남은 결제 기회</span><b>{weeksAhead === 0 ? '이번 주뿐' : `이번 주 포함 ${weeksAhead + 1}주`}</b></div>
@@ -52,14 +84,19 @@
       <div><span>이번 주 이미 결제</span><b class="mono">{won(r.spentThisWeek)}원</b></div>
     {/if}
   </div>
-  {#if d.carry}
-    <p class="note">이월 {won(d.carry)}원은 목요일 갱신 때 부족분을 메우는 데만 쓰여서 계획에는 넣지 않았어요.</p>
+  {#if keep.on}
+    <p class="note">유지 계산에는 블랙 이월{d.carry ? `(지금 ${won(d.carry)}원)` : ''}도 넣었어요. 250만을 넘긴 결제는 이월로 쌓였다가 모자라는 목요일에 채워져요.</p>
+  {:else if d.carry}
+    <p class="note">이월 {won(d.carry)}원은 목요일 갱신 때 부족분을 메우는 데만 쓰여서 계획에는 넣지 않았어요. 유지를 켜면 넣어 계산해요.</p>
   {/if}
 </article>
 
 <style>
   .label { display: block; font-size: 12px; color: var(--color-tx3); margin: 14px 0 6px; }
   .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  /* 칸 폭이 좁으면 '브론즈 15만'이 칸을 넘친다. 화면이 아니라 이 칸 묶음의 폭으로 둘씩 나눈다 */
+  .tiers-wrap { container-type: inline-size; }
+  @container (max-width: 420px) { .tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .tier {
     appearance: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
     display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-radius: 11px;
@@ -68,7 +105,7 @@
   }
   .tier:hover { transform: translateY(-1px); border-color: var(--color-line2); }
   .tier i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; box-shadow: inset 0 0 0 1px var(--ring-on-fill); }
-  .tier small { margin-left: auto; font-weight: 400; font-size: 11px; color: var(--color-tx3); }
+  .tier small { margin-left: auto; font-weight: 400; font-size: 11px; color: var(--color-tx3); white-space: nowrap; }
   /* 회색 칸에 등급색을 섞으면 탁해진다. 카드색에 섞고 비율을 올려 또렷하게 둔다 */
   .tier[aria-pressed="true"] { border-color: var(--c); background: color-mix(in oklab, var(--c) 26%, var(--color-panel)); color: var(--color-tx); }
   /* 글자는 칠하는 색이 아니라 잉크색이다. 파스텔로 쓰면 밝은 화면에서 안 보인다 */
@@ -95,6 +132,15 @@
   .tx { display: grid; line-height: 1.35; }
   .tx b { font-size: 13px; font-weight: 600; }
   .tx small { font-size: 11.5px; color: var(--color-tx3); }
+  .unitrow { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .unitrow span { display: grid; font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .unitrow small { font-size: 11.5px; font-weight: 400; color: var(--color-tx3); }
+  .unitrow select, .keep select { font: inherit; font-size: 13.5px; color: var(--color-tx); background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 10px; padding: 8px 10px; outline: none; color-scheme: inherit; }
+  .unitrow select:focus { border-color: var(--color-lav); }
+  .keep { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .keep label { display: grid; gap: 4px; font-size: 12px; color: var(--color-tx3); }
+  .keep select { font: inherit; font-size: 13.5px; color: var(--color-tx); background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: 10px; padding: 8px 10px; outline: none; color-scheme: inherit; }
+  .keep select:focus { border-color: var(--color-lav); }
   .facts { margin-top: 16px; display: grid; gap: 8px; padding-top: 14px; border-top: 1px dashed var(--color-line); }
   .facts div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
   .facts span { color: var(--color-tx3); }

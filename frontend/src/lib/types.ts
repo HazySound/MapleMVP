@@ -97,5 +97,11 @@ export interface HistoryPage {
 }
 
 /** 목표 계획 입력. fixed는 주 시작일(목) → 직접 정한 결제 금액 */
-export interface PlanInput { target: TierKey; date: string; fixed: Record<string, number>; skipThisWeek: boolean }
+export interface PlanInput {
+  target: TierKey; date: string; fixed: Record<string, number>; skipThisWeek: boolean
+  /** 달성 뒤에도 등급 유지: 몇 주마다 결제할지, 목표 주 뒤 몇 주 동안 */
+  keep?: { on: boolean; every: number; weeks: number }
+  /** 자동으로 나누는 금액의 단위(원). 없으면 1,000원 */
+  unit?: number
+}
 

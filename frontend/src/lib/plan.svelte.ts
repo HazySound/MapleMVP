@@ -20,7 +20,8 @@ export async function initPlan(api: PyApi, data: State) {
   const idx = data.tiers.findIndex(t => t.key === data.current)
   const fallbackTarget = data.tiers[Math.min(idx + 1, data.tiers.length - 1)].key
   const date = saved.date && saved.date >= data.thisWeek ? saved.date : addDays(data.thisWeek, 8 * 7 + 6)
-  planner.input = { target: saved.target ?? fallbackTarget, date, fixed: saved.fixed ?? {}, skipThisWeek: saved.skipThisWeek ?? false }
+  planner.input = { target: saved.target ?? fallbackTarget, date, fixed: saved.fixed ?? {}, skipThisWeek: saved.skipThisWeek ?? false,
+    keep: { ...KEEP_DEFAULT, ...saved.keep }, ...(saved.unit ? { unit: saved.unit } : {}) }
   requestPlan()
 }
 
@@ -30,7 +31,8 @@ export function requestPlan() {
   if (!p || !py) return
   const b = getBase()
   if (!b) return
-  planner.result = makePlan(b, p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek) as PlanResult
+  const k = p.keep?.on ? { every: p.keep.every, weeks: p.keep.weeks } : null
+  planner.result = makePlan(b, p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek, k, p.unit ?? 1000) as PlanResult
 }
 
 function changed() {
@@ -42,6 +44,17 @@ function changed() {
 // ---- 입력 조작 ----
 export function setTarget(k: TierKey) { planner.input!.target = k; changed() }
 export function setDate(iso: string) { planner.input!.date = iso; planner.selected = []; changed() }
+
+/** 자동으로 나누는 금액의 단위. 5만원권으로만 충전하는 사람은 5만 원 단위로 */
+export function setUnit(u: number) { planner.input!.unit = u; changed() }
+
+/** 달성 뒤에도 등급 유지. 처음엔 꺼져 있고, 켜면 4주마다 · 26주 동안으로 시작한다 */
+export const KEEP_DEFAULT = { on: false, every: 4, weeks: 26 }
+export function setKeep(k: Partial<typeof KEEP_DEFAULT>) {
+  planner.input!.keep = { ...KEEP_DEFAULT, ...planner.input!.keep, ...k }
+  planner.selected = []
+  changed()
+}
 
 /** 이번 주는 더 결제하지 않음 (이미 쓴 금액만 반영) */
 export function setSkipThisWeek(on: boolean, thisWeek: string) {
@@ -78,17 +91,25 @@ export function fixTargets(amount: number) {
   changed()
 }
 
+/** 고정을 모두 풀고 모든 주를 다시 자동으로 나눈다 */
+export function unlockAll() {
+  planner.input!.fixed = {}
+  planner.selected = []
+  changed()
+}
+
 export function autoTargets() {
   for (const w of targets()) delete planner.input!.fixed[w]
   changed()
 }
 
-/** 부족분을 고른 주들에 1,000원 단위로 나눠 더한다. */
+/** 부족분을 고른 주들에 충전 단위로 나눠 더한다. */
 export function spreadShortfall() {
   const r = planner.result
   const ws = targets()
   if (!r || !r.shortfall || !ws.length) return
-  const per = Math.ceil(r.shortfall / ws.length / 1000) * 1000
+  const u = planner.input!.unit ?? 1000
+  const per = Math.ceil(r.shortfall / ws.length / u) * u
   const byStart = new Map(r.timeline.map(w => [w.start, w.amount]))
   for (const w of ws) planner.input!.fixed[w] = (planner.input!.fixed[w] ?? byStart.get(w) ?? 0) + per
   changed()

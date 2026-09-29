@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import shop from './cashshop.json'
 import {
-  BIG, MONTHLY, PG_ID, feeOf, fund, planAll, routesOf,
+  BIG, MONTHLY, PG_ID, feeOf, fund, pickAt, planAll, routesOf,
   type CardSetting, type CreditItem, type Plan, type RoutePick, type Sellable, type ShopItem, type WeekResult,
 } from './efficiency'
 
@@ -53,8 +53,10 @@ function checkPick(p: RoutePick, res: WeekResult[], c: Plan) {
     // 계획이면 계획 금액 그대로. 메포가 1,000원 단위라 딱 못 맞추면 1,000원 안쪽으로만 넘긴다
     if (c.exact && c.mk > 0) expect(route.pay).toBeLessThan(target + 1000)
     expect(route.market % 1000).toBe(0)
-    // 충전: 합이 결제액, 상품권은 5만원권만, 그 주 한도 안
-    near(funding.parts.reduce((a, q) => a + q.cash, 0), route.pay)
+    // 충전: 합이 결제액(끝자리로 한 권 더 사서 남긴 캐시는 빼고), 상품권은 5만원권만, 그 주 한도 안.
+    // 남기는 건 다음 주가 있을 때만
+    near(funding.parts.reduce((a, q) => a + q.cash, 0) - (funding.spare?.cash ?? 0), route.pay)
+    if (funding.spare) expect(w).not.toBe(res[res.length - 1])
     for (const q of funding.parts) {
       expect(q.cash).toBeGreaterThan(0)
       if (q.card) {
@@ -104,9 +106,12 @@ function run(c: Case) {
   expect(r.best.loss).toBeLessThanOrEqual(r.count.loss + 0.5)
   for (let n = r.lo + 1; n <= r.hi; n++) expect(r.curve[n]).toBeLessThanOrEqual(r.curve[n - 1] + 0.5)
   near(r.curve[r.hi], r.best.loss, 1)
-  expect(r.knee.n!).toBeGreaterThanOrEqual(r.lo)
-  expect(r.knee.n!).toBeLessThanOrEqual(r.hi)
-  near(r.knee.loss, r.curve[r.knee.n!], 1)
+  // 최적화는 주마다 따로 고른다. 모든 주에 같은 상한을 거는 어떤 n보다도 '잃는 돈 + 판매 × 수고비'가 작거나 같다
+  const score = (loss: number, sales: number) => loss + sales * 2000
+  for (let n = r.lo; n <= r.hi; n++) if (Number.isFinite(r.curve[n])) {
+    const u = pickAt(res!, n >= r.hi ? null : n)
+    expect(score(r.knee.loss, r.knee.sales)).toBeLessThanOrEqual(score(u.loss, u.sales) + 1)
+  }
   near(r.count.loss, r.curve[r.count.n!], 1)
   expect(r.knee.sales).toBeLessThanOrEqual(r.best.sales)
   // 최적화: 최저가보다 더 내는 돈이 줄인 판매 횟수 × 수고비(기본 2,000원) 이하
@@ -141,15 +146,19 @@ describe('금액 직접: 자주 쓸 금액들', () => {
 })
 
 describe('계획: 여러 주, 달이 바뀔 때', () => {
-  it('매주 25만 × 8주: 9월 한도는 이번 주, 10월·11월은 새 한도를 앞 주부터', () => {
+  it('매주 25만 × 8주: 달마다 새 한도를 앞 주부터, 넥슨카드는 그 달 마지막 주에만', () => {
     const x = run({ weeks: weekly(250_000), exact: true })
     const card = (i: number) => fundOf(x, i).filter(([n]) => n !== '일반 충전')
-    expect(card(0)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000]])
+    // 9월은 이번 주 하나라 그 주가 마지막 주
+    expect(card(0)).toEqual([['넥슨카드', 200_000], ['컬쳐랜드', 50_000]])
+    // 10월: 앞 주들은 컬쳐랜드·도서문화, 넥슨카드는 마지막 주(10/29)
     expect(card(1)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000]])
-    expect(card(2)).toEqual([['도서문화상품권', 150_000], ['넥슨카드', 100_000]])
-    expect(card(3)).toEqual([['넥슨카드', 100_000]])
-    expect(card(4)).toEqual([])
+    expect(card(2)).toEqual([['도서문화상품권', 150_000]])
+    expect(card(3)).toEqual([])
+    expect(card(5)).toEqual([['넥슨카드', 200_000]])
+    // 11월: 계획의 마지막 주(11/12)에 넥슨카드
     expect(card(6)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000]])
+    expect(card(7)).toEqual([['넥슨카드', 200_000], ['도서문화상품권', 50_000]])
   })
 
   it('이번 달 한도를 이미 다 썼으면 이번 주는 일반 충전만', () => {
@@ -161,6 +170,15 @@ describe('계획: 여러 주, 달이 바뀔 때', () => {
   it('주마다 금액이 다른 계획(목표 직전에 몰아서)', () => {
     const weeks = weekly(0).map((w, i) => ({ ...w, amount: [50_000, 80_000, 120_000, 300_000, 450_000, 90_000, 30_000, 12_300][i] }))
     run({ weeks, exact: true })
+  })
+
+  it('큰 달성 주 하나 + 작은 유지 주 여럿: 최적화가 달성 주까지 메소마켓으로 끌어내리지 않는다', () => {
+    const weeks = ['2026-10-01', ...Array.from({ length: 30 }, (_, i) => new Date(Date.parse('2026-10-08') + i * 7 * 864e5).toISOString().slice(0, 10))]
+      .map((start, i) => ({ start, amount: i ? 100_000 : 1_563_500, tier: 'black' as const, month: start.slice(0, 7) }))
+    const x = run({ weeks, exact: true })
+    // 달성 주 하나만 떼어 봐도 그 주에서 판매 1회를 줄이는 값이 수고비 이하일 때만 줄였다
+    const b0 = x.r.best.weeks[0], k0 = x.r.knee.weeks[0]
+    expect(k0.loss - b0.loss).toBeLessThanOrEqual((b0.route.sales - k0.route.sales) * 2000 + 0.5)
   })
 
   it('판매 횟수를 주마다 1회로 묶어도 계획 금액은 그대로 맞춘다', () => {

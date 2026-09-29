@@ -1,8 +1,8 @@
 <script lang="ts">
   /** 2. 캐시는 얼마에 — 캐시 잔액, 상품권 할인과 남은 한도, 직접 추가한 결제수단, 바코드(이벤트 때만) */
   import NumBox from './NumBox.svelte'
-  import { SHOP, addMethod, eff, removeMethod, saveEff, thisMonth, type PayMethod } from '../eff.svelte'
-  import { plainRateOf, rateOf, type PlainMode } from '../core/efficiency'
+  import { SHOP, addMethod, eff, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
+  import { LAST_KEY, plainRateOf, rateOf, unitName, type PlainMode } from '../core/efficiency'
   import { won } from '../format'
 
   const month = Number(thisMonth().slice(5))
@@ -13,6 +13,10 @@
     { key: 'per10k', name: '1만 캐시당 가격', unit: '원', ph: '9,300' },
   ]
   const modeOf = (k: PlainMode) => MODES.find(m => m.key === k) ?? MODES[0]
+  /** 판매 단위. 100원은 끝자리까지 아무 금액 */
+  const UNITS = [100, 1_000, 5_000, 10_000, 30_000, 50_000, 100_000]
+  /** '최소 5만원 단위' */
+  const minUnit = (u: number) => u > 100 ? `최소 ${unitName(u).slice(0, -1)} 단위` : '단위 없음 (아무 금액)'
   const bc = SHOP.barcode
 
   function note(disc: number) {
@@ -22,7 +26,7 @@
     return off(r)
   }
   const off = (r: number) => `${((1 - r) * 100).toFixed(1).replace(/\.0$/, '')}% 할인`
-  /** '5% 할인 · 달마다 300,000' */
+  /** '7% 할인 · 한도 없음'. 단위는 따로 눈에 띄게 보여 준다 */
   function methodNote(m: { mode: PlainMode; val: number; monthly: number | null }) {
     const r = plainRateOf(m.mode, m.val)
     return `${r < 1 ? off(r) : '할인을 넣으면 계산에 써요'} · ${m.monthly ? `달마다 ${won(m.monthly)}` : '한도 없음'}`
@@ -30,14 +34,23 @@
 
   const offs = $derived(eff.methods.filter(m => !m.on))
   let showOff = $state(false)
+  /** 추가 칸과 수정 칸은 같은 모양이다. editing은 고치는 결제수단 id */
   let adding = $state(false)
-  let form = $state({ name: '', mode: 'off' as PlainMode, val: 0, monthly: 0 })
+  let editing = $state<string | null>(null)
+  const blank = () => ({ name: '', mode: 'off' as PlainMode, val: 0, monthly: 0, unit: 50_000 })
+  let form = $state(blank())
   const formOk = $derived(!!form.name.trim() && plainRateOf(form.mode, form.val) < 1)
+  function startEdit(m: PayMethod) {
+    adding = false; editing = m.id
+    form = { name: m.name, mode: m.mode, val: m.val, monthly: m.monthly ?? 0, unit: m.unit }
+  }
+  function close() { adding = false; editing = null; form = blank() }
   function submit(e: Event) {
     e.preventDefault()
     if (!formOk) return
-    addMethod({ name: form.name.trim(), mode: form.mode, val: form.val, monthly: form.monthly || null })
-    adding = false; form = { name: '', mode: 'off', val: 0, monthly: 0 }
+    const x = { name: form.name.trim(), mode: form.mode, val: form.val, monthly: form.monthly || null, unit: form.unit }
+    if (editing) updateMethod(editing, x); else addMethod(x)
+    close()
   }
 </script>
 
@@ -57,7 +70,7 @@
     {#each eff.cards as c, i (c.key)}
       <div class="row" class:off={!c.on}>
         <input type="checkbox" id="eff-card-{c.key}" bind:checked={c.on} onchange={saveEff} />
-        <label for="eff-card-{c.key}">{c.name}<small>{note(c.disc)}</small></label>
+        <label for="eff-card-{c.key}">{c.name}<small>{note(c.disc)}{c.key === LAST_KEY ? ' · 그 달 마지막에' : ''}</small></label>
         <NumBox id="eff-disc-{c.key}" label="{c.name} 할인율 또는 5만원권 가격" size="sm" decimal placeholder="8" unit={c.disc && c.disc <= 100 ? '%' : ''}
           value={c.disc} set={v => { eff.cards[i].disc = v; saveEff() }} disabled={!c.on} />
         <NumBox id="eff-left-{c.key}" label="{c.name} {month}월 남은 한도" size="sm"
@@ -66,12 +79,32 @@
     {/each}
 
     <!-- 직접 추가한 결제수단(넥슨팩 쿠폰 등). 할인이 큰 것부터 상품권과 섞어 쓴다 -->
+    {#snippet methodForm()}
+      <form class="add" onsubmit={submit}>
+        <input class="txt" type="text" placeholder="이름 (예: 넥슨팩 쿠폰)" bind:value={form.name} maxlength="30" aria-label="결제수단 이름" />
+        <select bind:value={form.unit} aria-label="판매 단위">
+          {#each UNITS as u (u)}<option value={u}>{minUnit(u)}</option>{/each}
+        </select>
+        <select bind:value={form.mode} onchange={() => (form.val = 0)} aria-label="할인 적는 방식">
+          {#each MODES as x (x.key)}<option value={x.key}>{x.name}</option>{/each}
+        </select>
+        <NumBox id="eff-pm-form-val" label={modeOf(form.mode).name} size="sm" decimal placeholder={modeOf(form.mode).ph} unit={modeOf(form.mode).unit}
+          value={form.val} set={v => (form.val = v)} />
+        <NumBox id="eff-pm-form-limit" label="달마다 한도" size="sm" placeholder="달 한도 · 없으면 비움" value={form.monthly} set={v => (form.monthly = v)} />
+        <span class="acts">
+          <button type="button" class="btn" onclick={close}>취소</button>
+          <button type="submit" class="btn primary" disabled={!formOk}>{editing ? '저장' : '추가'}</button>
+        </span>
+      </form>
+    {/snippet}
     {#snippet methodRow(m: PayMethod)}
       {@const md = modeOf(m.mode)}
+      {#if editing === m.id}{@render methodForm()}{:else}
       <div class="row m" class:off={!m.on}>
         <input type="checkbox" id="eff-pm-{m.id}" bind:checked={m.on} onchange={saveEff} />
         <span class="ml">
-          <label for="eff-pm-{m.id}">{m.name}<small>{methodNote(m)}</small></label>
+          <label for="eff-pm-{m.id}">{m.name} <em class="unit">{minUnit(m.unit)}</em><small>{methodNote(m)}</small></label>
+          <button class="del" onclick={() => startEdit(m)} aria-label="{m.name} 고치기" title="고치기">✎</button>
           <button class="del" onclick={() => removeMethod(m.id)} aria-label="{m.name} 지우기" title="지우기">×</button>
         </span>
         <NumBox id="eff-pm-val-{m.id}" label="{m.name} {md.name}" size="sm" decimal placeholder={md.ph} unit={md.unit}
@@ -83,6 +116,7 @@
           <span class="nolimit">한도 없음</span>
         {/if}
       </div>
+      {/if}
     {/snippet}
     {#if eff.methods.length}
       <div class="row head sub"><span></span><span>직접 추가한 결제수단</span><span>할인</span><span>{month}월 남은 한도</span></div>
@@ -97,21 +131,9 @@
     {/if}
 
     {#if adding}
-      <form class="add" onsubmit={submit}>
-        <input class="txt" type="text" placeholder="이름 (예: 넥슨팩 쿠폰)" bind:value={form.name} maxlength="30" aria-label="결제수단 이름" />
-        <select bind:value={form.mode} onchange={() => (form.val = 0)} aria-label="할인 적는 방식">
-          {#each MODES as x (x.key)}<option value={x.key}>{x.name}</option>{/each}
-        </select>
-        <NumBox id="eff-pm-new-val" label={modeOf(form.mode).name} size="sm" decimal placeholder={modeOf(form.mode).ph} unit={modeOf(form.mode).unit}
-          value={form.val} set={v => (form.val = v)} />
-        <NumBox id="eff-pm-new-limit" label="달마다 한도" size="sm" placeholder="달 한도 · 없으면 비움" value={form.monthly} set={v => (form.monthly = v)} />
-        <span class="acts">
-          <button type="button" class="btn" onclick={() => (adding = false)}>취소</button>
-          <button type="submit" class="btn primary" disabled={!formOk}>추가</button>
-        </span>
-      </form>
+      {@render methodForm()}
     {:else}
-      <button class="addbtn" onclick={() => (adding = true)}>+ 할인받는 결제수단 직접 추가</button>
+      <button class="addbtn" onclick={() => { close(); adding = true }}>+ 할인받는 결제수단 직접 추가</button>
     {/if}
 
     <div class="row plain">
@@ -134,7 +156,8 @@
     </div>
   </div>
 
-  <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요. 상품권과 섞어 <b>할인이 큰 것부터</b> 쓰고(직접 추가한 것은 100원 단위), 딱 맞지 않는 끝자리는 {bc.on ? '바코드나 ' : ''}일반 충전(1:1)으로 채워요.</p>
+  <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요. 상품권과 섞어 <b>할인이 큰 것부터</b> 쓰고, 권 단위로 파는 결제수단은 그 단위로만 사요. 한 권보다 작은 끝자리는 할인되는 결제수단으로 <b>한 권 더 사서 남는 캐시를 다음 주에</b> 쓰고, 마지막 주(금액 직접이면 그 한 번)만 {bc.on ? '바코드나 ' : ''}일반 충전(1:1)으로 딱 맞춰요. 권마다 할인율이 다르면 권별로 따로 추가해 주세요.
+    <b>넥슨카드</b>는 먼저 쓰면 그 달에 다른 할인 충전(현대카드 포인트·중고 캐시 등)을 못 해서, 계획에서 <b>그 달 마지막 20만원</b>에만 써요. 한 번만 결제할 때는 다른 한도를 다 쓰고 모자랄 때만 써요.</p>
 </article>
 
 <style>
@@ -154,6 +177,7 @@
   .ml { display: flex; align-items: center; gap: 4px; min-width: 0; }
   .ml label { flex: 0 1 auto; min-width: 0; }
   .row.off .ml label { opacity: .55; }
+  .ml .unit { font-style: normal; font-size: 11px; font-weight: 600; color: var(--color-lav); padding: 0 6px; border-radius: 6px; background: color-mix(in oklab, var(--color-lav) 14%, transparent); white-space: nowrap; }
   .del { appearance: none; border: 0; background: none; color: var(--color-tx3); cursor: pointer; font-size: 15px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
   .del:hover { background: var(--color-panel3); color: var(--color-tx); }
   .fold { appearance: none; border: 0; background: none; font: inherit; font-size: 12px; color: var(--color-tx3); cursor: pointer; justify-self: start; padding: 2px 8px 2px 26px; border-radius: 6px; }

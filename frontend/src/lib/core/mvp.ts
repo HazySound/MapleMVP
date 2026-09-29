@@ -188,7 +188,18 @@ export interface PlanWeek {
   sum: number
   tier: Tier | null
   drop: number
+  /** 달성 뒤 유지 구간의 주. keepPay는 그중 주기에 맞춰 결제하는 주 */
+  keep: boolean
+  keepPay: boolean
+  /** 이 주 목요일 갱신에서 꺼내 쓴 이월(유지를 켰을 때만 센다). 그 주 금액으로 13주 동안 남는다 */
+  carryUsed: number
 }
+
+/** 달성 뒤에도 등급을 지킬 때: every주마다 한 번 결제, 목표 주 뒤 weeks주 동안 */
+export interface KeepOpt { every: number; weeks: number }
+
+/** 고정 금액 때문에 유지가 안 되는 주와 그 주에 모자란 금액 */
+export interface KeepBlock { offset: number; missing: number }
 
 export interface PlanResult {
   base: number
@@ -203,18 +214,40 @@ export interface PlanResult {
   planned: number
   reached: number | null
   timeline: PlanWeek[]
+  /** 유지를 켰을 때만 */
+  keep: {
+    every: number
+    weeks: number
+    /** 자동으로 정한 유지 결제 1회 금액과 그 횟수 */
+    per: number
+    count: number
+    /** 첫 유지 결제 전까지 버티려고 달성 주에 더 얹은 금액(주당) */
+    reachExtra: number
+    blocked: KeepBlock[]
+    /** 처음 이월과 유지 기간 동안 갱신에서 꺼내 쓴 이월 합계 */
+    carryStart: number
+    carryUsed: number
+  } | null
 }
 
 /**
  * t주 뒤(0 = 이번 주) 그 주의 13주 합계가 target 기준에 닿도록 결제 계획을 세운다.
  * fixed: 주 오프셋 → 직접 정한 추가 결제 금액. 나머지 주에는 부족분을 균등하게 나눈다.
  * 이월은 목요일 갱신 때 부족분을 메우는 데만 쓰여서 여기서는 넣지 않는다.
+ *
+ * keep을 주면 달성 뒤 keep.weeks주 동안 매주 13주 합계(그 주 결제까지)가 기준 이상이도록
+ * keep.every주마다 같은 금액을 결제하게 짠다. 첫 유지 결제 전까지는 달성 주들의 결제로 버텨야 하므로
+ * 모자라면 달성 주 금액도 올린다. 고정 금액 때문에 어떻게 해도 안 되는 주는 blocked로 알려 준다.
+ * 유지를 켜면 블랙 이월도 주마다 따라간다(carry = 지금 이월). 250만을 넘긴 몫은 쌓이고,
+ * 목요일 갱신에서 모자라면 꺼내 그 주 금액으로 채운다(grade·accrue와 같은 규칙).
  */
 export function plan(last13: number[], target: Tier, t: number, fixed: Record<number, number>,
-                     skipThisWeek = false, unit = 1000): PlanResult {
+                     skipThisWeek = false, unit = 1000, keep: KeepOpt | null = null, carry = 0): PlanResult {
   const first = Math.max(0, t - (WINDOW - 1))      // 목표 주의 13주 안에 드는 첫 계획 주
   const weeks: number[] = []
   for (let o = first; o <= t; o++) if (!(skipThisWeek && o === 0)) weeks.push(o)
+  const end = keep ? t + keep.weeks : t
+  const pays = keep ? Array.from({ length: Math.floor(keep.weeks / keep.every) }, (_, k) => t + (k + 1) * keep.every) : []
 
   /** o주 뒤의 13주 안에 드는 이미 끝난(또는 진행 중인) 주 결제 합. */
   const past = (o: number) => {
@@ -225,34 +258,120 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     }
     return s
   }
+  const inWin = (o: number, k: number) => k <= o && k >= o - (WINDOW - 1)
 
   const base = past(t)
   const required = Math.max(0, target.th - base)
   const fx: Record<number, number> = {}
   for (const [k, v] of Object.entries(fixed)) {
     const o = Number(k)
-    if (weeks.includes(o)) fx[o] = Math.max(0, v)
+    if (weeks.includes(o) || (o > t && o <= end)) fx[o] = Math.max(0, v)
   }
-  const fixedSum = Object.values(fx).reduce((a, b) => a + b, 0)
+  const fixedSum = weeks.reduce((a, o) => a + (fx[o] ?? 0), 0)
   const free = weeks.filter(o => !(o in fx))
   const remaining = required - fixedSum
-  const auto = free.length ? ceilUnit(Math.max(0, remaining), unit * free.length) / free.length : 0
+  let auto = free.length ? ceilUnit(Math.max(0, remaining), unit * free.length) / free.length : 0
+
   const amounts: Record<number, number> = {}
-  for (const o of weeks) amounts[o] = o in fx ? fx[o] : auto
+  const fill = () => {
+    for (const o of weeks) amounts[o] = o in fx ? fx[o] : auto
+    for (let o = t + 1; o <= end; o++) amounts[o] = o in fx ? fx[o] : pays.includes(o) ? keepPer : 0
+  }
+  /** o주의 13주 합계. 자동으로 나눌 주(auto)는 빼고 센다 */
+  const known = (o: number, skip: (k: number) => boolean) => {
+    let s = past(o)
+    for (let k = Math.max(0, o - (WINDOW - 1)); k <= o; k++) if (!skip(k)) s += amounts[k] ?? 0
+    return s
+  }
+
+  /**
+   * 주마다 따라가며 13주 합계를 센다. 이월을 쌓고 목요일 갱신에서 꺼내 쓴다.
+   * vals[k]는 (k − 12)주 뒤의 주 금액(갱신 때 채운 이월 포함), sums[o]는 o주 뒤 그 주 결제까지 더한 합계
+   */
+  const simulate = (amt: (o: number) => number) => {
+    const win = [...last13]
+    win[WINDOW - 1] += amt(0)
+    let c = carry
+    c += accrue(sumOf(win), amt(0), c)
+    const vals = [...win], sums = [sumOf(win)], used = [0]
+    for (let o = 1; o <= end; o++) {
+      win.shift()
+      const r = grade(sumOf(win), c)
+      c = r.carry
+      const pay = amt(o)
+      win.push(r.carryUsed + pay)
+      const live = sumOf(win)
+      c += accrue(live, pay, c)
+      vals.push(r.carryUsed + pay); sums.push(live); used.push(r.carryUsed)
+    }
+    return { vals, sums, used }
+  }
+
+  let keepPer = 0, reachExtra = 0
+  const blocked: KeepBlock[] = []
+  let sim: ReturnType<typeof simulate> | null = null
+  if (keep) {
+    const freeReach = (k: number) => free.includes(k)
+    const freeKeep = pays.filter(o => !(o in fx))
+    const amtOf = (a: number, A: number) => (o: number) =>
+      o in fx ? fx[o] : o <= t ? (freeReach(o) ? a : 0) : freeKeep.includes(o) ? A : 0
+    const ok = (a: number, A: number) => {
+      const { sums } = simulate(amtOf(a, A))
+      for (let o = t; o <= end; o++) if (sums[o] < target.th) return false
+      return true
+    }
+    // 유지 금액 A마다 버틸 수 있는 가장 작은 달성 금액 a를 찾고, 유지 기간 전체 결제가 가장 적은 것을 고른다.
+    // 같으면 A가 큰 쪽(달성 주에 몰지 않고 고르게)
+    const aMax = free.length ? ceilUnit(target.th, unit) : 0
+    const aTop = aMax / unit
+    let best: { a: number; A: number; cost: number } | null = null
+    for (let A = 0; A <= (freeKeep.length ? ceilUnit(target.th, unit) : 0); A += unit) {
+      if (best && A * freeKeep.length > best.cost) break
+      if (!ok(aMax, A)) continue
+      let lo = 0, hi = aTop
+      while (lo < hi) { const m = (lo + hi) >> 1; if (ok(m * unit, A)) hi = m; else lo = m + 1 }
+      const a = lo * unit, cost = a * free.length + A * freeKeep.length
+      if (!best || cost <= best.cost) best = { a, A, cost }
+      if (a === 0) break
+    }
+    if (best) {
+      reachExtra = Math.max(0, best.a - auto); auto = best.a; keepPer = best.A
+    } else {
+      // 어떻게 해도 안 된다(고정 때문). 이월 없이 셈한 금액으로 두고 끊기는 주를 알려 준다
+      fill()
+      const need: { miss: number; nr: number; nk: number }[] = []
+      for (let o = t + 1; o <= end; o++) {
+        const miss = target.th - known(o, k => freeReach(k) || freeKeep.includes(k))
+        if (miss > 0) need.push({ miss, nr: free.filter(k => inWin(o, k)).length, nk: freeKeep.filter(k => inWin(o, k)).length })
+      }
+      let a = auto
+      for (const c of need) if (c.nr) a = Math.max(a, ceilUnit(c.miss / c.nr, unit))
+      for (const c of need) if (c.nk) keepPer = Math.max(keepPer, ceilUnit(Math.max(0, c.miss - c.nr * a) / c.nk, unit))
+      reachExtra = a - auto; auto = a
+    }
+    fill()
+    sim = simulate(o => amounts[o] ?? 0)
+    for (let o = t + 1; o <= end; o++) if (sim.sums[o] < target.th) blocked.push({ offset: o, missing: target.th - sim.sums[o] })
+  } else fill()
 
   const timeline: PlanWeek[] = []
-  for (let o = 0; o <= t; o++) {
+  for (let o = 0; o <= end; o++) {
     let s = past(o)
     for (let k = Math.max(0, o - (WINDOW - 1)); k <= o; k++) s += amounts[k] ?? 0
     // 이 주 목요일에 13주 밖으로 밀려나는 주의 결제
-    const drop = o >= 1 && o <= WINDOW ? last13[o - 1] : (amounts[o - WINDOW] ?? 0)
+    let drop = o >= 1 && o <= WINDOW ? last13[o - 1] : (amounts[o - WINDOW] ?? 0)
+    if (sim) { s = sim.sums[o]; drop = o >= 1 ? sim.vals[o - 1] : 0 }
+    const isKeep = o > t
     timeline.push({
-      offset: o, amount: amounts[o] ?? 0, fixed: o in fx, counts: weeks.includes(o),
+      offset: o, amount: amounts[o] ?? 0, fixed: o in fx,
+      counts: isKeep ? pays.includes(o) || o in fx : weeks.includes(o),
       skipped: skipThisWeek && o === 0, sum: s, tier: tierOf(s), drop,
+      keep: isKeep, keepPay: pays.includes(o), carryUsed: sim?.used[o] ?? 0,
     })
   }
   const hit = timeline.find(w => w.sum >= target.th)
   const planned = Object.values(amounts).reduce((a, b) => a + b, 0)
+  const reachPlanned = weeks.reduce((a, o) => a + (amounts[o] ?? 0), 0)
   return {
     base,
     required,
@@ -262,9 +381,11 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     autoPer: auto,
     autoCount: free.length,
     shortfall: free.length ? 0 : Math.max(0, remaining),
-    surplus: Math.max(0, planned - required),
+    surplus: Math.max(0, reachPlanned - required),
     planned,
     reached: hit ? hit.offset : null,
     timeline,
+    keep: keep ? { every: keep.every, weeks: keep.weeks, per: keepPer, count: pays.filter(o => !(o in fx)).length, reachExtra, blocked,
+      carryStart: carry, carryUsed: sim ? sim.used.reduce((a, b) => a + b, 0) : 0 } : null,
   }
 }

@@ -7,7 +7,7 @@
  */
 import type { PcFuzzy } from '../format'
 import {
-  type Refresh, type Row, type Tier, type TierKey, TIERS, WINDOW, addDays, forecast, grade,
+  type KeepOpt, type Refresh, type Row, type Tier, type TierKey, TIERS, WINDOW, addDays, forecast, grade,
   needFor, needNow, plan as planCalc, replay, tierIndex, tierNow, todayKst, weekStart, weeklyAmounts,
 } from './mvp'
 import {
@@ -290,7 +290,7 @@ export function simulate(b: Base, extra: number): Sim {
 }
 
 export function makePlan(b: Base, target: TierKey, dateIso: string,
-                         fixed: Record<string, number>, skipThisWeek: boolean) {
+                         fixed: Record<string, number>, skipThisWeek: boolean, keep: KeepOpt | null = null, unit = 1000) {
   const t = Math.round((Date.parse(weekStart(dateIso)) - Date.parse(b.thisWeek)) / (7 * 864e5))
   if (t < 0) return { error: '목표 날짜는 오늘 이후여야 해요.' }
   const tier = TIERS.find(x => x.key === target)!
@@ -298,7 +298,8 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
   for (const [k, v] of Object.entries(fixed)) {
     offsets[Math.round((Date.parse(k) - Date.parse(b.thisWeek)) / (7 * 864e5))] = Number(v)
   }
-  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek)
+  // 유지를 켜면 지금 이월도 주마다 따라간다
+  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek, unit, keep, keep ? b.carry : 0)
   return {
     ...p,
     timeline: p.timeline.map(w => {

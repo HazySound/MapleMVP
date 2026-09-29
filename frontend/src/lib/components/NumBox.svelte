@@ -2,6 +2,8 @@
   /**
    * 숫자 칸. 치는 대로 쉼표를 붙이고, 비우면 0으로 본다.
    * decimal이면 소수점을 받는다(억 단위 가격).
+   * 값은 엔터를 누르거나 칸을 벗어날 때 한 번만 넘긴다. 치는 중에 넘기면 글자마다 전체를 다시 계산하고,
+   * 다 치기도 전에 목록에서 빠지는 일이 생긴다(플가보다 손해인 아이템 숨김)
    */
   let { value, set, unit = '', placeholder = '', decimal = false, id, label, size = 'md', onblur, onfocus, disabled = false }: {
     value: number
@@ -25,18 +27,30 @@
   // 밖에서 값이 바뀌면(다른 칸, 불러오기) 따라간다. 치는 중에는 건드리지 않는다
   $effect(() => { if (!focused) text = fmt(value) })
 
+  /** 쳤지만 아직 넘기지 않은 값 */
+  let pending: number | null = null
+  function commit() {
+    if (pending !== null && pending !== value) set(pending)
+    pending = null
+  }
+  // 치는 중에 칸이 사라져도(탭 이동 등) 친 값은 넘긴다
+  $effect(() => () => commit())
+
   function oninput(e: Event) {
     const raw = (e.currentTarget as HTMLInputElement).value
     let clean = decimal ? raw.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : raw.replace(/[^\d]/g, '')
     const n = Number(clean) || 0
     text = !clean ? '' : decimal ? comma(clean) : n.toLocaleString('ko-KR')
-    set(n)
+    pending = n
+  }
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') { commit(); (e.currentTarget as HTMLInputElement).blur() }
   }
 </script>
 
 <span class="nb {size}" class:off={disabled}>
   <input {id} type="text" inputmode={decimal ? 'decimal' : 'numeric'} aria-label={label} {placeholder} {disabled}
-    class:txt={/[가-힣]/.test(placeholder)} value={text} {oninput} onfocus={() => { focused = true; onfocus?.() }} onblur={() => { focused = false; text = fmt(value); onblur?.() }} />
+    class:txt={/[가-힣]/.test(placeholder)} value={text} {oninput} {onkeydown} onfocus={() => { focused = true; onfocus?.() }} onblur={() => { commit(); focused = false; text = fmt(value); onblur?.() }} />
   {#if unit}<span class="u">{unit}</span>{/if}
 </span>
 

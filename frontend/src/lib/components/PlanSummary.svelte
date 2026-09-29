@@ -19,6 +19,10 @@
     perText = v.toLocaleString('ko-KR')
   }
 
+  const k = $derived(r && !r.error ? r.keep : null)
+  const keepEnd = $derived(r?.timeline.at(-1))
+  const block = $derived(k?.blocked[0] ? r!.timeline[k.blocked[0].offset] : null)
+
   const status = $derived.by(() => {
     if (!r || r.error) return 'none'
     if (r.required === 0) return 'done'
@@ -60,6 +64,33 @@
       </div>
     </div>
 
+    {#if k}
+      <div class="banner keep" class:short={!!block}>
+        <div class="ic">
+          {#if block}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          {:else}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          {/if}
+        </div>
+        <div class="t">
+          {#if block}
+            <b>{md(block.start)} 주에 {tier.name} 유지가 끊겨요</b>
+            그 주 13주 합계가 <span class="mono">{won(k.blocked[0].missing)}</span>원 모자라요. 그 주 13주 안의 결제가 모두 고정돼 있어서 자동으로 채울 주가 없어요.
+            그 사이 주의 <b class="inl">고정을 풀거나</b>, 고정 금액을 올리거나, <b class="inl">충전 주기를 줄여</b> 주세요.
+          {:else if k.per === 0 && k.count > 0}
+            <b>유지 결제 없이 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 유지</b>
+            정해 둔 금액만으로 {k.weeks}주 동안 지켜져요.
+          {:else}
+            <b>달성 뒤 {k.every === 1 ? '매주' : `${k.every}주마다`} <span class="mono">{won(k.per)}</span>원</b>
+            {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 등급이 끊기지 않아요{k.every > 1 ? ` (주당 평균 ${won(Math.round(k.per / k.every))}원)` : ''}.
+            {#if k.reachExtra}첫 유지 결제 전까지 버티도록 달성하는 주에 주당 {won(k.reachExtra)}원을 더 넣었어요.{/if}
+            {#if k.carryUsed}모자라는 목요일마다 이월에서 모두 {won(k.carryUsed)}원을 꺼내 채우는 것까지 넣었어요.{/if}
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <div class="stats">
       <div class="st"><span>앞으로 필요한 금액</span><b class="mono" use:countup={r.required}>0</b></div>
       <div class="st"><span>균등 분배하면</span><b class="mono">{won(r.equalPer)}<small> × {r.weeksCount}주</small></b></div>
@@ -100,6 +131,8 @@
     transition: background .4s, border-color .4s;
   }
   .banner.short { --k: var(--color-peach); }
+  .banner.keep:not(.short) { --k: var(--color-lav); }
+  .t b.inl { display: inline; font-size: inherit; }
   .ic { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; flex: none; background: color-mix(in oklab, var(--k) 24%, transparent); color: var(--k); }
   .ic svg { width: 19px; height: 19px; }
   .t { font-size: 13px; color: var(--color-tx2); line-height: 1.5; }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../store.svelte'
-  import { planner, setAmount, toggleLock, toggleSelect } from '../plan.svelte'
+  import { planner, setAmount, toggleLock, toggleSelect, unlockAll } from '../plan.svelte'
   import { md, spotlight, tierColor, tierVar, tierName, won } from '../format'
   import { tip } from '../tip'
 
@@ -26,7 +26,12 @@
 </script>
 
 <article class="card" id="plan-table" use:spotlight>
-  <h3 class="card-title">주차별 계획 <span class="sub">금액을 입력하면 고정 · 비우면 자동 분배</span></h3>
+  <div class="head">
+    <h3 class="card-title">주차별 계획 <span class="sub">금액을 입력하면 고정 · 비우면 자동 분배</span></h3>
+    {#if planner.input && Object.keys(planner.input.fixed).length}
+      <button class="unlock" onclick={unlockAll}>고정 모두 풀고 자동으로</button>
+    {/if}
+  </div>
   {#if r && !r.error}
     <div class="scroll"><div class="table">
       <div class="row head">
@@ -39,6 +44,9 @@
         <span>등급</span>
       </div>
       {#each r.timeline as w (w.start)}
+        {#if w.keep && !r.timeline[w.offset - 1]?.keep}
+          <div class="divider">여기부터 {tierName(d.tiers, planner.input?.target ?? null)} 유지 · {r.keep?.every === 1 ? '매주' : `${r.keep?.every}주마다`} 결제</div>
+        {/if}
         <div class="row" class:off={!w.counts} class:sel={planner.selected.includes(w.start)} class:reached={r.reached === w.offset}>
           <label class="ck">
             <input type="checkbox" disabled={!w.counts} checked={planner.selected.includes(w.start)} onchange={() => toggleSelect(w.start)} aria-label="{md(w.start)} 주 선택" />
@@ -47,7 +55,7 @@
             <b>{w.offset === 0 ? '이번 주' : `${w.offset}주 뒤`}</b>
             <span class="mono">{md(w.start)} – {md(w.end)}</span>
             {#if w.offset === 0 && r.spentThisWeek}<em>이미 {won(r.spentThisWeek)}원 결제</em>{/if}
-            {#if w.skipped}<em>추가 결제 없음으로 설정됨</em>{:else if !w.counts}<em>목표일 전에 빠지는 주</em>{/if}
+            {#if w.skipped}<em>추가 결제 없음으로 설정됨</em>{:else if w.keep}{#if w.keepPay}<em class="kp">유지 결제</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{:else if !w.counts}<em>목표일 전에 빠지는 주</em>{/if}
           </span>
           <span class="num">
             <input class="amt mono" class:locked={w.fixed} type="text" inputmode="numeric" disabled={!w.counts}
@@ -84,6 +92,9 @@
 
 <style>
   .scroll { overflow-x: auto; margin-top: 12px; }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .unlock { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 6px 11px; border-radius: 9px; border: 1px solid color-mix(in oklab, var(--color-mint) 45%, var(--color-line)); background: var(--color-bg2); color: var(--color-mint); }
+  .unlock:hover { background: color-mix(in oklab, var(--color-mint) 10%, var(--color-bg2)); }
   .table { display: grid; min-width: 720px; }
   .row {
     display: grid; grid-template-columns: 30px minmax(150px, 1.3fr) 128px 72px 96px 104px minmax(92px, 1fr);
@@ -118,6 +129,9 @@
   .lock:disabled { cursor: default; }
   .lock svg { width: 13px; height: 13px; }
   .drop { color: var(--color-peach); font-size: 12.5px; }
+  .wk em.kp { color: var(--color-lav); }
+  .wk em.cy { color: var(--color-mint); }
+  .divider { margin: 10px 0 2px; padding: 6px 8px; font-size: 12px; font-weight: 600; color: var(--color-lav); border-top: 1px solid color-mix(in oklab, var(--color-lav) 45%, var(--color-line)); }
   .tier { font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .tier i { font-style: normal; font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 6px; background: color-mix(in oklab, var(--color-mint) 20%, transparent); color: var(--color-mint); }
 </style>

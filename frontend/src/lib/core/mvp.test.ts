@@ -160,6 +160,58 @@ describe('예측', () => {
 })
 
 describe('목표 계획', () => {
+  describe('달성 뒤 유지', () => {
+    // 지난 13주에 90만, 다음 주에 블랙을 찍고 유지
+    const last13 = [...Array(6).fill(0), 900_000, ...Array(6).fill(0)]
+    /** 유지 기간 내내 기준 이상이고, 자동 유지 금액을 1,000원만 줄여도 어딘가 끊긴다 */
+    const tight = (p: ReturnType<typeof plan>, unit: number, carry: number, every: number) => {
+      expect(p.keep!.blocked).toEqual([])
+      for (const w of p.timeline.slice(1)) expect(w.sum).toBeGreaterThanOrEqual(BLACK.th)
+      for (const w of p.timeline) expect(w.amount % unit).toBe(0)
+      if (p.keep!.per > 0) {
+        const pays = p.timeline.filter(w => w.keepPay).map(w => w.offset)
+        const fixed = Object.fromEntries([[1, p.timeline[1].amount], ...pays.map(o => [o, p.keep!.per - unit])])
+        const q = plan(last13, BLACK, 1, fixed, true, unit, { every, weeks: 26 }, carry)
+        expect(q.timeline.slice(1).some(w => w.sum < BLACK.th)).toBe(true)
+      }
+    }
+
+    it('어떤 주기·단위든 유지 기간 내내 블랙이고 더 줄일 수 없다', () => {
+      for (const unit of [1000, 50_000]) for (let every = 1; every <= 12; every++)
+        tight(plan(last13, BLACK, 1, {}, true, unit, { every, weeks: 26 }), unit, 0, every)
+    })
+
+    it('이월 규칙대로면 매주 유지는 빠지는 금액(250만/13)의 절반쯤이면 된다', () => {
+      // 블랙일 때 낸 결제는 합계에도 들고 넘친 만큼 이월에도 쌓인다. 모자라는 갱신에서 그 이월이 다시 채운다
+      const p = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 })
+      expect(p.keep!.per).toBeGreaterThan(90_000)
+      expect(p.keep!.per).toBeLessThan(110_000)
+      expect(p.keep!.carryUsed).toBeGreaterThan(0)
+      expect(p.timeline.some(w => w.carryUsed > 0)).toBe(true)
+    })
+
+    it('지금 가진 이월이 있으면 그만큼 덜 낸다', () => {
+      const a = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 }, 0)
+      const b = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 }, 1_000_000)
+      expect(b.planned).toBeLessThan(a.planned)
+      tight(b, 1000, 1_000_000, 1)
+    })
+
+    it('유지를 끄면 이월 없이 예전 그대로', () => {
+      const p = plan(last13, BLACK, 1, {}, true, 1000, null, 5_000_000)
+      expect(p.timeline[1].amount).toBe(1_600_000)
+      expect(p.keep).toBeNull()
+    })
+
+    it('고정 금액 때문에 못 지키는 주를 알려 준다', () => {
+      const fixed: Record<number, number> = { 1: 1_600_000 }
+      for (let o = 2; o <= 27; o++) fixed[o] = 0
+      const p = plan(last13, BLACK, 1, fixed, true, 1000, { every: 1, weeks: 26 })
+      expect(p.keep!.blocked[0].offset).toBe(7)
+      expect(p.keep!.blocked[0].missing).toBe(900_000)
+    })
+  })
+
   it('남은 주에 균등하게 나눈다', () => {
     const last13 = [...Array(12).fill(0), 100_000]
     const p = plan(last13, BLACK, 3, {})

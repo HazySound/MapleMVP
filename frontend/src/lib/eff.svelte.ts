@@ -98,6 +98,8 @@ function load(): Saved {
     if (s.plainVal && plainRateOf(s.plainMode ?? 'off', s.plainVal) < 1 && !s.methods.length)
       s.methods = [{ id: 'm-plain', name: '할인 충전', mode: s.plainMode ?? 'off', val: s.plainVal, monthly: null, on: true }]
     delete s.plainMode; delete s.plainVal
+    // 판매 단위가 생기기 전에 추가한 결제수단은 5만원 단위로 본다(사용자 지정). 수정에서 바꿀 수 있다
+    s.methods = s.methods.map(m => (m.unit ? m : { ...m, unit: 50_000 }))
     // 목록 고르기가 생기기 전부터 쓰던 사람: 갑자기 아이템이 빠지면 헷갈리니 그때 보던 목록을 그대로 둔다.
     // 기본 4종으로 시작하는 건 처음 쓰는 사람만
     if (!got.picked) {
@@ -203,10 +205,20 @@ export function saveCustom(x: Omit<ShopItem, 'id' | 'custom'>, id?: string) {
 }
 
 /** 크레딧샵 물건을 직접 추가한다. 거의 쓸 일은 없지만 새 물건이 나올 때를 위해 */
-export interface PayMethod { id: string; name: string; mode: PlainMode; val: number; monthly: number | null; on: boolean }
+/** unit: 판매 단위(한 권 금액). 100이면 끝자리까지 아무 금액 */
+export interface PayMethod { id: string; name: string; mode: PlainMode; val: number; monthly: number | null; on: boolean; unit: number }
 
 export function addMethod(x: Omit<PayMethod, 'id' | 'on'>) {
   eff.methods.push({ ...x, id: `pm${Date.now().toString(36)}`, on: true })
+  saveEff()
+}
+
+export function updateMethod(id: string, x: Omit<PayMethod, 'id' | 'on'>) {
+  const m = eff.methods.find(m => m.id === id)
+  if (!m) return
+  // 달 한도를 바꾸면 이번 달 남은 한도도 새로 센다
+  if (m.monthly !== x.monthly) delete eff.leftNow[id]
+  Object.assign(m, x)
   saveEff()
 }
 
@@ -263,7 +275,8 @@ export function tierAfter(d: State, amount: number): TierKey | null {
   return t
 }
 
-export interface Summary { loss: number; sales: number }
+/** split: 유지를 켰으면 달성하는 주와 유지하는 주를 나눈 값 */
+export interface Summary { loss: number; sales: number; split: { reach: { loss: number; sales: number }; keep: { loss: number; sales: number } } | null }
 
 export interface EffOut {
   mode: 'plan' | 'amount'
@@ -307,7 +320,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const all = sellables()
   const credit = eff.creditOn ? { balance: eff.creditBalance, items: creditItems(), keepRest: eff.creditKeep } : null
   const run = (items: Sellable[]) => planAll({
-    weeks, balance: eff.balance, cards: eff.cards, methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on })), leftNow: eff.leftNow, thisMonth: thisMonth(),
+    weeks, balance: eff.balance, cards: eff.cards, methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on, unit: m.unit })), leftNow: eff.leftNow, thisMonth: thisMonth(),
     barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: eff.weekBarcode,
     um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit,
   })
@@ -317,12 +330,19 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
   const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.sellCost)
 
+  // 유지를 켰으면 목표 주 뒤의 주가 유지 구간이다
+  const keepStarts = mode === 'plan' && plan?.keep ? new Set(plan.timeline.filter(w => w.keep).map(w => w.start)) : null
   const alt = (items: Sellable[]): Summary | null => {
     if (!items.some(x => x.price > 0) && !eff.mk) return null
     const r = run(items)
     if (!r) return null
     const p = pickAt(r, null, credit)
-    return { loss: p.loss, sales: p.sales }
+    const part = (keep: boolean) => {
+      const ws = p.weeks.filter(w => keepStarts!.has(w.w.start) === keep)
+      return { loss: ws.reduce((a, w) => a + w.loss, 0), sales: ws.reduce((a, w) => a + w.route.sales, 0) }
+    }
+    const split = keepStarts && p.weeks.some(w => keepStarts.has(w.w.start)) ? { reach: part(false), keep: part(true) } : null
+    return { loss: p.loss, sales: p.sales, split }
   }
   const priced = all.filter(x => x.price > 0)
   const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
