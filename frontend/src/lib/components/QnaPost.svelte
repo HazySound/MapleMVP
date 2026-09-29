@@ -188,10 +188,12 @@
         </span>
       {:else}
         <button class="like" aria-pressed={post.liked} disabled={liking} onclick={toggleLike}
-          title="추천하면 답변이 등록될 때 같이 알림을 받아요">
+          title={post.kind === 'notice' ? '추천하면 공지에 내용이 추가될 때 알림을 받아요' : '추천하면 답변이 등록될 때 같이 알림을 받아요'}>
           <span class="th">👍</span>추천<b class="mono">{post.likes}</b>
         </button>
-        {#if post.kind !== 'notice' && post.status !== 'done'}
+        {#if post.kind === 'notice'}
+          <span class="follow">{post.liked ? '공지에 내용이 추가되면 알림을 남겨 드려요' : '추천하면 공지에 내용이 추가될 때 알림을 받아요'}</span>
+        {:else if post.status !== 'done'}
           <span class="follow">{post.liked ? '답변이 등록되면 알림을 남겨 드려요' : '같은 문제라면 추천해 주세요. 답변 알림을 같이 받아요'}</span>
         {/if}
       {/if}
@@ -214,7 +216,7 @@
         {#each post.replies as r, i (r.id)}
           <li class:admin={r.admin}>
             <div class="rh">
-              {#if r.admin}<span class="badge">답변</span>{/if}
+              {#if r.admin}<span class="badge">{post.kind === 'notice' ? '추가 안내' : '답변'}</span>{/if}
               {@render who(r.nick, r.admin)}
               <i>·</i><span class="mono">{stamp(r.at)}</span>
               {#if r.mine || app.user?.admin}<button class="rx" onclick={() => removeReply(r.id)}>지우기</button>{/if}
@@ -247,7 +249,8 @@
     {#if post.canReply}
       <div class="compose">
         <textarea rows="4" maxlength="5000" bind:value={draft}
-          placeholder={app.user?.admin && !post.mine ? '답변을 적어 주세요. 올리면 작성자와 추천한 사람에게 알림이 가요.' : '더할 내용이나 캡처를 올려 주세요. 관리자에게 알림이 가요.'}></textarea>
+          placeholder={post.kind === 'notice' ? '공지에 더할 내용을 적어 주세요. 올리면 추천한 사람에게 알림이 가요.'
+            : app.user?.admin && !post.mine ? '답변을 적어 주세요. 올리면 작성자와 추천한 사람에게 알림이 가요.' : '더할 내용이나 캡처를 올려 주세요. 관리자에게 알림이 가요.'}></textarea>
         <QnaShots bind:this={shots} bind:ids={images} bind:busy={uploading} />
         <div class="send">
           {#if replyError}<span class="err">{replyError}</span>{/if}

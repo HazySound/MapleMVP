@@ -38,6 +38,7 @@
     done: t => `‘${t}’ 문의가 해결됐어요`,
     new: t => `새 문의: ${t}`,
     more: t => `‘${t}’ 문의에 작성자가 내용을 더했어요`,
+    update: t => `‘${t}’ 공지에 내용이 추가됐어요`,
   }
 </script>
 
@@ -124,6 +125,7 @@
   .dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
   .unseen .dot { background: var(--color-lav); }
   .unseen .dot.k-done { background: var(--color-mint); }
+  .unseen .dot.k-update { background: var(--color-lav); }
   .unseen .dot.k-new, .unseen .dot.k-more { background: var(--color-peach); }
   .tx { font-size: 12.5px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
   .at { grid-column: 2; font-size: 11px; color: var(--color-tx3); }

@@ -3,6 +3,7 @@
  *
  * 관리자가 달면 '답변 완료'로 바꾸고, 쓴 사람과 추천한 사람에게 알린다.
  * 쓴 사람이 덧붙이면(캡처를 더 올리는 등) 관리자에게 알린다.
+ * 공지는 관리자만 덧붙이고, 덧붙이면 추천한 사람에게 '공지에 내용이 추가됐다'고 알린다.
  */
 import { type Ctx, json } from '../../_lib'
 import { MAX_BODY, admins, attach, canSee, clean, isOwner, loadPost, notify, watchers } from '../../_qna'
@@ -35,7 +36,8 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
   await db.prepare('UPDATE post SET replies = replies + 1, updated_at = ?'
     + (answer && p.status === 'open' ? ", status = 'answered'" : '') + ' WHERE id = ?')
     .bind(now, p.id).run()
-  if (answer) await notify(db, await watchers(db, p, v.uid), p.id, 'answer')
+  if (p.kind === 'notice') { if (v.admin) await notify(db, await watchers(db, p, v.uid), p.id, 'update') }
+  else if (answer) await notify(db, await watchers(db, p, v.uid), p.id, 'answer')
   else if (v.uid === p.uid) await notify(db, (await admins(db)).filter(u => u !== v.uid), p.id, 'more')
   return json({ id: r!.id })
 }

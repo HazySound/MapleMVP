@@ -52,7 +52,7 @@ export interface Diag {
   weeks: { start: string; amount: number; spent: number; pc: number }[]
 }
 
-export interface Note { id: number; post: number; kind: 'new' | 'more' | 'answer' | 'done'; at: number; seen: boolean; title: string }
+export interface Note { id: number; post: number; kind: 'new' | 'more' | 'answer' | 'done' | 'update'; at: number; seen: boolean; title: string }
 
 export const KIND_NAME: Record<Kind, string> = { bug: '버그·오류', idea: '건의', howto: '사용법', notice: '공지' }
 export const TOPIC_NAME: Record<string, string> = {
