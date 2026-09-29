@@ -38,15 +38,13 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   if (before) { where.push('p.id < ?'); args.push(before) }
 
   const db = ctx.env.DB
-  const r = await db.prepare(`${POST_SQL} WHERE ${where.join(' AND ')} ORDER BY p.id DESC LIMIT ${PAGE + 1}`)
-    .bind(...args).all<PostRow>()
+  // 목록과 공지를 한 번에 묻는다. 따로 물으면 D1까지 두 번 오간다
+  const [r, n] = await db.batch<PostRow>([
+    db.prepare(`${POST_SQL} WHERE ${where.join(' AND ')} ORDER BY p.id DESC LIMIT ${PAGE + 1}`).bind(...args),
+    ...(before ? [] : [db.prepare(`${POST_SQL} WHERE p.kind = 'notice' ORDER BY p.id DESC LIMIT 30`)]),
+  ])
   const rows = r.results
-
-  let pins: ReturnType<typeof listItem>[] = []
-  if (!before) {
-    const n = await db.prepare(`${POST_SQL} WHERE p.kind = 'notice' ORDER BY p.id DESC LIMIT 30`).all<PostRow>()
-    pins = n.results.map(p => listItem(p, v))
-  }
+  const pins = n ? n.results.map(p => listItem(p, v)) : []
 
   return json({
     pins,

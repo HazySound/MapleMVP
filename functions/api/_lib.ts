@@ -102,10 +102,18 @@ export async function who(ctx: Ctx) {
  */
 let ready = false
 
-/** 표가 없으면 만든다. 마이그레이션 도구를 따로 두기엔 표가 둘뿐이다. */
+/**
+ * 표가 없으면 만든다. 마이그레이션 도구를 따로 두기엔 표가 둘뿐이다.
+ *
+ * build는 문장 스무 개를 하나씩 D1에 보낸다. 일꾼이 새로 뜰 때마다 그걸 다 하면
+ * 첫 요청이 몇 초씩 걸린다. 그래서 build가 맨 마지막에 만드는 것(LAST)이 이미 있으면
+ * 한 번만 묻고 끝낸다. build에 무언가 더하면 맨 끝에 두고 LAST를 그것으로 바꾼다.
+ */
+const LAST = 'applog_uid'
 export async function ensure(db: D1Database) {
   if (ready) return
-  await build(db)
+  const done = await db.prepare('SELECT 1 AS y FROM sqlite_master WHERE name = ?').bind(LAST).first()
+  if (!done) await build(db)
   ready = true
 }
 
@@ -142,6 +150,7 @@ async function build(db: D1Database) {
   await buildQna(db)
   // 진단 기록(가져오기가 왜 안 됐는지). log.ts가 쓴다
   await db.exec('CREATE TABLE IF NOT EXISTS applog (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL)')
+  // 맨 마지막. ensure가 이게 있으면 다 만든 것으로 본다(LAST)
   await db.exec('CREATE INDEX IF NOT EXISTS applog_uid ON applog (uid, id)')
 }
 

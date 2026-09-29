@@ -16,16 +16,21 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const wait = tick(`q:${v.uid}`, LIMIT.board.n, LIMIT.board.ms)
   if (wait) return tooMany(wait)
   const db = ctx.env.DB
-  const unread = (await db.prepare('SELECT COUNT(*) AS n FROM note WHERE uid = ? AND seen = 0')
-    .bind(v.uid).first<{ n: number }>())?.n ?? 0
-  if (new URL(ctx.request.url).searchParams.get('count') === '1') return json({ unread, uid: v.uid })
+  const count = db.prepare('SELECT COUNT(*) AS n FROM note WHERE uid = ? AND seen = 0').bind(v.uid)
+  if (new URL(ctx.request.url).searchParams.get('count') === '1') {
+    return json({ unread: (await count.first<{ n: number }>())?.n ?? 0, uid: v.uid })
+  }
 
-  const r = await db.prepare('SELECT n.id, n.post_id, n.kind, n.created_at, n.seen, p.title '
-    + 'FROM note n JOIN post p ON p.id = n.post_id WHERE n.uid = ? ORDER BY n.id DESC LIMIT 30')
-    .bind(v.uid).all<{ id: number; post_id: number; kind: string; created_at: number; seen: number; title: string }>()
+  // 개수와 목록을 한 번에 묻는다
+  type Row = { id: number; post_id: number; kind: string; created_at: number; seen: number; title: string }
+  const [c, r] = await db.batch([
+    count,
+    db.prepare('SELECT n.id, n.post_id, n.kind, n.created_at, n.seen, p.title '
+      + 'FROM note n JOIN post p ON p.id = n.post_id WHERE n.uid = ? ORDER BY n.id DESC LIMIT 30').bind(v.uid),
+  ])
   return json({
-    unread,
-    items: r.results.map(n => ({ id: n.id, post: n.post_id, kind: n.kind, at: n.created_at, seen: !!n.seen, title: n.title })),
+    unread: (c.results[0] as { n: number } | undefined)?.n ?? 0,
+    items: (r.results as Row[]).map(n => ({ id: n.id, post: n.post_id, kind: n.kind, at: n.created_at, seen: !!n.seen, title: n.title })),
   })
 }
 
