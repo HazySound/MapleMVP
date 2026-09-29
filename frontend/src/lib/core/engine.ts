@@ -138,8 +138,10 @@ export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blo
     }
     for (const i of idx) { hole.delete(i); if (open.includes(i)) gaps[i] = 0 }
     if (open.length === 1) gaps[open[0]] = rem
-    // 여럿이 남으면 합을 가장 오래된 주에 몰아 둔다. 먼저 빠지는 주라 모자라게 볼지언정 넉넉하게 보지 않는다
-    else if (open.length > 1) { gaps[open[0]] = rem; groups.push({ first: open[0], weeks: open, rem }) }
+    // 여럿이 남으면 합을 가장 최근 주에 몰아 둔다. 묶음 사이 줄은 툴팁에 0(기준 이상)으로 나왔으니
+    // 그 갱신들에서 합계가 기준 밑으로 내려가면 안 된다. 오래된 주에 두면 먼저 빠져서 인게임은 유지인데
+    // 사이트는 떨어진다고 보인다(예티: 7/2~7/29 합 42,200을 7/2에 두니 다음 주 브론즈, 인게임은 실버)
+    else if (open.length > 1) { gaps[open[open.length - 1]] = rem; groups.push({ first: open[0], weeks: open, rem }) }
   }
   // 합도 모르는 앞쪽 주. 지난 스캔 값이 있으면 그것을 쓴다
   for (const i of [...hole]) {
@@ -213,7 +215,7 @@ export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blo
     for (const i of hole) if (i !== 0 || !w0Open) weeks[i] = unknown(i)
     for (const g of groups) {
       for (const i of g.weeks) {
-        const v = i === g.first ? g.rem : 0
+        const v = i === g.weeks[g.weeks.length - 1] ? g.rem : 0
         weeks[i] = { start: b.starts[i], gapMin: v, gapMax: v, pcMin: 0,
                      pcMax: Math.max(0, g.rem - g.rem % UNIT), unknown: false, group: b.starts[g.first] }
       }
@@ -357,13 +359,14 @@ export function buildState(b: Base) {
         if (w.group) {
           if (w.group !== w.start) return []
           const end = saved.filter(x => x?.group === w.group).at(-1)!.start
-          return [{ start: w.start, end, kind: 'group', min: w.gapMin, max: w.gapMin }]
+          const sum = saved.reduce((a, x) => a + (x?.group === w.group ? x.gapMin : 0), 0)
+          return [{ start: w.start, end, kind: 'group', min: sum, max: sum }]
         }
         return w.pcMax > w.pcMin ? [{ start: w.start, kind: 'range', min: w.pcMin, max: w.pcMax }] : []
       }),
       /** PC방이 아니라 수집 못 한 결제(넥슨쇼핑 쿠폰 등)로 넣어 둔 금액. PC방 합계와 따로 센다 */
       missTotal: saved.reduce((a, w) => a + (w?.miss ? w.gapMin : 0), 0),
-      // 묶음은 주별로는 모르지만 합은 정확하다. 합을 첫 주에 몰아 두었으니 그 금액을 그대로 센다
+      // 묶음은 주별로는 모르지만 합은 정확하다. 합을 한 주에 몰아 두었으니 그 금액을 그대로 센다
       total: saved.reduce((a, w) => a + (w?.group ? w.gapMin : w?.pcMin ?? 0), 0),
       totalMax: saved.reduce((a, w) => a + (w?.group ? w.gapMin : w?.pcMax ?? 0), 0),
     },

@@ -205,7 +205,9 @@ describe('그 사람의 다음 주 (10/01) — 툴팁 앞 4줄이 0', () => {
     const g = s.weeks.filter(x => x.group).map(x => x.start)
     // 0인 줄 넷의 앞뒤, 곧 다섯 주가 한 묶음이다
     expect(g).toEqual(['2026-07-09', '2026-07-16', '2026-07-23', '2026-07-30', '2026-08-06'])
-    expect(s.weeks[0].gapMin).toBe(500)               // 다섯 주 PC방 합이 첫 주에 몰려 있다
+    // 다섯 주 PC방 합은 가장 최근 주에 몰아 둔다. 앞 주에 두면 먼저 빠져서, 툴팁은 0(유지)인 줄을
+    // 사이트는 모자란다고 본다
+    expect(s.weeks.slice(0, 5).map(x => x.gapMin)).toEqual([0, 0, 0, 0, 500])
   })
 })
 

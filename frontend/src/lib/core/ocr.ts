@@ -598,6 +598,26 @@ function rightColumns(g: Gray, tables: Table[], chosen: Table): number[][] {
   return out
 }
 
+/**
+ * 금액 열인지: 금액 바로 오른쪽에 회색 '캐시'가 붙어 있다. 등급 이름('다이아')이나 '1 주차 뒤' 같은
+ * 한글 열은 숫자로 잘못 읽혀도 오른쪽에 회색 글자가 없다. 줄 대부분에서 보이면 금액 열로 본다
+ */
+function cashAfter(g: Gray, t: Table): boolean {
+  const w = Math.max(4, Math.round(40 * t.scale))
+  let hit = 0
+  for (const [y0, y1] of t.rows) {
+    let n = 0
+    for (let y = y0; y < y1; y++) {
+      for (let x = t.x1 + 1; x < Math.min(g.width, t.x1 + w); x++) {
+        const v = g.data[y * g.width + x]
+        if (v > 120 && v <= 200) n++
+      }
+    }
+    if (n >= 3) hit++
+  }
+  return hit >= t.rows.length - 2
+}
+
 /** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
@@ -605,14 +625,21 @@ export function scan(g: Gray, fallbackScale = 0): ScanResult {
     ({ readings: seen, scale: t.scale, carries: rightColumns(g, tables, t),
        amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }) })
   // 금액 열은 아래로 갈수록 줄지 않는다. 앞 줄이 '0 캐시'로 짧으면 '1 주차 뒤' 열이 더 표처럼 보여
-  // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다
+  // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다.
+  // 다만 12줄이 모두 같은 등급('다이아')이면 그 열이 늘 같은 숫자(601)로 읽혀 줄지 않는 열이 된다.
+  // 그러면 진짜 금액 열이 오른쪽 '사용 이월' 열로 밀려 블랙처럼 계산됐다(아델 제보, 레드).
+  // 그래서 오른쪽에 회색 '캐시'가 붙은 열을 가장 먼저 쓴다
+  let mono: ScanResult | null = null
   let first: ScanResult | null = null
   for (const t of tables) {
     const seen = readColumn(g, t)
     if (!seen.length) continue
-    if (seen.some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))) return found(t, seen)
+    const up = seen.some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))
+    if (up && cashAfter(g, t)) return found(t, seen)
+    if (up) mono ??= found(t, seen)
     first ??= found(t, seen)
   }
+  if (mono) return mono
   if (first) return first
   // 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
   const sc = fallbackScale || 1

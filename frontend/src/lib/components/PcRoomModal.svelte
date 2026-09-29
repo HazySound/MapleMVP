@@ -90,11 +90,13 @@
     edited[r.start] === undefined && (!!r.unknown || !!r.group || (r.pcMax ?? 0) > (r.pcMin ?? 0))
   /** 합만 아는 묶음 → 그 묶음의 주들 */
   const groupOf = (g: string) => rows.filter(r => r.group === g && edited[r.start] === undefined)
+  /** 묶음의 합. 합은 묶음의 가장 최근 주에 몰아 두었다 */
+  const groupSum = (g: string) => groupOf(g).reduce((s, r) => s + (r.gapMin ?? 0), 0)
   const pcOf = (r: typeof rows[number], hi: boolean) => {
     const e = edited[r.start]
     if (e !== undefined) return e
     if (r.unknown || missed[r.start]) return 0   // 수집 못 한 결제는 PC방이 아니다
-    if (r.group) return r.gapMin ?? 0          // 묶음의 합은 첫 주에 몰려 있다
+    if (r.group) return r.gapMin ?? 0          // 묶음의 합은 가장 최근 주에 몰려 있다
     return (hi ? r.pcMax : r.pcMin) ?? r.amount
   }
   /** PC방이 아니라 수집 못 한 결제로 넣는 금액 (빼는 주는 음수) */
@@ -111,7 +113,7 @@
       if (r.unknown) return { start: r.start, kind: 'unknown', min: 0, max: 0 }
       if (r.group) {
         const g = groupOf(r.group)
-        return { start: r.start, end: g[g.length - 1].start, kind: 'group', min: r.gapMin ?? 0, max: r.gapMin ?? 0 }
+        return { start: r.start, end: g[g.length - 1].start, kind: 'group', min: groupSum(r.group), max: groupSum(r.group) }
       }
       return { start: r.start, kind: 'range', min: r.pcMin ?? 0, max: r.pcMax ?? 0 }
     }),
@@ -685,7 +687,7 @@
                     <!-- 확정하지 못한 주는 고칠 값을 짐작할 수 없다. 범위를 보여 주고, 원하면 눌러서 직접 넣는다 -->
                     <button class="range mono" onclick={() => (edited[r.start] = r.unknown || r.group ? 0 : r.pcMin ?? 0)}
                       use:tip={'눌러서 직접 넣을 수 있어요'}>
-                      {r.unknown ? '확인 불가' : r.group ? (r.group === r.start ? `합 ${won(r.gapMin ?? 0)}` : '↑ 합')
+                      {r.unknown ? '확인 불가' : r.group ? (r.group === r.start ? `합 ${won(groupSum(r.group))}` : '↑ 합')
                         : `${won(r.pcMin ?? 0)}~${won(r.pcMax ?? 0)}`}
                     </button>
                   {:else}
@@ -699,7 +701,7 @@
               {#if r.group && r.group === r.start && edited[r.start] === undefined}
                 {@const g = groupOf(r.group)}
                 <p class="msg">{md(g[0].start)}~{md(g[g.length - 1].end)} {g.length}주는 툴팁에 0으로 나와 합계만 알아요.
-                  이 {g.length}주 PC방은 합쳐서 {won(r.gapMin ?? 0)}원이에요.</p>
+                  이 {g.length}주 PC방은 합쳐서 {won(groupSum(r.group))}원이에요.</p>
               {:else if r.unknown && edited[r.start] === undefined}
                 <p class="msg">인게임에 이 주 금액이 나오지 않아요. 곧 13주에서 빠지는 주라 등급에는 영향이 없어요.</p>
               {:else if loose(r) && !r.group && hiddenRow(r)}
