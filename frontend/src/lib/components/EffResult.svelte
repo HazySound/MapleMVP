@@ -72,8 +72,10 @@
     const line = xs.map((n, i) => `${i ? 'L' : 'M'}${X(n).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join('')
     const area = `${line}L${X(xs.at(-1)!).toFixed(1)},${H - PY}L${X(xs[0]).toFixed(1)},${H - PY}Z`
     const dot = (n: number, loss = out.curve[n]) => ({ x: X(Math.max(out.lo, Math.min(n, out.hi))), y: Y(Math.min(y1, Math.max(y0, loss))) })
-    // 최저가·최적화는 주마다 따로 고른 값이라 곡선 위가 아닐 수 있다. 실제 금액 높이에 찍는다
-    return { line, area, X, Y, y0, y1, best: dot(out.best.n ?? out.hi, out.best.loss), knee: dot(out.knee.n ?? out.hi, out.knee.loss), count: dot(out.count.n ?? out.hi) }
+    // 여러 주면 최저가·최적화는 주마다 따로 고른 값이라 이 곡선(모든 주에 같은 상한) 위에 없다.
+    // 최저가는 곡선 끝(상한 없음)과 같고, 최적화는 곡선에 찍지 않는다
+    const one = out.weeks.length === 1
+    return { line, area, X, Y, y0, y1, one, best: one ? dot(out.best.n ?? out.hi, out.best.loss) : dot(out.hi), knee: dot(out.knee.n ?? out.hi, out.knee.loss), count: dot(out.count.n ?? out.hi) }
   })
 
   // 싼 낱개(1만 원 미만)를 여러 번 파는 루트면 주 초반·월초 시세 경고. 보통 플가·원더베리가 이렇게 된다
@@ -164,11 +166,11 @@
           <path d={chart.area} class="area" />
           <path d={chart.line} class="line" />
           <circle cx={chart.best.x} cy={chart.best.y} r="5" class="m best" />
-          <circle cx={chart.knee.x} cy={chart.knee.y} r="5" class="m knee" />
+          {#if chart.one}<circle cx={chart.knee.x} cy={chart.knee.y} r="5" class="m knee" />{/if}
           {#if eff.want === 'count'}<circle cx={chart.count.x} cy={chart.count.y} r="5" class="m count" />{/if}
           <text x={PX} y={H + 12} class="xl">{out.lo}회</text>
           <text x={W - 12} y={H + 12} class="xl" text-anchor="end">{out.hi}회</text>
-          <text x={chart.knee.x} y={chart.knee.y - 10} class="kl" text-anchor="middle">최적화 {out.mode === 'plan' ? '· 주마다 최대 ' : ''}{out.knee.n}회</text>
+          {#if chart.one}<text x={chart.knee.x} y={chart.knee.y - 10} class="kl" text-anchor="middle">최적화 {out.knee.n}회</text>{/if}
         </svg>
         <div class="ef-hint cost">
           <span><b>최적화</b>는 판매를 한 번 줄일 때 더 내는 돈이</span>
@@ -176,6 +178,7 @@
           <span>이하일 때만 줄여요.</span>
           {#if out.knee.sales < out.best.sales}
             <span>지금은 한 번 줄일 때 평균 <b>{won((out.knee.loss - out.best.loss) / (out.best.sales - out.knee.sales))}원</b>이라 {out.best.sales - out.knee.sales}회 줄였어요.</span>
+            {#if !chart.one}<span>최적화는 주마다 판매 횟수를 따로 정해서, 모든 주에 같은 상한을 거는 이 곡선 위에는 없어요.</span>{/if}
           {:else}
             <span>판매를 줄이면 한 번에 이보다 더 들어서, 최저가 루트가 가장 효율적이에요.</span>
           {/if}
