@@ -333,19 +333,20 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
       for (let o = t; o <= end; o++) if (sums[o] < target.th) return false
       return true
     }
-    // 유지 금액 A마다 버틸 수 있는 가장 작은 달성 금액 a를 찾고, 유지 기간 전체 결제가 가장 적은 것을 고른다.
-    // 같으면 A가 큰 쪽(달성 주에 몰지 않고 고르게)
+    // 먼저 달성 금액을 버틸 수 있는 한 가장 작게, 그다음 유지 금액을 가장 작게 정한다.
+    // 총액만 보면 이월이 넘친 결제를 버리지 않아서, 목표 전에 크게 몰아 넣고 유지를 줄이는 조합도
+    // 총액이 비슷해 뽑힌다(2026-09-29 사용자: 11/18 블랙인데 80만씩 몰고 유지 5만). 그러면 안 된다
     const aMax = free.length ? ceilUnit(target.th, unit) : 0
-    const aTop = aMax / unit
-    let best: { a: number; A: number; cost: number } | null = null
-    for (let A = 0; A <= (freeKeep.length ? ceilUnit(target.th, unit) : 0); A += unit) {
-      if (best && A * freeKeep.length > best.cost) break
-      if (!ok(aMax, A)) continue
-      let lo = 0, hi = aTop
-      while (lo < hi) { const m = (lo + hi) >> 1; if (ok(m * unit, A)) hi = m; else lo = m + 1 }
-      const a = lo * unit, cost = a * free.length + A * freeKeep.length
-      if (!best || cost <= best.cost) best = { a, A, cost }
-      if (a === 0) break
+    const AMax = freeKeep.length ? ceilUnit(target.th, unit) : 0
+    const least = (hiUnits: number, fits: (v: number) => boolean) => {
+      let lo = 0, hi = hiUnits
+      while (lo < hi) { const m = (lo + hi) >> 1; if (fits(m * unit)) hi = m; else lo = m + 1 }
+      return lo * unit
+    }
+    let best: { a: number; A: number } | null = null
+    if (ok(aMax, AMax)) {
+      const a = least(aMax / unit, v => ok(v, AMax))
+      best = { a, A: least(AMax / unit, v => ok(a, v)) }
     }
     if (best) {
       reachExtra = Math.max(0, best.a - auto); auto = best.a; keepPer = best.A

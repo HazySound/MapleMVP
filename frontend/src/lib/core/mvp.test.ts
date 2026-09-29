@@ -210,6 +210,17 @@ describe('목표 계획', () => {
       tight(b, 1000, 1_000_000, 1)
     })
 
+    it('목표일까지는 균등 분배 그대로, 유지는 그 뒤에 따로 (앞에 몰아 넣지 않는다)', () => {
+      // 사용자 캡처: 이번 주까지 963,670, 7주 뒤(11/12 주) 블랙, 매주 26주 유지
+      const now13 = [30_000, 0, 0, 0, 49_800, 0, 99_000, 0, 100_600, 10_000, 0, 69_600, 604_670]
+      const off = plan(now13, BLACK, 7, {}, true, 1000)
+      const on = plan(now13, BLACK, 7, {}, true, 1000, { every: 1, weeks: 26 })
+      for (let o = 1; o <= 7; o++) expect(on.timeline[o].amount).toBe(off.timeline[o].amount)
+      expect(on.keep!.per).toBeGreaterThan(150_000)
+      expect(on.keep!.per).toBeLessThan(200_000)
+      for (const w of on.timeline.slice(7)) expect(w.sum).toBeGreaterThanOrEqual(BLACK.th)
+    })
+
     it('유지를 끄면 이월 없이 예전 그대로', () => {
       const p = plan(last13, BLACK, 1, {}, true, 1000, null, 5_000_000)
       expect(p.timeline[1].amount).toBe(1_600_000)
