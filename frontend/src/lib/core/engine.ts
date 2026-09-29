@@ -140,7 +140,7 @@ export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blo
     if (open.length === 1) gaps[open[0]] = rem
     // 여럿이 남으면 합을 가장 최근 주에 몰아 둔다. 묶음 사이 줄은 툴팁에 0(기준 이상)으로 나왔으니
     // 그 갱신들에서 합계가 기준 밑으로 내려가면 안 된다. 오래된 주에 두면 먼저 빠져서 인게임은 유지인데
-    // 사이트는 떨어진다고 보인다(예티: 7/2~7/29 합 42,200을 7/2에 두니 다음 주 브론즈, 인게임은 실버)
+    // 사이트는 떨어진다고 보인다(2026-09-29 제보: 네 주 묶음을 첫 주에 두니 다음 주 한 단계 아래, 인게임은 유지)
     else if (open.length > 1) { gaps[open[open.length - 1]] = rem; groups.push({ first: open[0], weeks: open, rem }) }
   }
   // 합도 모르는 앞쪽 주. 지난 스캔 값이 있으면 그것을 쓴다
