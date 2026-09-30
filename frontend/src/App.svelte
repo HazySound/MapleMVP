@@ -4,6 +4,7 @@
   import Aurora from './lib/components/Aurora.svelte'
   import DeadlineCard from './lib/components/DeadlineCard.svelte'
   import EffView from './lib/components/EffView.svelte'
+  import FixGate from './lib/components/FixGate.svelte'
   import DecayChart from './lib/components/DecayChart.svelte'
   import GradeCard from './lib/components/GradeCard.svelte'
   import HistoryModal from './lib/components/HistoryModal.svelte'
@@ -69,7 +70,12 @@
     {:else if app.data && app.view === 'eff'}
       {#if planner.input}<EffView />{/if}
     {:else if app.data}
-      <div class="grid" use:intro>
+      <!-- 인게임 금액 맞추기(보정)를 한 번도 안 했으면 현황판을 어둡게 가리고 맞추기 단추만 둔다.
+           휴대폰은 캡처·화면공유가 없어 할 수 없으니 가리지 않는다 -->
+      {@const mustFix = !!app.data.syncedAt && !(app.web && TOUCH) && !Object.keys(app.data.pcroom.weeks).length}
+      <div class="dash" class:gated={mustFix}>
+      {#if mustFix}<FixGate />{/if}
+      <div class="grid" use:intro inert={mustFix}>
         <div class="c5"><GradeCard /></div>
         <div class="c7"><DeadlineCard /></div>
         <div class="c12"><WeeklyBars /></div>
@@ -77,6 +83,7 @@
         <div class="c5"><Simulator /></div>
         <div class="c6"><Ladder /></div>
         <div class="c6"><Payments /></div>
+      </div>
       </div>
     {:else if app.overlay === 'boot'}
       <div class="boot"><span></span></div>
@@ -103,6 +110,8 @@
 {#if !app.web}<ResizeHandles />{/if}
 
 <style>
+  .dash { position: relative; }
+  .dash.gated > .grid { filter: brightness(.32) saturate(.5); pointer-events: none; user-select: none; }
   /*
    * 글자 크기를 하나하나 올리면 칸은 그대로인데 글만 커져서 줄바꿈이 사방에서 달라진다.
    * 배율을 걸면 여백과 간격도 같이 커져서, 사용자가 브라우저를 확대한 것과 같아진다.

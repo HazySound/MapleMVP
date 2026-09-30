@@ -4,6 +4,7 @@
   import { fit, onResize } from '../canvas'
   import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, pcCaveat, pcRange, spotlight, tierIdx, won } from '../format'
   import Badge from './Badge.svelte'
+  import { CARRY_MAX } from '../core/mvp'
   import Medal from './Medal.svelte'
   import { tip } from '../tip'
 
@@ -184,10 +185,10 @@
         use:tip={noRows
           ? '구매내역을 먼저 동기화해 주세요. 수집한 결제가 있어야 그 차이를 PC방으로 볼 수 있어요'
           : needPc
-            ? `프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
-            : [pcCaveat(d.pcroom) || '프리미엄 PC방 접속분은 구매내역에 안 잡혀요. 인게임 캡처로 보정할 수 있어요',
+            ? `인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
+            : [pcCaveat(d.pcroom) || '인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 인게임 캡처로 맞출 수 있어요',
                ...(d.pcroom.missTotal ? ['', `수집 못 한 결제(넥슨쇼핑 쿠폰 등) ${won(d.pcroom.missTotal)}원도 인게임에 맞춰 넣어 뒀어요.`] : [])].join('\n')}>
-        {#if d.pcroom.totalMax && !noRows}PC방 +{pcRange(d.pcroom)}원{:else}PC방 보정{/if}
+        {#if d.pcroom.totalMax && !noRows}PC방 +{pcRange(d.pcroom)}원{:else if Object.keys(d.pcroom.weeks).length && !noRows}인게임 금액 맞춤 ✓{:else}인게임 금액 맞추기{/if}
       </button>
     {:else if d.pcroom.totalMax}
       <span class="pc tag on"
@@ -241,6 +242,10 @@
       </div>
     {/if}
   </div>
+  {#if !preview && (d.carry > 0 || now === 'black')}
+    <!-- 인게임 'MVP 블랙 구매 금액 이월 N / 10,000,000'과 같은 값 -->
+    <div class="carryline">블랙 이월 잔액 <b class="mono">{won(d.carry)}</b><span class="mono cap">/ {won(CARRY_MAX)}원</span></div>
+  {/if}
   {#if !preview}
     <div class="trendline">
       <span class="trend" class:down={delta < 0} class:up={delta > 0}>
@@ -302,6 +307,9 @@
   .meta { font-size: 12px; color: var(--color-tx3); }
   .arr { width: 22px; height: 22px; color: var(--color-tx3); margin-bottom: 8px; }
   .trendline { display: flex; justify-content: center; }
+  .carryline { justify-self: center; font-size: 12.5px; color: var(--color-tx3); padding: 4px 12px; border-radius: 8px; background: color-mix(in oklab, var(--color-butter) 10%, var(--color-panel2)); }
+  .carryline b { color: var(--color-butter); font-size: 13.5px; }
+  .carryline .cap { margin-left: 4px; }
   .trend { font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 7px; background: var(--color-panel3); color: var(--color-tx2); }
   .trend.down { background: color-mix(in oklab, var(--color-bad) 18%, transparent); color: var(--color-bad); }
   .trend.up { background: color-mix(in oklab, var(--color-good) 18%, transparent); color: var(--color-good); }

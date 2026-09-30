@@ -480,9 +480,9 @@
 {#if showHelp}<HelpModal web={app.web && canLive} onClose={() => (showHelp = false)} />{/if}
 
 <div class="back" role="presentation" onclick={e => e.target === e.currentTarget && (app.showPcRoom = false)}>
-  <div class="sheet" role="dialog" aria-label="PC방 반영액 보정" use:spotlight>
+  <div class="sheet" role="dialog" aria-label="인게임 금액 맞추기" use:spotlight>
     <header>
-      <h2>PC방 반영액 보정</h2>
+      <h2>인게임 금액 맞추기 <small class="h2s">PC방 접속분 · 이월로 옮겨진 금액</small></h2>
       <span class="meta">
         {#if d.pcroom.missing.length}
           <em>13주 중 {d.pcroom.missing.length}주는 아직 몰라요</em>
@@ -761,6 +761,7 @@
 <svelte:window onkeydown={e => e.key === 'Escape' && (app.showPcRoom = false)} onpaste={onPaste} />
 
 <style>
+  .h2s { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--color-tx3); }
   .unsure { opacity: .6 }
   .range { font-size: 12px; color: var(--color-peach); background: none; border: 1px dashed var(--color-line);
            border-radius: 6px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
