@@ -130,6 +130,16 @@ describe('조합', () => {
     expect(balancePoint([Infinity, 10, 10, 10], [0, 1, 2, 3], 1, 3, 0)).toBe(1)
   })
 
+  it('최적화 회수율 하한: 판매를 줄이다 회수율이 하한 아래로 떨어지는 곳은 고르지 않는다', () => {
+    const sales = [0, 10, 20, 30, 40], loss = [Infinity, 50_000, 43_000, 36_500, 30_000]
+    const rate = [0, 0.80, 0.83, 0.86, 0.88]
+    expect(balancePoint(loss, sales, 1, 4, 1000)).toBe(1)
+    expect(balancePoint(loss, sales, 1, 4, 1000, rate, 85)).toBe(3)
+    expect(balancePoint(loss, sales, 1, 4, 1000, rate, 0)).toBe(1)
+    // 어디도 하한을 못 넘으면 회수율이 가장 높은 곳
+    expect(balancePoint(loss, sales, 1, 4, 1000, rate, 95)).toBe(4)
+  })
+
   it('계획이 없으면 조금 넘겨 사는 게 더 남을 때 그렇게 한다', () => {
     const r = solve({ ...base, target: 5_000, items: [karma], exact: false })!
     expect(r.best.pay).toBe(5_900)

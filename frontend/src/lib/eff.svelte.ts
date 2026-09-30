@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, isShort, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, isShort, kneeWeeks, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
@@ -34,7 +34,8 @@ const runs = new Map<string, WeekResult[] | null>()
 /** 최저가 · 최적화 · 횟수 정하기 · 직접 짜기 */
 export type Want = 'best' | 'knee' | 'count' | 'custom'
 /** 루트 설정 한 벌. 달성·유지를 따로 정하면 두 벌을 쓴다 */
-export interface RouteSet { want: Want; salesN: number; sellCost: number; combo: Combo }
+/** minRate: 최적화의 회수율 하한(%). 0이면 없음 */
+export interface RouteSet { want: Want; salesN: number; sellCost: number; minRate?: number; combo: Combo }
 
 interface Saved {
   usePlan: boolean
@@ -90,6 +91,8 @@ interface Saved {
    * 기본값을 1,000원에서 2,000원으로 바꾸며 이름도 바꿨다. 옛 이름에 남은 1,000원은 버리고 새 기본값에서 시작한다
    */
   sellCost: number
+  /** 최적화 루트의 회수율 하한(%). 판매를 줄이다 회수율이 이 아래로 떨어지면 멈춘다. 0이면 없음 */
+  minRate: number
   /** 직접 짜기: 아이템 id → 한 주에 살 개수(null이면 알아서) */
   combo: Combo
   /** 아이템 id → 한 주에 팔 수 있는(그래서 살) 최대 개수. 회전율. 없으면 제한 없음 */
@@ -106,7 +109,7 @@ function fresh(): Saved {
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
-    creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000,
+    creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
   }
 }
@@ -285,7 +288,7 @@ export function restoreCustom(x: { item: ShopItem; price?: number }, picked: boo
 export const sellables = (): Sellable[] => shopItems().map(x => ({ ...x, price: eff.prices[x.id] ?? 0, ...(eff.caps[x.id] ? { cap: eff.caps[x.id] } : {}) }))
 
 /** 달성(또는 같이 설정) 루트 설정 */
-export const reachSet = (): RouteSet => ({ want: eff.want, salesN: eff.salesN, sellCost: eff.sellCost, combo: eff.combo })
+export const reachSet = (): RouteSet => ({ want: eff.want, salesN: eff.salesN, sellCost: eff.sellCost, minRate: eff.minRate, combo: eff.combo })
 
 /** 크레딧샵 물건(기본 + 직접 추가)과 넣어 둔 경매장 가격 */
 export const creditItems = (): CreditItem[] =>
@@ -370,7 +373,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   if (!res) return null
 
   // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
-  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.sellCost)
+  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.sellCost, eff.minRate)
 
   // 유지를 켰으면 목표 주 뒤의 주가 유지 구간이다
   const keepStarts = mode === 'plan' && plan?.keep ? new Set(plan.timeline.filter(w => w.keep).map(w => w.start)) : null
@@ -390,9 +393,9 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
       r = res.map((w, i) => (custom[i] ? c[i] : w))
     }
     const hiN = Math.max(1, ...r.map(w => w.solved.best.sales))
-    const memo = new Map<number, (number | null)[]>()
-    const per = (cost: number) => memo.get(cost) ?? (memo.set(cost, perWeek(r, cost)), memo.get(cost)!)
-    const ns = sets.map((s, i) => s.want === 'best' ? per(0)[i] : s.want === 'knee' ? per(s.sellCost)[i]
+    const memo = new Map<string, (number | null)[]>()
+    const per = (cost: number, minRate = 0) => { const k = `${cost}|${minRate}`; return memo.get(k) ?? (memo.set(k, minRate ? kneeWeeks(r, cost, minRate, credit) : perWeek(r, cost)), memo.get(k)!) }
+    const ns = sets.map((s, i) => s.want === 'best' ? per(0)[i] : s.want === 'knee' ? per(s.sellCost, s.minRate ?? 0)[i]
       : s.want === 'count' ? (s.salesN >= hiN ? null : s.salesN) : custom[i] ? null : per(0)[i])
     return pickAt(r, ns, credit)
   }

@@ -66,7 +66,7 @@
   /** 구간별 설정 한 벌. 달성은 eff의 기본 설정을, 유지는 eff.keep을 고친다 */
   const phaseSet = (k: 'reach' | 'keep'): RouteSet => k === 'keep' ? eff.keep
     : { get want() { return eff.want }, set want(v) { eff.want = v }, get salesN() { return eff.salesN }, set salesN(v) { eff.salesN = v },
-        get sellCost() { return eff.sellCost }, set sellCost(v) { eff.sellCost = v }, get combo() { return eff.combo }, set combo(v) { eff.combo = v } }
+        get sellCost() { return eff.sellCost }, set sellCost(v) { eff.sellCost = v }, get minRate() { return eff.minRate }, set minRate(v) { eff.minRate = v ?? 0 }, get combo() { return eff.combo }, set combo(v) { eff.combo = v } }
   const WANTS: [Want, string][] = [['best', '최저가'], ['knee', '최적화'], ['count', '횟수 정하기'], ['custom', '직접 짜기']]
   const weeksOf = (k: 'reach' | 'keep') => (out?.weeks ?? []).filter(w => (out?.keepStarts?.has(w.start) ?? false) === (k === 'keep')).length
 
@@ -164,7 +164,9 @@
               <div class="kcost">
                 <span>판매를 한 번 줄일 때 더 내는 돈이</span>
                 <span class="box"><NumBox id="eff-sale-cost-{k}" label="{name} 판매 1회 수고비" size="sm" unit="원" placeholder="2,000" value={s.sellCost} set={v => { s.sellCost = v; saveEff() }} /></span>
-                <span>이하일 때만 줄여요</span>
+                <span>이하일 때만 줄이고, 회수율은</span>
+                <span class="box"><NumBox id="eff-min-rate-{k}" label="{name} 회수율 하한" size="sm" decimal unit={s.minRate ? '%' : ''} placeholder="하한 없음" value={s.minRate ?? 0} set={v => { s.minRate = v; saveEff() }} /></span>
+                <span>아래로 안 내려가게</span>
               </div>
             {:else if s.want === 'custom'}
               <EffCombo combo={s.combo} title="{name} · 매주 이 조합" id="eff-combo-{k}" />
@@ -246,10 +248,14 @@
         <div class="ef-hint cost">
           <span><b>최적화</b>는 판매를 한 번 줄일 때 더 내는 돈이</span>
           <span class="box"><NumBox id="eff-sale-cost" label="판매 1회 수고비" size="sm" unit="원" placeholder="2,000" value={eff.sellCost} set={v => { eff.sellCost = v; saveEff() }} /></span>
-          <span>이하일 때만 줄여요.</span>
+          <span>이하일 때만 줄이고, 회수율은</span>
+          <span class="box"><NumBox id="eff-min-rate" label="회수율 하한" size="sm" decimal unit={eff.minRate ? '%' : ''} placeholder="하한 없음" value={eff.minRate} set={v => { eff.minRate = v; saveEff() }} /></span>
+          <span>아래로 안 내려가게 해요.</span>
           {#if out.knee.sales < out.best.sales}
-            <span>지금은 한 번 줄일 때 평균 <b>{won((out.knee.loss - out.best.loss) / (out.best.sales - out.knee.sales))}원</b>이라 {out.best.sales - out.knee.sales}회 줄였어요.</span>
+            <span>지금은 한 번 줄일 때 평균 <b>{won((out.knee.loss - out.best.loss) / (out.best.sales - out.knee.sales))}원</b>이라 {out.best.sales - out.knee.sales}회 줄였어요. 회수율 <b>{(out.knee.cost ? out.knee.back / out.knee.cost * 100 : 0).toFixed(1)}%</b>{eff.minRate ? ` (하한 ${eff.minRate}%)` : ''}.</span>
             {#if !chart.one}<span>최적화는 주마다 판매 횟수를 따로 정해서, 모든 주에 같은 상한을 거는 이 곡선 위에는 없어요.</span>{/if}
+          {:else if eff.minRate && (out.best.cost ? out.best.back / out.best.cost * 100 : 0) < eff.minRate}
+            <span>최저가 루트도 회수율이 <b>{(out.best.back / out.best.cost * 100).toFixed(1)}%</b>라 하한 {eff.minRate}%에 못 미쳐요. 판매를 줄이면 더 내려가서 최저가 그대로 둬요.</span>
           {:else}
             <span>판매를 줄이면 한 번에 이보다 더 들어서, 최저가 루트가 가장 효율적이에요.</span>
           {/if}

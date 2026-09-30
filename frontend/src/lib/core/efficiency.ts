@@ -488,13 +488,19 @@ export function solve(o: SolveIn): Solved | null {
  * 전에는 곡선 모양(가장 크게 꺾이는 곳)만 봤다. 그러면 한 번 덜 팔려고 몇천 원씩 더 내는 쪽을
  * 추천하게 된다. 돈으로 따져야 한다.
  */
-export function balancePoint(loss: number[], sales: number[], lo: number, hi: number, perSale: number): number {
-  let pick = hi, score = Infinity
+export function balancePoint(loss: number[], sales: number[], lo: number, hi: number, perSale: number, rate?: number[], minRate = 0): number {
+  // 회수율 하한(%): 그 아래로 떨어지는 횟수는 고르지 않는다. 하한을 넘는 곳이 없으면 회수율이 가장 높은 곳
+  const ok = (k: number) => !minRate || !rate || rate[k] * 100 >= minRate - 1e-9
+  let pick = -1, score = Infinity
   for (let k = lo; k <= hi; k++) {
-    if (!Number.isFinite(loss[k])) continue
+    if (!Number.isFinite(loss[k]) || !ok(k)) continue
     const v = loss[k] + sales[k] * perSale
     if (v < score - 0.5) { score = v; pick = k }
   }
+  if (pick >= 0) return pick
+  if (!rate) return hi
+  pick = hi
+  for (let k = lo; k <= hi; k++) if (Number.isFinite(loss[k]) && rate[k] > rate[pick] + 1e-12) pick = k
   return pick
 }
 
@@ -732,23 +738,40 @@ export function pickAt(weeks: WeekResult[], n: number | null | (number | null)[]
  * 모든 주에 같은 상한을 걸면, 금액이 큰 주(목표 달성 주)가 작은 주 여럿에 끌려 메소마켓을 크게 섞게 된다
  * (2026-09-29 사용자 제보: 달성 1주 + 유지 52주에서 달성 주 회수율이 89.6% → 80.9%)
  */
-export function perWeek(res: WeekResult[], perSale: number): (number | null)[] {
+/** 회수율: 돌려받는 돈(크레딧 어림값 포함) ÷ 든 현금 */
+const rateOfRoute = (r: Route) => r.cost ? (r.back + r.creditEst) / r.cost : 0
+
+export function perWeek(res: WeekResult[], perSale: number, minRate = 0): (number | null)[] {
   return res.map(w => {
     const L = w.solved.lossAt.length - 1
     if (L < 1) return null
-    const loss = [Infinity], sales = [0]
+    const loss = [Infinity], sales = [0], rate = [0]
     for (let k = 1; k <= L; k++) {
       const ok = Number.isFinite(w.solved.lossAt[k])
       const r = ok ? w.solved.routeAt(k) : null
-      loss.push(r ? r.loss : Infinity); sales.push(r ? r.sales : 0)
+      loss.push(r ? r.loss : Infinity); sales.push(r ? r.sales : 0); rate.push(r ? rateOfRoute(r) : 0)
     }
-    const k = balancePoint(loss, sales, 1, L, perSale)
+    const k = balancePoint(loss, sales, 1, L, perSale, rate, minRate)
     return k >= L ? null : k
   })
 }
 
 /** perSale: 판매 1회 수고비. 최적화 루트는 주마다, 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
-export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 2000) {
+/**
+ * 여러 주의 최적화 상한(주마다). 회수율 하한은 주마다 지키되, 주마다 볼 때는 크레딧을 어림값으로 세고
+ * 결론은 크레딧을 실제로 모았다 쓰는 대로 세서 조금 어긋날 수 있다. 결론 회수율이 하한 아래면 주별 기준을
+ * 0.1%씩 올려 다시 고른다(화면에 보이는 회수율이 하한 아래로 나오지 않게)
+ */
+export function kneeWeeks(res: WeekResult[], perSale: number, minRate = 0, credit: CreditUse | null = null): (number | null)[] {
+  let ns = perWeek(res, perSale, minRate)
+  if (!minRate) return ns
+  const rateOf = (x: (number | null)[]) => { const p = pickAt(res, x, credit); return p.cost ? p.back / p.cost * 100 : 0 }
+  for (let f = minRate + 0.1; rateOf(ns) < minRate - 1e-9 && f <= minRate + 20; f += 0.1) ns = perWeek(res, perSale, f)
+  return ns
+}
+
+/** minRate: 최적화 루트의 회수율 하한(%). 0이면 없음. 여러 주면 주마다 지킨다 */
+export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 2000, minRate = 0) {
   const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
   // 크레딧을 쓰면 조합은 크레딧 어림값으로 골랐어도, 곡선은 큐브를 실제로 살 수 있는 만큼 산 값으로 그린다.
   // 그래야 그래프와 루트 카드의 숫자가 같다
@@ -768,6 +791,7 @@ export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | 
   const n = Math.max(lo, Math.min(salesN, hi))
   // 최저가·최적화는 주마다 따로 고른다(최저가는 같으면 적게 파는 쪽). 곡선과 횟수 정하기는 모든 주에 같은 상한
   const best = res.length > 1 ? pickAt(res, perWeek(res, 0), credit) : picks[bn]!
-  const knee = res.length > 1 ? pickAt(res, perWeek(res, perSale), credit) : picks[balancePoint(curve, picks.map(p => p?.sales ?? 0), lo, bn, perSale)]!
+  const knee = res.length > 1 ? pickAt(res, kneeWeeks(res, perSale, minRate, credit), credit)
+    : picks[balancePoint(curve, picks.map(p => p?.sales ?? 0), lo, bn, perSale, picks.map(p => (p?.cost ? p.back / p.cost : 0)), minRate)]!
   return { curve, lo, hi, best, knee, count: picks[n]! }
 }
