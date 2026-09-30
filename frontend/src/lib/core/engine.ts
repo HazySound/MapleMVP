@@ -340,8 +340,8 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
   for (const [k, v] of Object.entries(fixed)) {
     offsets[Math.round((Date.parse(k) - Date.parse(b.thisWeek)) / (7 * 864e5))] = Number(v)
   }
-  // 유지를 켜면 지금 이월도 주마다 따라간다
-  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek, unit, keep, keep ? b.carry : 0)
+  // 유지를 켜면 지금 이월도 주마다 따라간다. 안 켜도 등급 칸은 이월로 채워 매긴다
+  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek, unit, keep, b.carry)
   return {
     ...p,
     timeline: p.timeline.map(w => {

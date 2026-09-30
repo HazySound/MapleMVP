@@ -253,7 +253,8 @@ export interface PlanResult {
 /**
  * t주 뒤(0 = 이번 주) 그 주의 13주 합계가 target 기준에 닿도록 결제 계획을 세운다.
  * fixed: 주 오프셋 → 직접 정한 추가 결제 금액. 나머지 주에는 부족분을 균등하게 나눈다.
- * 이월은 목요일 갱신 때 부족분을 메우는 데만 쓰여서 여기서는 넣지 않는다.
+ * 이월은 목요일 갱신 때 부족분을 메우는 데만 쓰여서 금액 계산에는 넣지 않는다. 다만 등급 칸(tier)은
+ * 사이트 다른 곳처럼 13주 합계가 모자라면 남은 이월로 채워 매긴다(carry를 넘기면).
  *
  * keep을 주면 달성 뒤 keep.weeks주 동안 매주 13주 합계(그 주 결제까지)가 기준 이상이도록
  * keep.every주마다 같은 금액을 결제하게 짠다. 첫 유지 결제 전까지는 달성 주들의 결제로 버텨야 하므로
@@ -314,7 +315,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     let c = carry
     c += accrue(sumOf(win), amt(0), c)
     win[WINDOW - 1] -= over(sumOf(win), amt(0))
-    const vals = [...win], sums = [sumOf(win)], used = [0]
+    const vals = [...win], sums = [sumOf(win)], used = [0], tiers = [grade(sumOf(win), c).tier]
     for (let o = 1; o <= end; o++) {
       win.shift()
       const r = grade(sumOf(win), c)
@@ -324,9 +325,10 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
       const full = sumOf(win)
       c += accrue(full, pay, c)
       win[WINDOW - 1] -= over(full, pay)
-      vals.push(win[WINDOW - 1]); sums.push(sumOf(win)); used.push(r.carryUsed)
+      vals.push(win[WINDOW - 1]); sums.push(sumOf(win)); used.push(r.carryUsed); tiers.push(grade(sumOf(win), c).tier)
     }
-    return { vals, sums, used }
+    // tiers: 그 주 등급. 사이트 다른 곳(지금 등급)처럼 13주 합계가 모자라면 남은 이월로 채워 본다
+    return { vals, sums, used, tiers }
   }
 
   let keepPer = 0, reachExtra = 0
@@ -376,6 +378,9 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     sim = simulate(o => amounts[o] ?? 0)
     for (let o = t + 1; o <= end; o++) if (sim.sums[o] < target.th) blocked.push({ offset: o, missing: target.th - sim.sums[o] })
   } else fill()
+  // 유지를 안 켜도 등급 칸은 이월로 채워 매긴다. 합계·빠지는 금액은 이월 없이 센 그대로 둔다
+  // (2026-09-30 제보: 이월로 블랙이 유지되는데 계획표 이번 주 줄은 합계만 보고 레드)
+  const shown = sim ?? (carry > 0 ? simulate(o => amounts[o] ?? 0) : null)
 
   const timeline: PlanWeek[] = []
   for (let o = 0; o <= end; o++) {
@@ -388,7 +393,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     timeline.push({
       offset: o, amount: amounts[o] ?? 0, fixed: o in fx,
       counts: isKeep ? pays.includes(o) || o in fx : weeks.includes(o),
-      skipped: skipThisWeek && o === 0, sum: s, tier: tierOf(s), drop,
+      skipped: skipThisWeek && o === 0, sum: s, tier: shown ? shown.tiers[o] : tierOf(s), drop,
       keep: isKeep, keepPay: pays.includes(o), carryUsed: sim?.used[o] ?? 0,
     })
   }

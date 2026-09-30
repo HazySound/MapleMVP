@@ -171,6 +171,19 @@ describe('예측', () => {
 })
 
 describe('목표 계획', () => {
+  it('등급 칸은 13주 합계가 모자라도 이월로 채워지면 그 등급이다(유지를 켜든 안 켜든)', () => {
+    // 13주 합계가 블랙에 5,000 모자라고 이월이 있다: 인게임은 다음 갱신에서 5,000을 꺼내 블랙을 지킨다
+    const last13 = [0, 100_000, 100_000, 300_000, 100_000, 100_000, 100_000, 400_000, 100_000, 100_000, 100_000, 975_000, 20_000]
+    const fixed = { 0: 0, 1: 0 }
+    for (const keep of [{ every: 4, weeks: 8 }, null]) {
+      const p = plan(last13, BLACK, 1, fixed, false, 1000, keep, 50_000)
+      expect(p.timeline[0].sum).toBe(2_495_000)
+      expect(p.timeline[0].tier?.key).toBe('black')
+      expect(p.timeline[1].tier?.key).toBe('black')
+    }
+    // 이월이 없으면 그대로 레드
+    expect(plan(last13, BLACK, 1, fixed, false, 1000, null, 0).timeline[0].tier?.key).toBe('red')
+  })
   describe('달성 뒤 유지', () => {
     // 지난 13주에 90만, 다음 주에 블랙을 찍고 유지
     const last13 = [...Array(6).fill(0), 900_000, ...Array(6).fill(0)]
