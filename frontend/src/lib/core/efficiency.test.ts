@@ -158,6 +158,22 @@ describe('주별 상품권 한도', () => {
     expect(cash(2)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000]])
     for (const w of res) expect(w.solved.best.pay).toBe(250_000)
   })
+  it('넥슨카드를 마지막에만 쓰기를 끄면 할인이 큰 순서대로 먼저 쓴다', () => {
+    const res = planAll({
+      weeks: [
+        { start: '2026-10-01', amount: 200_000, tier: 'gold', month: '2026-10' },
+        { start: '2026-10-08', amount: 200_000, tier: 'gold', month: '2026-10' },
+      ],
+      balance: 0,
+      cards: [{ key: 'nexon', name: '넥슨카드', disc: 10, on: true }, { key: 'culture', name: '컬쳐랜드', disc: 6, on: true }],
+      leftNow: { nexon: 200_000, culture: 200_000 }, thisMonth: '2026-10',
+      barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+      um: 1500, mk: 2300, items: [karma], fee: null, exact: true, nexonLast: false,
+    })!
+    const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
+    expect(cash(0)).toEqual([['넥슨카드', 200_000]])
+    expect(cash(1)).toEqual([['컬쳐랜드', 200_000]])
+  })
   it('한 권 더 사도 뒤 주 한도를 앞당겨 쓸 뿐이면(일반 충전이 안 줄면) 끝자리는 일반 충전으로 딱 맞춘다', () => {
     const res = planAll({
       weeks: [

@@ -71,12 +71,20 @@
     {#each eff.cards as c, i (c.key)}
       <div class="row" class:off={!c.on}>
         <input type="checkbox" id="eff-card-{c.key}" bind:checked={c.on} onchange={saveEff} />
-        <label for="eff-card-{c.key}">{c.name}<small>{note(c.disc)}{c.key === LAST_KEY ? ' · 그 달 마지막에' : ''}</small></label>
+        <label for="eff-card-{c.key}">{c.name}<small>{note(c.disc)}{c.key === LAST_KEY && eff.nexonLast ? ' · 그 달 마지막에' : ''}</small></label>
         <NumBox id="eff-disc-{c.key}" label="{c.name} 할인율 또는 5만원권 가격" size="sm" decimal placeholder="8" unit={c.disc && c.disc <= 100 ? '%' : ''}
           value={c.disc} set={v => { eff.cards[i].disc = v; saveEff() }} disabled={!c.on} />
         <NumBox id="eff-left-{c.key}" label="{c.name} {month}월 남은 한도" size="sm"
           value={eff.leftNow[c.key] ?? 0} set={v => { eff.leftNow[c.key] = v; saveEff() }} disabled={!c.on} />
       </div>
+      {#if c.key === LAST_KEY && c.on}
+        <label class="lastopt" for="eff-nexon-last">
+          <input type="checkbox" id="eff-nexon-last" bind:checked={eff.nexonLast} onchange={saveEff} />
+          <span>그 달 마지막 20만원에만 쓰기<small>{eff.nexonLast
+            ? '먼저 쓰면 그 달에 현대카드 포인트·중고 캐시 충전을 못 해서 아껴 둬요'
+            : '끔 · 다른 상품권처럼 할인이 큰 순서대로 먼저 써요'}</small></span>
+        </label>
+      {/if}
     {/each}
 
     <!-- 직접 추가한 결제수단(넥슨팩 쿠폰 등). 할인이 큰 것부터 상품권과 섞어 쓴다 -->
@@ -160,7 +168,7 @@
   </div>
 
   <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요. 상품권과 섞어 <b>할인이 큰 것부터</b> 쓰고, 권 단위로 파는 결제수단은 그 단위로만 사요. {#if eff.plainOn}한 권보다 작은 끝자리는 {bc.on ? '바코드나 ' : ''}<b>일반 충전(1:1)으로 딱 맞춰요.</b> 한 권 더 사서 남긴 캐시가 뒤 주에서 권 단위와 맞아떨어져 다 쓰일 때(그래서 더 쌀 때)만 할인 수단으로 한 권 더 사요.{:else}일반 충전을 꺼 두면 한 권보다 작은 끝자리도 할인되는 결제수단으로 <b>한 권 더 사서 남는 캐시를 다음에</b> 써요. 할인 한도가 다 차면 그때만 {bc.on ? '바코드나 ' : ''}일반 충전이에요.{/if} 권마다 할인율이 다르면 권별로 따로 추가해 주세요.
-    <b>넥슨카드</b>는 먼저 쓰면 그 달에 다른 할인 충전(현대카드 포인트·중고 캐시 등)을 못 해서, 계획에서 <b>그 달 마지막 20만원</b>에만 써요. 한 번만 결제할 때는 다른 한도를 다 쓰고 모자랄 때만 써요.</p>
+    {#if eff.nexonLast}<b>넥슨카드</b>는 먼저 쓰면 그 달에 다른 할인 충전(현대카드 포인트·중고 캐시 등)을 못 해서, 계획에서 <b>그 달 마지막 20만원</b>에만 써요. 한 번만 결제할 때는 다른 한도를 다 쓰고 모자랄 때만 써요. 그런 충전을 안 하면 '그 달 마지막 20만원에만 쓰기'를 꺼 주세요.{:else}<b>넥슨카드</b>도 다른 상품권처럼 할인이 큰 순서대로 써요.{/if}</p>
 </article>
 
 <style>
@@ -195,6 +203,10 @@
   .add select { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-tx); font: inherit; font-size: 12.5px; }
   .add :global(.nb) { width: 140px; }
   .add .acts { display: flex; gap: 6px; margin-left: auto; }
+  .lastopt { display: flex; align-items: flex-start; gap: 8px; margin: -2px 0 2px 26px; font-size: 12px; color: var(--color-tx2); cursor: pointer; }
+  .lastopt input { accent-color: var(--color-lav); width: 13px; height: 13px; margin: 2px 0 0; cursor: pointer; flex: none; }
+  .lastopt span { display: grid; line-height: 1.35; }
+  .lastopt small { font-size: 11px; color: var(--color-tx3); }
   .plain { padding-top: 6px; border-top: 1px dashed var(--color-line); }
   .nolimit { text-align: right; color: var(--color-tx3); font-size: 12px; padding-right: 10px; }
   .bc { grid-template-columns: 18px minmax(0, 1fr) 216px; padding-top: 4px; border-top: 1px dashed var(--color-line); }

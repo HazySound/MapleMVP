@@ -539,6 +539,11 @@ export interface Plan {
    * 끄면 끝자리도 늘 할인 수단으로 한 권 더 사서 남긴다(할인 한도가 없을 때만 일반 충전). 2026-09-30 사용자
    */
   plainOn?: boolean
+  /**
+   * 넥슨카드를 그 달 마지막 20만 원에만 쓸지(기본). 끄면 다른 상품권과 똑같이 할인이 큰 순서대로 먼저 쓴다.
+   * 현대카드 포인트·중고 캐시 충전을 안 하는 사람은 아껴 둘 이유가 없다(2026-09-30 사용자)
+   */
+  nexonLast?: boolean
 }
 
 export interface WeekResult {
@@ -587,7 +592,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     full(c.key) === Infinity ? Infinity : m === p.thisMonth ? (p.leftNow[c.key] ?? full(c.key)) : full(c.key)]))
   // 넥슨카드는 달마다 마지막 주부터 거꾸로 한도만큼(5만원권) 잡아 두고, 잡아 둔 주에만 먼저 쓴다.
   // 결제가 한 번뿐이면 그 뒤 충전을 모르니 맨 뒤 순서로만 둔다(다른 한도를 다 쓰고 모자랄 때)
-  const last = cards.find(c => c.key === LAST_KEY)
+  const last = p.nexonLast === false ? undefined : cards.find(c => c.key === LAST_KEY)
   const others = cards.filter(c => c !== last)
   const once = p.weeks.length === 1
   const reserve = p.weeks.map(() => 0)
