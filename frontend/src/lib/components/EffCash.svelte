@@ -33,7 +33,8 @@
   }
 
   const offs = $derived(eff.methods.filter(m => !m.on))
-  let showOff = $state(false)
+  // 처음엔 펼쳐 둔다. 접혀 있으면 끈 결제수단이 없어진 줄 안다(사용자). 누르면 접힌다
+  let showOff = $state(true)
   /** 추가 칸과 수정 칸은 같은 모양이다. editing은 고치는 결제수단 id */
   let adding = $state(false)
   let editing = $state<string | null>(null)
@@ -121,7 +122,7 @@
     {#if eff.methods.length}
       <div class="row head sub"><span></span><span>직접 추가한 결제수단</span><span>할인</span><span>{month}월 남은 한도</span></div>
       {#each eff.methods.filter(m => m.on) as m (m.id)}{@render methodRow(m)}{/each}
-      <!-- 꺼 둔 것은 계산에 안 쓰니 한 줄로 접어 둔다 -->
+      <!-- 꺼 둔 것은 계산에 안 쓴다. 펼쳐 둔 채로 보여 주고, 누르면 한 줄로 접는다 -->
       {#if offs.length}
         <button class="fold" aria-expanded={showOff} onclick={() => (showOff = !showOff)}>
           꺼 둔 결제수단 {offs.length}개 <span class="caret" class:open={showOff}>▾</span>
