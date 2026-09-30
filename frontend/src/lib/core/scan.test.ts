@@ -139,10 +139,13 @@ describe('블랙 등급', () => {
     expect(panelFields(s)).toEqual({ tierIndex: 6, remaining: null })
   })
 
-  it('이번 주 결제가 표보다 많으면 그렇다고 짚어 준다', () => {
+  it('블랙은 결제가 표보다 많아도 받는다 — 기준을 넘긴 몫은 이월로만 가고, 넥슨이 걷어낸 주도 있다', () => {
     const more = [...BLACK_COLLECTED.slice(0, 12), 30_000]
-    expect(acceptReading(BLACK_TIP, more, BLACK_CARRY, true)).toBe(false)
-    expect(whyReject(BLACK_TIP, more, BLACK_CARRY, true)).toContain('이번 주')
+    expect(acceptReading(BLACK_TIP, more, BLACK_CARRY, true)).toBe(true)
+    // 그래도 이번 주가 음수로 읽히면 잘못 읽은 것이다
+    const bad = [...BLACK_TIP.slice(0, 11), 2_600_000]
+    expect(acceptReading(bad, BLACK_COLLECTED, BLACK_CARRY, true)).toBe(false)
+    expect(whyReject(bad, BLACK_COLLECTED, BLACK_CARRY, true)).not.toBe('')
   })
 
   it('블랙이 아닌 표에서는 이월을 뒤지지 않는다', () => {

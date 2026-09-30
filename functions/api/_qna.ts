@@ -120,6 +120,9 @@ export function isOwner(p: { uid: string }, v: Viewer | null): boolean {
   return !!v && (v.admin || v.uid === p.uid)
 }
 
+/** 공지를 올리거나 고친 지 이 기간 안이면 목록에 NEW를 붙인다 */
+const FRESH = 7 * 24 * 3600_000
+
 /** 화면에 내보낼 모양. 회원번호는 내보내지 않는다 */
 export function listItem(p: PostRow, v: Viewer | null) {
   return {
@@ -128,6 +131,7 @@ export function listItem(p: PostRow, v: Viewer | null) {
     at: p.created_at, nick: p.nick || '떠난 사람', admin: !!p.admin,
     mine: !!v && v.uid === p.uid,
     pics: p.pics > 0,
+    fresh: p.kind === 'notice' && Date.now() - p.updated_at < FRESH,
   }
 }
 

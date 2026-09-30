@@ -160,7 +160,7 @@
     // 블랙의 이번 주는 앱이 모르는 사이에 그랬을 수 있어 늘 그렇게 본다
     const last = r.weeks.length - 1
     const mixed = b.used13.flatMap((u, i) => (u > 0 || (isTop && i === last) ? [i] : []))
-    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed)
+    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed, isTop)
     // 지난번에 '수집 못 한 결제'로 저장한 주는 이번에도 그렇게 본다. 다시 누르게 하지 않는다
     if (!keepMissed) {
       missed = Object.fromEntries(gaps.filter(g => g.note && readWeek(b.saved, g.start)?.miss

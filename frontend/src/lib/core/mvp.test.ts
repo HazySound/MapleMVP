@@ -107,9 +107,11 @@ describe('지금 등급과 지난 갱신 재현', () => {
    */
   it('주중에 기준을 넘긴 초과분도 쌓인다', () => {
     const r = replay([100_000, 2_000_000, ...Array(10).fill(0), 460_000, 0])
-    // 넷째 줄 결제로 256만 → 6만 적립. 갱신 때 246만이라 4만을 꺼내 쓰고 2만 남는다
-    expect(r).toMatchObject({ tier: BLACK, carry: 20_000 })
-    expect(r.weeks.at(-1)).toBe(40_000)
+    // 결제로 256만 → 넘친 6만은 이월로만 가고 그 주는 40만. 갱신 때 240만이라 6만을 다 꺼내 써도
+    // 246만이라 레드로 떨어진다(중복 적립이 없으니 넘친 몫이 한 번만 센다)
+    expect(r.weeks.at(-2)).toBe(400_000)
+    expect(r).toMatchObject({ tier: TIERS.find(t => t.key === 'red'), carry: 0 })
+    expect(r.weeks.at(-1)).toBe(60_000)
   })
 
   /** 블랙 제보자의 실제 숫자로 인게임 툴팁과 원 단위까지 맞는지 (test/private, git 제외) */

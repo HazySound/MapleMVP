@@ -12,9 +12,9 @@ export const CARRY_MAX = 10_000_000
 export const CARRY_START = '2026-09-17'
 /**
  * 넥슨이 '블랙 산정 구매 금액이 이월 금액에 중복 적용되는 현상'을 고친 때(2026-09-24 목 11:59, 공지).
- * 그 전(9/17 주)에는 250만을 넘긴 결제가 합계에도 들고 이월에도 쌓였고, 인게임에 아직 그대로 남아 있다
- * (후속 조치 공지 전). 고친 뒤로는 넘긴 몫이 이월로만 가고, 목요일에 꺼내 쓸 때 그 주 실적이 된다.
- * 앞으로의 결제(예측·목표 계획)는 모두 고친 규칙을 따른다. 지난 기록은 후속 공지가 나오면 맞춘다
+ * 그 전(9/17 주)에는 250만을 넘긴 결제가 합계에도 들고 이월에도 쌓였다. 9/29 후속 조치로 넥슨이
+ * 중복분을 걷어냈다. 그래서 이월 제도가 시작된 9/17부터 모든 결제에 고친 규칙을 쓴다:
+ * 넘긴 몫은 그 주 금액에서 빠져 이월로만 가고, 목요일에 꺼내 쓸 때 그 주 실적이 된다
  */
 export const CARRY_FIX = '2026-09-24'
 
@@ -119,10 +119,14 @@ export const over = (live: number, spent: number) => Math.min(spent, Math.max(0,
  * starts를 주면 CARRY_START 전의 주에서는 이월을 쌓지도 쓰지도 않는다.
  * opts.anchor: 그 주가 끝났을 때의 이월을 인게임에서 읽은 값으로 맞춘다.
  * opts.bonus: 처음 이월이 쌓이는 주에 얹을 금액. 13주 밖 PC방처럼 구매내역에 없는 몫을 흉내 낸다.
+ * opts.extra: 주마다 이월에 더할 금액. 툴팁으로 맞춘 주(fixed)는 이미 인게임 금액이라 넘긴 몫이 안 보인다.
+ *   그 주에 기준을 넘겨 이월로만 간 몫을 여기로 넘긴다.
  */
 export function replay(amounts: number[], fixed: boolean[] = [], starts: string[] = [],
-                       opts: { anchor?: { k: number; carry: number }; bonus?: number } = {}):
-    { tier: Tier | null; carry: number; weeks: number[]; used: number[]; covered: boolean[]; held: number[] } {
+                       opts: { anchor?: { k: number; carry: number }; bonus?: number; extra?: number[] } = {}):
+    { tier: Tier | null; carry: number; weeks: number[]; used: number[]; covered: boolean[]; held: number[];
+      /** anchor로 맞출 때 되짚은 이월보다 인게임이 많았던 만큼. 구매내역에 안 보이는 몫이 이월로 갔다는 뜻이다 */
+      jump: number } {
   const w = [...amounts]
   const used: number[] = []
   const held: number[] = []   // 그 주가 끝났을 때의 이월
@@ -130,6 +134,7 @@ export function replay(amounts: number[], fixed: boolean[] = [], starts: string[
   let carry = 0
   let bonus = opts.bonus ?? 0
   let tier: Tier | null = null
+  let jump = 0
   for (let k = 0; k < w.length; k++) {
     const on = !starts[k] || starts[k] >= CARRY_START
     const r = grade(sumOf(w.slice(Math.max(0, k - WINDOW + 1), k)), on ? carry : 0)
@@ -139,14 +144,18 @@ export function replay(amounts: number[], fixed: boolean[] = [], starts: string[
     covered.push(r.carryUsed > 0 && r.tier === BLACK)
     if (!fixed[k]) w[k] += r.carryUsed
     if (on) {
-      const added = accrue(sumOf(w.slice(Math.max(0, k - WINDOW + 1), k + 1)), amounts[k], carry)
+      const live = sumOf(w.slice(Math.max(0, k - WINDOW + 1), k + 1))
+      const added = accrue(live, amounts[k], carry)
       carry += added
+      // 넘긴 몫은 이월로만 간다(9/17부터, 중복은 넥슨이 9/29에 걷어냈다). 툴팁으로 확인한 주는 이미 인게임 금액이다
+      if (!fixed[k]) w[k] -= over(live, amounts[k])
+      if (opts.extra?.[k]) carry = Math.min(CARRY_MAX, carry + opts.extra[k])
       if (added > 0 && bonus) { carry = Math.min(CARRY_MAX, carry + bonus); bonus = 0 }
     }
-    if (opts.anchor?.k === k) carry = opts.anchor.carry
+    if (opts.anchor?.k === k) { jump = opts.anchor.carry - carry; carry = opts.anchor.carry }
     held.push(carry)
   }
-  return { tier, carry, weeks: w, used, covered, held }
+  return { tier, carry, weeks: w, used, covered, held, jump }
 }
 
 /** 지금 등급. 이번 주 결제까지 더한 13주 합계로 바로 정해진다. */

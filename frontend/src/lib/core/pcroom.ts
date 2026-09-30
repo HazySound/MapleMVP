@@ -155,7 +155,7 @@ export interface Gap {
  * 그걸로 한 번 거르고, 접속 시간으로 환산해서 말이 되는지로 한 번 더 거른다.
  */
 export function compare(nexon: number[], collected: number[], starts: string[],
-                        unknown: number[] = [], mixed: number[] = []): Gap[] {
+                        unknown: number[] = [], mixed: number[] = [], black = false): Gap[] {
   const out: Gap[] = []
   for (let i = 0; i < Math.min(nexon.length, collected.length, starts.length); i++) {
     if (unknown.includes(i)) {
@@ -167,7 +167,14 @@ export function compare(nexon: number[], collected: number[], starts: string[],
     const gap = nexon[i] - collected[i]
     let note = ''
     let warn = ''
-    if (gap < 0) {
+    if (gap < 0 && black) {
+      // 블랙은 인게임이 더 적을 수 있다. 기준을 넘긴 결제는 이월로만 가고(9/17부터),
+      // 9/29에는 넥슨이 PC방 비정상 적립분을 주 금액에서 걷어냈다. 툴팁 금액을 그대로 믿는다
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
+                 warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 블랙 기준을 넘겨 이월로 간 결제이거나 넥슨이 걷어낸 금액이에요.`,
+                 ok: true, unknown: false })
+      continue
+    } else if (gap < 0) {
       note = '수집한 금액이 인게임보다 많아요. 툴팁 숫자를 잘못 읽었을 수 있어요.'
     } else if (mixed.includes(i)) {
       // 블랙의 이번 주: 목요일 갱신 때 꺼내 쓴 이월이 이 주 사용 금액으로 채워진다.
@@ -208,7 +215,7 @@ export function mergeSaved(saved: Record<string, number>, gaps: Gap[]): Record<s
  *   gapmax:주   그 주 금액의 최댓값 (주 금액 자체를 모를 때. 저장한 값은 최솟값)
  *   pcmin:주 / pcmax:주   그 주 PC방의 범위 (갱신 때 쓴 이월이 섞여 PC방만 따로 모를 때)
  *   unk:주      1이면 끝내 알 수 없는 주 (블랙 첫 스캔의 가장 오래된 주)
- *   grp:주      합만 아는 묶음의 첫 주 (20260709처럼 숫자). 묶음의 합은 첫 주에 몰아 둔다
+ *   grp:주      합만 아는 묶음의 첫 주 (20260709처럼 숫자). 묶음의 합은 가장 최근 주에 몰아 둔다
  *   carry:주    그 주에 인게임 툴팁으로 확인한 이월 잔액
  *   miss:주     1이면 PC방이 아니라 수집 못 한 결제(넥슨쇼핑 쿠폰 등)로 넣은 주. PC방 합계에서 뺀다
  */
@@ -225,7 +232,7 @@ export interface WeekPc {
   pcMin: number       // 그중 PC방
   pcMax: number
   unknown: boolean    // 끝내 알 수 없는 주
-  /** 합만 아는 묶음의 첫 주. 묶음의 합은 그 주의 gapMin에 몰려 있다 */
+  /** 합만 아는 묶음의 첫 주. 묶음의 합은 묶음의 가장 최근 주 gapMin에 몰려 있다 */
   group?: string
   /** PC방이 아니라 수집 못 한 결제로 넣은 주. 금액(gapMin)은 그대로 13주 합계에 들어간다 */
   miss?: boolean

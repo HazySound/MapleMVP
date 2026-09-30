@@ -94,6 +94,7 @@
           {#if p.secret}
             <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="비공개"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
           {/if}
+          {#if p.fresh}<span class="new">NEW</span>{/if}
           <span class="tt">{p.title}</span>
           {#if p.pics}
             <svg class="pic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="그림 첨부"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5.2-5.2L6 20"/></svg>
@@ -200,6 +201,8 @@
   .t { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 13.5px; }
   .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pin .tt { font-weight: 600; }
+  .new { flex: none; font-size: 10px; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; border-radius: 6px;
+         color: #fff; background: var(--color-bad); }
   .lock { flex: none; width: 13px; height: 13px; color: var(--color-tx3); }
   .pic { flex: none; width: 14px; height: 14px; color: var(--color-sky); }
   .rc { flex: none; font-size: 12px; color: var(--color-lav); }

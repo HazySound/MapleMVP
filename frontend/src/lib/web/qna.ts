@@ -24,6 +24,8 @@ export interface Item {
   mine: boolean
   /** 글에 그림이 붙어 있는지 */
   pics: boolean
+  /** 최근에 올리거나 고친 공지. 목록에 NEW를 붙인다 */
+  fresh?: boolean
 }
 
 export interface Pic { id: string; w: number; h: number }

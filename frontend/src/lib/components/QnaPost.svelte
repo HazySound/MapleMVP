@@ -153,7 +153,15 @@
       <div class="meta">{@render who(post.nick, post.admin)}<i>·</i><span class="mono">{stamp(post.at)}</span></div>
     </header>
 
-    <div class="body">{post.body}</div>
+    {#if post.kind === 'notice'}
+      <!-- 공지를 고칠 때 새 안내를 위에 쓰고 '---' 한 줄 아래에 옛 안내를 남긴다 -->
+      {#each post.body.split(/\n-{3,}\n/) as part, i (i)}
+        {#if i}<hr class="split" />{/if}
+        <div class="body">{part.trim()}</div>
+      {/each}
+    {:else}
+      <div class="body">{post.body}</div>
+    {/if}
     {@render pics(post.images)}
 
     {#if post.diag}
@@ -309,6 +317,8 @@
   .secret svg { width: 12px; height: 12px; }
 
   .body { font-size: 14px; line-height: 1.75; white-space: pre-wrap; word-break: break-word; color: var(--color-tx); }
+  .split { border: 0; border-top: 1px dashed var(--color-line2); margin: 22px 0; }
+  .split ~ .body { color: var(--color-tx3); }
   .pics { display: flex; flex-wrap: wrap; gap: 8px; }
   .pics a {
     display: block; max-width: 100%; width: min(360px, 100%); max-height: 260px; border-radius: 10px; overflow: hidden;

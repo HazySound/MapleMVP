@@ -7,7 +7,7 @@
  */
 import type { PcFuzzy } from '../format'
 import {
-  type KeepOpt, type Refresh, type Row, type Tier, type TierKey, TIERS, WINDOW, addDays, forecast, grade,
+  BLACK, CARRY_START, type KeepOpt, type Refresh, type Row, type Tier, type TierKey, TIERS, WINDOW, addDays, forecast, grade,
   needFor, needNow, plan as planCalc, replay, tierIndex, tierNow, todayKst, weekStart, weeklyAmounts,
 } from './mvp'
 import {
@@ -174,9 +174,12 @@ export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blo
   const coarse = firsts.length * prevs.length > 20_000
   if (coarse) prevs = [prevs[0]]
 
-  const fits: { first: number; pc: number[]; covered: boolean[] }[] = []
+  // pcLo·pcHi: 기준을 넘겨 이월로 숨었다가 나중 주에 채워졌을 수 있는 PC방까지 넣은 아래·위 끝
+  const fits: { first: number; pc: number[]; pcLo: number[]; pcHi: number[]; covered: boolean[] }[] = []
   // 어느 경우로 되짚든 갱신 때 이월이 있었을 수 있는 주. 맞는 경우를 못 찾았을 때 쓴다
   const risky = Array(WINDOW).fill(false)
+  // 어느 경우로 되짚든 기준에 닿았던 주. 맞는 경우를 못 찾았을 때 숨은 PC방을 범위로 둔다
+  const hidAny = new Set<number>()
   for (const first of firsts) for (const pv of prevs) {
     const a = [...base]
     if (pw) a[prev] = purchases[prev] + pv
@@ -185,29 +188,62 @@ export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blo
     }
     // 지난 스캔에서 확인한 이월 잔액이 있으면 그 뒤로는 그 값을 믿는다. 이번 주 것은 지금 맞춰 보는 중이라 뺀다
     const anchor = anchorOf(allStarts, b.saved, off + last)
-    const run = (bonus: number) => replay(a, fixed, allStarts, { bonus, anchor })
-    const plain = run(0)
+    // 9/17부터 기준(250만)에 닿은 주는 넘긴 결제와 그 주 PC방이 이월로만 갔다. 인게임 주 금액에는 안 보인다.
+    // 그런 주를 찾아, 결제만으로 넘긴 몫(적어도 이만큼)을 이월에 더해 되짚는다. PC방은 이월 잔액으로 가린다
+    const plain0 = replay(a, fixed, allStarts, { anchor })
+    const hid: number[] = []
+    const extra = Array(a.length).fill(0)
+    for (let i = 1; i < WINDOW; i++) {
+      const k = off + i
+      if (allStarts[k] < CARRY_START) continue
+      const room = BLACK.th - plain0.weeks.slice(k - WINDOW + 1, k).reduce((x, y) => x + y, 0)
+      // 그 주 몫(갱신 때 채운 이월 뺀 인게임 금액). 결제보다 적으면 모자란 만큼은 틀림없이 이월로 갔다.
+      // 13주 밖 PC방은 구매내역에 없어 room이 조금 크게 보일 수 있다. 한 주 최대 PC방만큼 여유를 둔다
+      const own = a[k] - plain0.used[k]
+      if (own < purchases[k] || own >= room - PC_CAP) { hid.push(i); extra[k] = Math.max(0, purchases[k] - own) }
+    }
+    for (const i of hid) hidAny.add(i)
+    const run = (bonus: number) => replay(a, fixed, allStarts, { bonus, anchor, extra })
+    const plain = hid.length ? run(0) : plain0
     for (let i = 0; i < WINDOW; i++) if (plain.used[off + i] > 0 || plain.held[off + i - 1] > 0) risky[i] = true
     // 13주 밖 PC방 몫. 블랙은 인게임 잔액과의 차이로 정해지고, 아니면 이월이 쓰인 주 금액 안에서 대 본다
     const spentCarry = plain.used.slice(off).map((u, i) => (u > 0 ? (i === 0 ? first : gaps[i]) : 0))
+    // 인게임 잔액과 모자란 차이는 13주 밖 PC방(bonus)이거나, 기준에 닿은 주에 숨은 PC방이다. 둘 다 따진다
+    const diff = carryNow == null ? 0 : carryNow - plain.carry
     const bonuses = carryNow == null || anchor ? [0]
-      : carryNow > 0 ? [carryNow - plain.carry]
+      : carryNow > 0 ? [...new Set([diff, ...(hid.length ? [0] : [])])]
       : steps(0, Math.max(0, ...spentCarry))
     for (const bonus of bonuses) {
       if (bonus < 0 || bonus % UNIT) continue
       const t = bonus ? run(bonus) : plain
-      if (carryNow != null && t.carry !== carryNow) continue
-      // 주마다 PC방 = 넥슨 − 수집 − 그 주 갱신에서 쓴 이월
-      const pc = b.starts.map((_, i) => (i === 0 ? first : gaps[i]) - t.used[off + i])
+      // 숨은 PC방: 잔액 차이 중 bonus로 설명하지 않은 몫
+      const slack = carryNow == null ? 0 : carryNow - t.carry
+      if (carryNow != null && (slack < 0 || (slack && (!hid.length || slack % UNIT)))) continue
+      // 주마다 PC방 = 넥슨 − 수집 − 그 주 갱신에서 쓴 이월 + 기준을 넘겨 이월로 간 결제
+      const pc = b.starts.map((_, i) => (i === 0 ? first : gaps[i]) - t.used[off + i] + extra[off + i])
+      if (hid.length === 1) pc[hid[0]] += slack
       const bad = (v: number, i: number) => !hole.has(i) && !grouped.has(i)
         && (v < 0 || v % UNIT > 0 || minutesOf(v) > MAX_WEEK_MINUTES)
       if (pc.some(bad)) continue
-      fits.push({ first, pc, covered: t.covered.slice(off) })
+      // 숨은 PC방이 어디로 갔는지. 잔액에 남았으면(slack) 숨은 주 중 어딘가다. 나중 갱신에서 꺼내 써서
+      // 채워졌으면 그 주 금액에 PC방처럼 보인다(fill). 지난 스캔 잔액이 되짚은 것보다 많았어도 그렇다(jump).
+      // 어느 숨은 주인지는 툴팁으로 가릴 수 없어 범위로 둔다. 잔액을 모르면 얼마인지도 모른다
+      const h0 = hid[0] ?? WINDOW
+      const fills = pc.flatMap((_, i) => (i > h0 && t.used[off + i] > 0 ? [i] : []))
+      const jump = anchor && anchor.k > off + h0 ? Math.max(0, t.jump) : 0
+      const hidden = carryNow == null ? PC_CAP
+        : (hid.length > 1 ? slack : 0) + fills.reduce((x, i) => x + Math.max(0, pc[i]), 0) + jump
+      const pcHi = pc.map((v, i) => (hid.includes(i) ? Math.min(PC_CAP, v + hidden) : v))
+      const pcLo = pc.map((v, i) => (fills.includes(i) && hid.length ? 0 : v))
+      fits.push({ first, pc, pcLo, pcHi, covered: t.covered.slice(off) })
     }
   }
 
-  const exact = (i: number): WeekPc =>
-    ({ start: b.starts[i], gapMin: gaps[i], gapMax: gaps[i], pcMin: gaps[i], pcMax: gaps[i], unknown: false })
+  // 인게임이 수집보다 적은 주(블랙: 이월로만 간 결제, 넥슨 차감)는 PC방이 아니다. 금액만 그대로 맞춘다
+  const exact = (i: number): WeekPc => {
+    const pc = Math.max(0, gaps[i])
+    return { start: b.starts[i], gapMin: gaps[i], gapMax: gaps[i], pcMin: pc, pcMax: pc, unknown: false }
+  }
   const weeks = b.starts.map((_, i) => exact(i))
   const unknown = (i: number): WeekPc => ({ ...weeks[i], gapMin: 0, gapMax: 0, pcMin: 0, pcMax: 0, unknown: true })
   /** 모르는 주와 합만 아는 묶음을 결과에 적는다 */
@@ -233,13 +269,17 @@ export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blo
         weeks[i] = { ...weeks[i], pcMin: 0, pcMax: Math.max(0, gaps[i] - gaps[i] % UNIT) }
       }
     }
+    // 기준에 닿았던 주의 PC방은 이월로 숨었다가 뒤 주에 채워졌을 수 있다. 그 뒤 주들 금액만큼까지 범위로 둔다
+    for (const i of hidAny) {
+      const later = gaps.slice(i + 1).reduce((x, v) => x + Math.max(0, v), 0)
+      weeks[i] = { ...weeks[i], pcMin: 0, pcMax: Math.min(PC_CAP, Math.max(weeks[i].pcMax, later)) }
+    }
     if (hole.has(0)) weeks[0] = unknown(0)
     holes()
     return { weeks, carry: carryNow, conflict: true }
   }
   for (let i = 1; i < WINDOW; i++) {
-    const p = fits.map(x => x.pc[i])
-    weeks[i] = { ...weeks[i], pcMin: lo(p), pcMax: hi(p) }
+    weeks[i] = { ...weeks[i], pcMin: lo(fits.map(x => x.pcLo[i])), pcMax: hi(fits.map(x => x.pcHi[i])) }
     // 이월로 블랙을 지킨 주는 모자란 만큼만 썼으니, 그 갱신의 12주 합계에 달렸다. 그 안에 스캔한 적
     // 없는 13주 밖 주가 있으면 그 주 PC방을 몰라서 쓰인 이월도 확정할 수 없다. PC방이 많았을수록
     // 덜 쓰였으니 위로만 넓힌다. 못 지킨 주는 가진 이월을 다 썼으니 12주 합계와 상관없다

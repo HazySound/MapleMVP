@@ -72,10 +72,12 @@ export function acceptReading(v: number[], collected: number[], carry: number[] 
     if (!known[k - 1]) continue
     const week = mid[k - 1]
     const spent = collected[k]
+    // 블랙은 인게임이 수집보다 적을 수 있다(기준을 넘긴 결제는 이월로만, 9/29 넥슨 차감). 음수만 거른다
+    if (black && week < spent) { if (week < 0) return false; continue }
     if (week < spent || (!loose[k] && (week - spent) % UNIT !== 0)) return false
   }
   const last = collected.length - 1
-  if (black) return lastWeek(v, BLACK.th, carry) >= collected[last]
+  if (black) return lastWeek(v, BLACK.th, carry) >= 0
   if (loose[last]) return THS.some(th => th - v[v.length - 1] >= collected[last])
   return THS.some(th => tierFits(th, v[v.length - 1], collected))
 }
@@ -124,17 +126,15 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
     if (week < 0) {
       return `${k}주 뒤(${w(v[k - 1])})가 ${k + 1}주 뒤(${w(v[k])})보다 커요. 잘못 읽은 자리가 있어요.`
     }
-    if (week < spent) {
+    if (week < spent && !black) {
       return `${k + 1}번째 주: 표에서는 ${w(week)}원인데 받아 둔 결제는 ${w(spent)}원이에요.`
     }
+    if (week < spent) continue
     if (!loose[k] && (week - spent) % UNIT !== 0) {
       return `${k + 1}번째 주: 차이 ${w(week - spent)}원이 100의 배수가 아니에요.`
     }
   }
-  if (black) {
-    return `이번 주: 표에서는 ${w(lastWeek(v, BLACK.th, carry))}원인데 `
-      + `받아 둔 결제는 ${w(collected[collected.length - 1])}원이에요.`
-  }
+  if (black) return `이번 주가 ${w(lastWeek(v, BLACK.th, carry))}원으로 읽혔어요. 잘못 읽은 자리가 있어요.`
   return '어느 등급 기준에도 들어맞지 않아요.'
 }
 

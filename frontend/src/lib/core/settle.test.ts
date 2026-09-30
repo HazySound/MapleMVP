@@ -62,6 +62,19 @@ function honest(s: Settled, w: World, conflict = false) {
     expect(w.pc[i], `${x.start} PC방 ${x.pcMin}~${x.pcMax}`).toBeGreaterThanOrEqual(x.pcMin)
     expect(w.pc[i], `${x.start} PC방 ${x.pcMin}~${x.pcMax}`).toBeLessThanOrEqual(x.pcMax)
   })
+  mirrors(s, w)
+}
+
+/**
+ * 가장 중요한 것: 저장하면 앱이 인게임과 같은 툴팁을 낸다. 모르는 주(가장 오래된 주)는 1주 뒤에
+ * 13주에서 빠지니 12줄에는 영향이 없다
+ */
+function mirrors(s: Settled, w: World, saved: Record<string, number> = {}) {
+  const b = buildBase(w.rows, save(s, w.now, saved), at(w.now))
+  const f = forecast(b.last13, b.carry).slice(0, 12)
+  const needs = f.map(r => Math.max(0, w.tier.th - r.sum - (w.black ? r.carryUsed : 0)))
+  expect(needs, '저장 뒤 툴팁').toEqual(w.needs)
+  if (w.black) expect(f.map(r => r.carryUsed), '저장 뒤 사용 이월').toEqual(w.used)
 }
 
 const exactWeeks = (s: Settled) => s.weeks.filter(x => !x.unknown && !x.group && x.pcMin === x.pcMax
@@ -99,26 +112,26 @@ describe('이월 제도 전(9/17 전)에 250만을 넘긴 사람', () => {
     expect(exactWeeks(s)).toEqual(w.starts)
   })
 
-  it('제도 시작 직후, 7월 초과분이 13주에 남은 채로 결제하면 그때부터는 이월이 쌓인다', () => {
-    // 9/17 주 결제 20만이 통째로 이월이 되고, 9/24·10/01·10/08 갱신에서 차례로 쓰인다.
-    // 그 갱신들의 12주 합계에 스캔한 적 없는 7월 주(PC방 1,000)가 들어 있어 규칙으로는 못 맞춘다.
-    // 그래도 이월이 쓰였을 수 있는 주는 범위로 두어 틀린 값을 확정하지 않는다
+  it('제도 시작 직후, 7월 초과분이 13주에 남은 채로 결제하면 그 결제는 이월로만 간다', () => {
+    // 9/17 주 결제 20만이 통째로 이월이 되고(그 주 금액은 0), 9/24 갱신에서 채워진다.
+    // 인게임이 수집보다 적은 9/17 주를 넘긴 몫으로 보고 되짚으면 규칙으로 맞춰진다
     const w2 = world('2026-10-08',
       { '2026-06-25': 900_000, '2026-07-09': 1_700_000, '2026-07-16': 300_000, '2026-08-20': 100_000,
         '2026-09-17': 200_000 },
       { '2026-09-03': 800, '2026-07-09': 1_000 })
     const s = scan(w2)
-    honest(s, w2, true)
-    const ranged = s.weeks.filter(x => x.pcMax > x.pcMin).map(x => x.start)
-    expect(ranged).toEqual(['2026-09-24', '2026-10-08'])
-    expect(s.weeks[7]).toMatchObject({ start: '2026-09-03', pcMin: 800, pcMax: 800 })   // 그대로 확정
+    honest(s, w2)
+    expect(exactWeeks(s)).toEqual(w2.starts)
+    expect(s.weeks[9]).toMatchObject({ start: '2026-09-17', gapMin: -200_000, pcMin: 0, pcMax: 0 })
+    expect(s.weeks[7]).toMatchObject({ start: '2026-09-03', pcMin: 800, pcMax: 800 })
   })
 })
 
 /**
- * 블랙 제보자와 같은 흐름을 만든 숫자로 옮긴 것. 7월에 크게 결제하고, 9/17 주 결제로 250만을
- * 넘겨 이월이 쌓이고, 9/24 갱신에서 모자란 9,300을 이월로 메웠다. 13주 밖 6/25 주는 30,000.
- * PC방은 8/20 주 1,200만 확정이고, 나머지는 툴팁이 똑같이 나오는 두 가지 경우를 둔다.
+ * 첫 블랙 제보자와 같은 결제 흐름. 7월에 크게 결제하고 9/17 주 결제로 250만을 넘겼다. 13주 밖 6/25 주는 30,000.
+ * 제보 당시(버그 기간)에는 넘긴 몫이 합계에도 들고 이월에도 쌓였지만, 넥슨이 9/29에 걷어냈다.
+ * 고친 규칙으로는 넘긴 몫이 이월로만 가고 9/24 갱신에서 채워져 지금은 레드다.
+ * PC방은 8/20 주 1,200만 확정이고, 나머지는 두 가지 경우를 둔다.
  */
 const REPORTER_SPENT: Record<string, number> = {
   '2026-06-25': 30_000, '2026-07-02': 120_000, '2026-07-09': 650_000, '2026-07-16': 700,
@@ -131,46 +144,23 @@ const reporter = (pc: Record<string, number>, now = '2026-09-24', spent = REPORT
 const R1 = reporter({ '2026-06-25': 1_600 })
 const R2 = reporter({ '2026-07-02': 500, '2026-09-24': 500, '2026-06-25': 100 })
 
-describe('블랙 첫 스캔 — 제보자와 같은 흐름', () => {
-  it('블랙이고, 1주 뒤 줄에서 남은 이월을 모두 쓴다', () => {
-    expect(R1.black).toBe(true)
-    expect(R1.carry).toBe(13_000)
-    expect(R1.used).toEqual([13_000, ...Array(11).fill(0)])
-    expect(R1.needs[0]).toBeGreaterThan(0)
-  })
-
-  it('PC방이 다른 두 경우가 툴팁으로는 똑같다 — 툴팁만으로는 가를 수 없다', () => {
-    expect(R2.needs).toEqual(R1.needs)
-    expect(R2.used).toEqual(R1.used)
-  })
-
-  it('가운데 11주는 확정, 7/02 주와 이번 주는 0~500 범위', () => {
+describe('첫 블랙 제보자와 같은 결제 — 고친 규칙', () => {
+  it('9/17에 넘긴 몫은 이월로만 가고 9/24 갱신에서 채워져 레드가 된다', () => {
     for (const w of [R1, R2]) {
-      const s = scan(w)
-      honest(s, w)
-      expect(exactWeeks(s)).toEqual(w.starts.slice(1, 12))
-      expect(s.weeks[0]).toMatchObject({ unknown: false, pcMin: 0, pcMax: 500 })
-      expect(s.weeks[12]).toMatchObject({ gapMin: 9_300, pcMin: 0, pcMax: 500 })
-      expect(s.weeks[7].pcMin).toBe(1_200)
+      expect(w.tier.key).toBe('red')
+      expect(w.carry).toBe(0)
     }
   })
 
-  it('저장하면 앱의 이월과 다음 주 필요 금액이 인게임과 같아진다', () => {
-    const b = buildBase(R1.rows, save(scan(R1), R1.now), at(R1.now))
-    expect(b.carry).toBe(R1.carry)
-    const f = forecast(b.last13, b.carry)
-    expect(BLACK.th - f[0].sum - f[0].carryUsed).toBe(R1.needs[0])
-  })
-})
-
-/** 블랙 제보자의 실제 결제로 만든 툴팁이 캡처와 원 단위까지 같은지 (test/private, git 제외) */
-describe.skipIf(!real)('블랙 제보자 실제 결제', () => {
-  it('6/25 주 PC방 1,600으로 보면 캡처와 같은 툴팁이 나온다', () => {
-    const r = real!.reporter
-    const w = reporter({ ...r.pcKnown, '2026-06-25': 1_600 }, '2026-09-24', r.spentByWeek)
-    expect(w.needs).toEqual(r.tip)
-    expect(w.used).toEqual(r.carry)
-    honest(scan(w), w)
+  it('툴팁을 읽으면 확정한 주는 진짜와 같고, 넘긴 주 전후만 범위로 남는다', () => {
+    const s1 = scan(R1)
+    honest(s1, R1)
+    expect(s1.weeks[7]).toMatchObject({ start: '2026-08-20', pcMin: 1_200, pcMax: 1_200 })
+    // 넘긴 9/17 주는 인게임이 수집보다 적다. PC방은 없다
+    expect(s1.weeks[11]).toMatchObject({ start: '2026-09-17', pcMin: 0, pcMax: 0 })
+    const s2 = scan(R2)
+    honest(s2, R2)
+    expect(s2.weeks[12].pcMax).toBeGreaterThanOrEqual(500)
   })
 })
 
@@ -186,15 +176,13 @@ describe('그 사람의 다음 주 (10/01) — 툴팁 앞 4줄이 0', () => {
     expect(w.needs.slice(4).every(n => n > 0)).toBe(true)
   })
 
-  it('9/24에 스캔해 뒀으면 그 값으로 채워 전부 확정된다 (묶였던 9/24 주만 범위)', () => {
+  it('9/24에 스캔해 둔 것을 이어 써도 진짜를 벗어나지 않는다', () => {
     for (const [pc1, w1] of [[{ '2026-06-25': 1_600 }, R1],
                              [{ '2026-07-02': 500, '2026-09-24': 500, '2026-06-25': 100 }, R2]] as const) {
       const w = w2(pc1)
       const s = scan(w, save(scan(w1), w1.now))
       honest(s, w)
-      expect(s.weeks.filter(x => x.group || x.unknown)).toEqual([])
-      const ranged = s.weeks.filter(x => x.pcMax > x.pcMin).map(x => x.start)
-      expect(ranged).toEqual(['2026-09-24'])
+      expect(s.weeks.filter(x => x.unknown)).toEqual([])
     }
   })
 
@@ -218,20 +206,21 @@ describe('블랙 첫 스캔 — 이번 주에 이월을 안 쓴 경우', () => {
   const pc = { '2026-07-23': 700, '2026-08-13': 300, '2026-09-10': 1_200, '2026-10-15': 600 }
   const w = world('2026-10-15', spent, pc)
 
-  it('가장 오래된 주만 확인 불가, 나머지는 이번 주까지 확정', () => {
+  it('가장 오래된 주는 확인 불가, 250만에 닿은 9/17부터는 PC방이 이월로 숨어 범위, 나머지는 확정', () => {
     expect(w.black).toBe(true)
     const s = scan(w)
     honest(s, w)
     expect(s.weeks[0].unknown).toBe(true)
-    expect(exactWeeks(s)).toEqual(w.starts.slice(1))
+    expect(exactWeeks(s)).toEqual(w.starts.slice(1, 8))
+    // 10/15 주 PC방 600은 이월 잔액으로만 보여 어느 주인지 모른다
+    expect(s.weeks.slice(8).map(x => x.pcMax)).toEqual([600, 600, 600, 600, 600])
   })
 
-  it('다음 주에 또 스캔하면 13주 전부 확정된다 (이번에는 이월을 쓰고 떨어진다)', () => {
+  it('다음 주에 또 스캔해도(이월을 쓰고 떨어진다) 진짜를 벗어나지 않는다', () => {
     const w2 = world('2026-10-22', spent, pc)
     expect(w2.black).toBe(false)
     const s = scan(w2, save(scan(w), w.now))
     honest(s, w2)
-    expect(exactWeeks(s)).toEqual(w2.starts)
   })
 })
 
@@ -246,30 +235,31 @@ const ONCE_PC = { '2026-07-30': 800, '2026-10-29': 300, '2026-10-08': 500 }
 describe('블랙을 다녀와 이번 주에 이월을 다 쓰고 떨어진 사람', () => {
   const w = world('2026-10-29', BLACK_ONCE, ONCE_PC)
 
-  it('이번 주 PC방은 범위로, 나머지는 확정', () => {
+  it('블랙이던 9/24~10/22 주와 이월이 채워진 이번 주는 범위, 그 앞은 확정', () => {
     expect(w.black).toBe(false)
     const s = scan(w)
-    honest(s, w)
+    // 13주 밖 7/30 주 PC방 800을 몰라 규칙으로는 못 맞춘다. 범위로 두어 틀린 값을 확정하지 않는다
+    honest(s, w, true)
     expect(s.weeks[12].pcMax).toBeGreaterThan(s.weeks[12].pcMin)
-    expect(exactWeeks(s)).toEqual(w.starts.slice(0, 12))
+    expect(exactWeeks(s)).toEqual(w.starts.slice(0, 7))
   })
 })
 
 describe('블랙을 다녀와 몇 주 전에 이월을 다 쓴 사람 — 처음 스캔', () => {
   const w = world('2026-12-03', BLACK_ONCE, ONCE_PC)
 
-  it('이월이 쓰인 10/29 주는 범위, 나머지는 확정', () => {
+  it('블랙이던 주와 이월이 쓰인 10/29 주는 범위, 나머지는 확정', () => {
     expect(w.black).toBe(false)
     const s = scan(w)
-    honest(s, w)
+    honest(s, w, true)
     const ranged = s.weeks.filter(x => x.pcMax > x.pcMin).map(x => x.start)
-    expect(ranged).toEqual(['2026-10-29'])
+    expect(ranged).toEqual(['2026-09-24', '2026-10-01', '2026-10-08', '2026-10-15', '2026-10-22', '2026-10-29'])
   })
 
 })
 
 describe('블랙일 때 한 번이라도 스캔해 둔 사람', () => {
-  it('블랙인 10/22에 스캔해 두면, 이월을 다 쓰고 떨어진 10/29 주도 확정된다', () => {
+  it('블랙인 10/22에 스캔해 두면, 이월을 다 쓰고 떨어진 10/29 주 PC방은 그 값을 넘지 않는다', () => {
     const w1 = world('2026-10-22', BLACK_ONCE, ONCE_PC)
     expect(w1.black).toBe(true)
     const s1 = scan(w1)
@@ -277,7 +267,8 @@ describe('블랙일 때 한 번이라도 스캔해 둔 사람', () => {
     const w2 = world('2026-10-29', BLACK_ONCE, ONCE_PC)
     const s2 = scan(w2, save(s1, w1.now))
     honest(s2, w2)
-    expect(s2.weeks[12].pcMin).toBe(300)
-    expect(s2.weeks[12].pcMax).toBe(300)
+    // 10/22 잔액으로 꺼내 쓴 이월을 알아서, 10/29 주에 채워진 금액 중 PC방은 300 이하다.
+    // 블랙이던 주에 숨었던 PC방이 이 주에 채워졌을 수도 있어 0부터다
+    expect(s2.weeks[12]).toMatchObject({ pcMin: 0, pcMax: 300 })
   })
 })
