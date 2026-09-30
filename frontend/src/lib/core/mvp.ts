@@ -213,6 +213,12 @@ export interface PlanWeek {
   keepPay: boolean
   /** 이 주 목요일 갱신에서 꺼내 쓴 이월(유지를 켰을 때만 센다). 그 주 금액으로 13주 동안 남는다 */
   carryUsed: number
+  /**
+   * 이 주 목요일 갱신 직후(그 주 결제 전) 등급. 이번 주는 null.
+   * 계획은 '그 주 결제까지 더하면' 기준에 닿게 짠다. 그래서 목요일에 한 번 내려갔다가 그 주에 결제하면
+   * 다시 오르는 주가 있다. 목요일에도 지켜지는지를 따로 보여 주려고 둔다(2026-09-30 문의)
+   */
+  thu: Tier | null
 }
 
 /** 달성 뒤에도 등급을 지킬 때: every주마다 한 번 결제, 목표 주 뒤 weeks주 동안 */
@@ -315,11 +321,12 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     let c = carry
     c += accrue(sumOf(win), amt(0), c)
     win[WINDOW - 1] -= over(sumOf(win), amt(0))
-    const vals = [...win], sums = [sumOf(win)], used = [0], tiers = [grade(sumOf(win), c).tier]
+    const vals = [...win], sums = [sumOf(win)], used = [0], tiers = [grade(sumOf(win), c).tier], thu: (Tier | null)[] = [null]
     for (let o = 1; o <= end; o++) {
       win.shift()
       const r = grade(sumOf(win), c)
       c = r.carry
+      thu.push(r.tier)
       const pay = amt(o)
       win.push(r.carryUsed + pay)
       const full = sumOf(win)
@@ -328,7 +335,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
       vals.push(win[WINDOW - 1]); sums.push(sumOf(win)); used.push(r.carryUsed); tiers.push(grade(sumOf(win), c).tier)
     }
     // tiers: 그 주 등급. 사이트 다른 곳(지금 등급)처럼 13주 합계가 모자라면 남은 이월로 채워 본다
-    return { vals, sums, used, tiers }
+    return { vals, sums, used, tiers, thu }
   }
 
   let keepPer = 0, reachExtra = 0
@@ -394,7 +401,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
       offset: o, amount: amounts[o] ?? 0, fixed: o in fx,
       counts: isKeep ? pays.includes(o) || o in fx : weeks.includes(o),
       skipped: skipThisWeek && o === 0, sum: s, tier: shown ? shown.tiers[o] : tierOf(s), drop,
-      keep: isKeep, keepPay: pays.includes(o), carryUsed: sim?.used[o] ?? 0,
+      keep: isKeep, keepPay: pays.includes(o), carryUsed: sim?.used[o] ?? 0, thu: shown ? shown.thu[o] : null,
     })
   }
   const hit = timeline.find(w => w.sum >= target.th)

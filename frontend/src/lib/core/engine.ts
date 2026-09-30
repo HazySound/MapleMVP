@@ -346,7 +346,7 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
     ...p,
     timeline: p.timeline.map(w => {
       const start = addDays(b.thisWeek, w.offset * 7)
-      return { ...w, start, end: addDays(start, 6), tier: key(w.tier) }
+      return { ...w, start, end: addDays(start, 6), tier: key(w.tier), thu: w.thu ? key(w.thu) : null }
     }),
     spentThisWeek: b.last13[b.last13.length - 1],
   }

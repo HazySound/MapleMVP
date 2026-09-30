@@ -22,6 +22,9 @@
   /** 이번 주 13주 합계(+이월) 기준으로 목표 등급까지 더 필요한 금액 */
   const nowNeed = $derived(d.needNow[p.target] ?? 0)
   const k = $derived(r && !r.error ? r.keep : null)
+  /** 유지 구간에서 목요일 갱신 직후엔 목표 등급 아래로 내려가는 주(그 주 결제로 다시 오른다) */
+  const rank = (key: string | null) => (key ? d.tiers.findIndex(t => t.key === key) : -1)
+  const dips = $derived(k && r && !r.error ? r.timeline.filter(w => w.keep && rank(w.thu) < rank(p.target)) : [])
   const keepEnd = $derived(r?.timeline.at(-1))
   const block = $derived(k?.blocked[0] ? r!.timeline[k.blocked[0].offset] : null)
 
@@ -85,7 +88,12 @@
             정해 둔 금액만으로 {k.weeks}주 동안 지켜져요.
           {:else}
             <b>달성 뒤 {k.every === 1 ? '매주' : `${k.every}주마다`} <span class="mono">{won(k.per)}</span>원</b>
-            {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 등급이 끊기지 않아요{k.every > 1 ? ` (주당 평균 ${won(Math.round(k.per / k.every))}원)` : ''}.
+            {#if dips.length}
+              {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 매주 결제 뒤 {tier.name} 등급이에요{k.every > 1 ? ` (주당 평균 ${won(Math.round(k.per / k.every))}원)` : ''}.
+              다만 <b class="inl">목요일 갱신 때 내려갔다가 그 주에 결제하면 다시 오르는 주가 {dips.length}번</b> 있어요({dips.map(w => md(w.start)).slice(0, 3).join(', ')}{dips.length > 3 ? ' 등' : ''}). 표에 주마다 적어 뒀어요.
+            {:else}
+              {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 등급이 목요일에도 끊기지 않아요{k.every > 1 ? ` (주당 평균 ${won(Math.round(k.per / k.every))}원)` : ''}.
+            {/if}
             {#if k.reachExtra}첫 유지 결제 전까지 버티도록 달성하는 주에 주당 {won(k.reachExtra)}원을 더 넣었어요.{/if}
             {#if k.carryUsed}250만을 넘긴 결제는 이월로 쌓였다가 모자라는 목요일에 채워지는 것까지 넣었어요.{/if}
           {/if}
