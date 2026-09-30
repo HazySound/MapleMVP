@@ -38,12 +38,19 @@
 
   // ---- 목표 ----
   const target = $derived(d.tiers.find(t => t.key === app.target)!)
-  const needBase = $derived(d.need[app.target])
+  // 다음 목요일에 목표 등급이려면(가장 오래된 주가 빠진 합계 기준) 더 필요한 금액
+  const nextNeed = $derived(d.need[app.target])
   // 목표 등급을 지금 이미 달성했는지 (다음 목요일에 지킬 수 있는지와는 별개)
   const targetDone = $derived(Math.max(0, d.needNow[app.target] - sim.extra) === 0)
+  /**
+   * 보여 줄 금액. 아직 못 한 등급은 인게임 '○○ 등급까지'처럼 이번 주 13주 합계 기준이고,
+   * 이미 달성한 등급은 인게임 '○○ 등급 유지까지'처럼 다음 목요일 기준이다(2026-09-30 사용자)
+   */
+  const keeping = $derived(targetDone && nextNeed > 0)
+  const needBase = $derived(keeping ? nextNeed : d.needNow[app.target])
   const needLeft = $derived(Math.max(0, needBase - sim.extra))
-  // 목표 등급은 다음 목요일 기준이라, 가장 오래된 주가 빠진 합계로 진행률을 그린다
-  const nextBase = $derived(sim.forecast[0].sum - sim.extra)
+  // 진행률도 같은 기준: 유지면 다음 목요일 합계, 아니면 이번 주 합계
+  const nextBase = $derived((keeping ? sim.forecast[0].sum : sim.total) - sim.extra)
   const pctBase = $derived(Math.min(100, ((nextBase + d.carry) / target.th) * 100))
   const pctExtra = $derived(Math.max(0, Math.min(100 - pctBase, (sim.extra / target.th) * 100)))
 </script>
@@ -93,7 +100,7 @@
   </div>
 
   <div class="targets">
-    <h3 class="card-title">목표 등급 <span class="sub">달성 여부는 지금 · 금액은 다음 주 목요일 기준 · 숫자키 1–6</span></h3>
+    <h3 class="card-title">목표 등급 <span class="sub">금액은 이번 주 기준 · 유지는 다음 주 목요일 기준 · 숫자키 1–6</span></h3>
     <div class="chips" role="group" aria-label="목표 등급 선택">
       {#each d.tiers as t (t.key)}
         {@const now = Math.max(0, d.needNow[t.key] - sim.extra)}
@@ -105,7 +112,7 @@
           style="--c:{TIER_VAR[t.key]};--ink:{TIER_INK_VAR[t.key]}" onclick={() => setTarget(t.key)}>
           <!-- 지금 등급인지는 아래 안내문이 말해 준다. 칸이 좁아 여기에는 표식을 넣지 않는다 -->
           <span class="nm"><i></i>{t.name}</span>
-          <small class="mono">{now === 0 ? '달성' : '+' + won(next)}</small>
+          <small class="mono">{now === 0 ? '달성' : '+' + won(now)}</small>
           <!-- 줄이 생겼다 사라지면 카드 높이가 달라져서, 자리는 늘 잡아 두고 숨기기만 한다.
                설명은 칩 전체에 하나만 단다. 안쪽에 또 달면 마우스가 지날 때마다 툴팁이 갈린다 -->
           <small class="keep mono" class:on={now === 0 && next > 0}>+{won(next)}</small>
@@ -141,7 +148,7 @@
       <i style="width:{pctBase}%"></i><em style="left:{pctBase}%;width:{pctExtra}%"></em>
     </div>
     <div class="legend">
-      <span><i style="background:var(--color-lav)"></i>다음 주 예상 합계{d.carry ? ' + 이월' : ''}</span>
+      <span><i style="background:var(--color-lav)"></i>{keeping ? '다음 주 예상 합계' : '이번 주 13주 합계'}{d.carry ? ' + 이월' : ''}</span>
       <span><i style="background:repeating-linear-gradient(45deg,#95e2c4 0 3px,#4d7a69 3px 6px)"></i>시뮬레이터 추가분</span>
     </div>
   </div>
