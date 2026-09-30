@@ -19,6 +19,8 @@
     perText = v.toLocaleString('ko-KR')
   }
 
+  /** 이번 주 13주 합계(+이월) 기준으로 목표 등급까지 더 필요한 금액 */
+  const nowNeed = $derived(d.needNow[p.target] ?? 0)
   const k = $derived(r && !r.error ? r.keep : null)
   const keepEnd = $derived(r?.timeline.at(-1))
   const block = $derived(k?.blocked[0] ? r!.timeline[k.blocked[0].offset] : null)
@@ -92,7 +94,15 @@
     {/if}
 
     <div class="stats">
-      <div class="st"><span>앞으로 필요한 금액</span><b class="mono" use:countup={r.required}>0</b></div>
+      <!-- 이번 주에 결제할 수 있으면 이번 주 기준(인게임 '○○ 등급까지'와 같은 값). 목표 주가 뒤면 그사이 13주에서 빠지는 결제만큼 더 든다.
+           이번 주 결제를 막았으면 이번 주엔 달성할 수 없으니 목표 주 기준 -->
+      {#if p.skipThisWeek}
+        <div class="st"><span>앞으로 필요한 금액</span><b class="mono" use:countup={r.required}>0</b></div>
+      {:else}
+        <div class="st"><span>이번 주 기준 필요한 금액</span><b class="mono" use:countup={nowNeed}>0</b>
+          {#if r.required !== nowNeed}<em>목표 주({md(r.timeline.find(w => w.start <= p.date && p.date <= w.end)?.start ?? p.date)}) 기준은 {won(r.required)}원{r.required > nowNeed ? ` (그사이 13주에서 ${won(r.required - nowNeed)}원이 빠져요)` : ''}</em>{/if}
+        </div>
+      {/if}
       <div class="st"><span>균등 분배하면</span><b class="mono">{won(r.equalPer)}<small> × {r.weeksCount}주</small></b></div>
       <div class="st"><span>계획한 결제 합계</span><b class="mono">{won(r.planned)}</b></div>
       <div class="st"><span>목표 주에 남는 기존 결제</span><b class="mono">{won(r.base)}</b></div>
@@ -143,6 +153,7 @@
   .st b { font-size: 17px; font-weight: 700; }
   .st:first-child b { color: var(--ink); }
   .st small { font-size: 12px; font-weight: 400; color: var(--color-tx3); }
+  .st em { display: block; margin-top: 2px; font-style: normal; font-size: 11px; line-height: 1.35; color: var(--color-tx3); }
   .actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 14px; }
   .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .scope { font-size: 13px; color: var(--color-tx2); }
