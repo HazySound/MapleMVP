@@ -100,7 +100,7 @@
   </div>
 
   <div class="targets">
-    <h3 class="card-title">목표 등급 <span class="sub">금액은 이번 주 기준 · 유지는 다음 주 목요일 기준 · 숫자키 1–6</span></h3>
+    <h3 class="card-title">목표 등급 <span class="sub">금액은 이번 주 추가 결제 기준 · 숫자키 1–6</span></h3>
     <div class="chips" role="group" aria-label="목표 등급 선택">
       {#each d.tiers as t (t.key)}
         {@const now = Math.max(0, d.needNow[t.key] - sim.extra)}
