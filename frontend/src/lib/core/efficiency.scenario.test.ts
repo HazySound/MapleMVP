@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import shop from './cashshop.json'
 import {
-  BIG, MONTHLY, PG_ID, feeOf, fund, pickAt, planAll, routesOf,
+  BIG, MONTHLY, PG_ID, feeOf, fund, kneeFit, pickAt, planAll, routesOf,
   type CardSetting, type CreditItem, type Plan, type RoutePick, type Sellable, type ShopItem, type WeekResult,
 } from './efficiency'
 
@@ -370,6 +370,36 @@ describe('끝에 남는 크레딧 모아 두기', () => {
       expect(spend.best.creditLeft).toBeLessThan(10_000)
       // 모아 둔 만큼은 이번 계산에서 돌려받지 않은 돈이다
       expect(keep.best.creditBack).toBeLessThanOrEqual(spend.best.creditBack + 0.5)
+    }
+  })
+})
+
+describe('최적화 회수율 하한은 달성·유지 구간마다', () => {
+  it('크레딧이 달성 주에 쌓여 유지 주에 쓰여도, 화면처럼 센 구간 회수율이 하한 아래로 가지 않는다', () => {
+    const items: CreditItem[] = [
+      { id: 'prime', name: '프라임 큐브', credits: 10_000, price: 6, days: 30 },
+      { id: 'primeadd', name: '프라임 에디셔널 큐브', credits: 20_000, price: 16, days: 30 },
+    ]
+    const ws = [1_630_000, 900_000, ...Array(10).fill(150_000)].map((amount, i) => {
+      const d = new Date(Date.UTC(2026, 9, 1 + 7 * i)).toISOString().slice(0, 10)
+      return { start: d, amount, tier: 'diamond' as const, month: d.slice(0, 7) }
+    })
+    const res = planAll(plan({ weeks: ws, exact: true, credit: { items } }))!
+    const credit = { balance: 0, items, keepRest: true }
+    const reach = [0, 1], keep = ws.slice(2).map((_, i) => i + 2)
+    const rateOf = (p: RoutePick, idx: number[]) => {
+      const w = idx.map(i => p.weeks[i])
+      return w.reduce((a, x) => a + x.route.back + (x.credit?.back ?? 0), 0) / w.reduce((a, x) => a + x.route.cost, 0) * 100
+    }
+    const best = pickAt(res, null, credit)
+    const top = [rateOf(best, reach), rateOf(best, keep)]
+    // 하한을 최저가 구간 회수율(지킬 수 있는 가장 높은 값)부터 6%p 아래까지 훑는다
+    for (let d = 0.05; d <= 6; d += 0.1) {
+      const floor = [top[0] - d, top[1] - d]
+      const ns = kneeFit(res, res.map(() => null), [{ idx: reach, perSale: 5000, minRate: floor[0] }, { idx: keep, perSale: 5000, minRate: floor[1] }], credit)
+      const p = pickAt(res, ns, credit)
+      expect(rateOf(p, reach), `달성 하한 ${floor[0].toFixed(2)}`).toBeGreaterThanOrEqual(floor[0] - 1e-9)
+      expect(rateOf(p, keep), `유지 하한 ${floor[1].toFixed(2)}`).toBeGreaterThanOrEqual(floor[1] - 1e-9)
     }
   })
 })

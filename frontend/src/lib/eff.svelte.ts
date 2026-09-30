@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, isShort, kneeWeeks, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
@@ -372,14 +372,18 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const res = run(all)
   if (!res) return null
 
-  // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
-  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.sellCost, eff.minRate)
-
   // 유지를 켰으면 목표 주 뒤의 주가 유지 구간이다
   const keepStarts = mode === 'plan' && plan?.keep ? new Set(plan.timeline.filter(w => w.keep).map(w => w.start)) : null
+  // 회수율 하한은 화면처럼 달성·유지 구간마다 따로 확인한다
+  const idxOf = (keep: boolean) => weeks.flatMap((w, i) => ((keepStarts?.has(w.start) ?? false) === keep ? [i] : []))
+  const groups = keepStarts ? [idxOf(false), idxOf(true)].filter(g => g.length) : undefined
+
+  // 판매 횟수별 전체 손실. 주마다 같은 상한을 건다
+  const { curve, lo, hi, best, knee: kp, count: cp } = routesOf(res, eff.salesN, credit, eff.sellCost, eff.minRate, groups)
   const hasCombo = (c: Combo) => Object.keys(c).length > 0
   // 주마다 그 주 구간의 설정. 따로 정하지 않았으면 모두 한 벌
-  const setOf = (i: number): RouteSet => eff.split && keepStarts?.has(weeks[i].start) ? eff.keep : reachSet()
+  const reach = reachSet()
+  const setOf = (i: number): RouteSet => eff.split && keepStarts?.has(weeks[i].start) ? eff.keep : reach
   /**
    * 설정대로 주마다 고른 루트. 직접 짜기인 주는 그 조합으로 가장 싼 것 하나만 다시 푼다(가볍게).
    * 나머지 주는 기본 계산을 그대로 쓴다
@@ -393,11 +397,13 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
       r = res.map((w, i) => (custom[i] ? c[i] : w))
     }
     const hiN = Math.max(1, ...r.map(w => w.solved.best.sales))
-    const memo = new Map<string, (number | null)[]>()
-    const per = (cost: number, minRate = 0) => { const k = `${cost}|${minRate}`; return memo.get(k) ?? (memo.set(k, minRate ? kneeWeeks(r, cost, minRate, credit) : perWeek(r, cost)), memo.get(k)!) }
-    const ns = sets.map((s, i) => s.want === 'best' ? per(0)[i] : s.want === 'knee' ? per(s.sellCost, s.minRate ?? 0)[i]
-      : s.want === 'count' ? (s.salesN >= hiN ? null : s.salesN) : custom[i] ? null : per(0)[i])
-    return pickAt(r, ns, credit)
+    const best0 = perWeek(r, 0)
+    const base = sets.map((s, i) => s.want === 'count' ? (s.salesN >= hiN ? null : s.salesN) : custom[i] ? null : best0[i])
+    // 최적화인 주는 구간(설정 한 벌)마다 묶어 고른다. 하한은 구간 회수율로 확인한다
+    const phases = [...new Set(sets.filter(s => s.want === 'knee'))].map(s => ({
+      idx: sets.flatMap((x, i) => (x === s ? [i] : [])), perSale: s.sellCost, minRate: s.minRate ?? 0,
+    }))
+    return pickAt(r, phases.length ? kneeFit(r, base, phases, credit) : base, credit)
   }
   const sets = weeks.map((_, i) => setOf(i))
   const linked = !eff.split || !keepStarts

@@ -757,21 +757,43 @@ export function perWeek(res: WeekResult[], perSale: number, minRate = 0): (numbe
 }
 
 /** perSale: 판매 1회 수고비. 최적화 루트는 주마다, 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다 */
+/** 최적화로 고를 구간 하나: 그 구간의 주(순서), 판매 1회 수고비, 회수율 하한(%) */
+export interface KneePhase { idx: number[]; perSale: number; minRate: number }
+
 /**
- * 여러 주의 최적화 상한(주마다). 회수율 하한은 주마다 지키되, 주마다 볼 때는 크레딧을 어림값으로 세고
- * 결론은 크레딧을 실제로 모았다 쓰는 대로 세서 조금 어긋날 수 있다. 결론 회수율이 하한 아래면 주별 기준을
- * 0.1%씩 올려 다시 고른다(화면에 보이는 회수율이 하한 아래로 나오지 않게)
+ * 여러 주의 최적화 상한을 구간(달성·유지)마다 고른다. base는 다른 주(최저가·횟수 정하기 등)의 상한이다.
+ * 회수율 하한은 주마다 크레딧 어림값으로 먼저 지키고, 그다음 화면과 똑같이 센 구간 회수율로 다시 확인한다.
+ * 화면은 크레딧을 실제로 큐브를 산 주에 센다(달성 주에 쌓인 크레딧이 유지 주에 쓰이면 달성 회수율은 그만큼 낮다).
+ * 구간 회수율이 하한 아래면 그 구간의 주별 기준만 0.1%씩 올려 다시 고른다.
+ * 전체가 아니라 구간마다 본다(2026-09-30 사용자 제보: 달성 하한 83%인데 전체 84%로 통과해 달성은 82.1%였다)
  */
-export function kneeWeeks(res: WeekResult[], perSale: number, minRate = 0, credit: CreditUse | null = null): (number | null)[] {
-  let ns = perWeek(res, perSale, minRate)
-  if (!minRate) return ns
-  const rateOf = (x: (number | null)[]) => { const p = pickAt(res, x, credit); return p.cost ? p.back / p.cost * 100 : 0 }
-  for (let f = minRate + 0.1; rateOf(ns) < minRate - 1e-9 && f <= minRate + 20; f += 0.1) ns = perWeek(res, perSale, f)
+export function kneeFit(res: WeekResult[], base: (number | null)[], phases: KneePhase[], credit: CreditUse | null = null): (number | null)[] {
+  const ns = [...base]
+  const f = phases.map(ph => ph.minRate)
+  const fill = (g: number) => {
+    const ph = phases[g], w = perWeek(ph.idx.map(i => res[i]), ph.perSale, f[g])
+    ph.idx.forEach((i, t) => { ns[i] = w[t] })
+  }
+  phases.forEach((_, g) => fill(g))
+  for (let round = 0; round < 400; round++) {
+    const p = pickAt(res, ns, credit)
+    let again = false
+    phases.forEach((ph, g) => {
+      if (!ph.minRate || f[g] > ph.minRate + 20) return
+      const ws = ph.idx.map(i => p.weeks[i])
+      const cost = ws.reduce((a, w) => a + w.route.cost, 0), back = ws.reduce((a, w) => a + w.route.back + (w.credit?.back ?? 0), 0)
+      if (cost && back / cost * 100 < ph.minRate - 1e-9) { f[g] += 0.1; fill(g); again = true }
+    })
+    if (!again) break
+  }
   return ns
 }
 
-/** minRate: 최적화 루트의 회수율 하한(%). 0이면 없음. 여러 주면 주마다 지킨다 */
-export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 2000, minRate = 0) {
+/**
+ * minRate: 최적화 루트의 회수율 하한(%). 0이면 없음.
+ * groups: 회수율을 따로 확인할 구간(달성·유지의 주 순서). 없으면 전체 한 구간
+ */
+export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | null = null, perSale = 2000, minRate = 0, groups?: number[][]) {
   const hi = Math.max(1, ...res.map(w => w.solved.best.sales))
   // 크레딧을 쓰면 조합은 크레딧 어림값으로 골랐어도, 곡선은 큐브를 실제로 살 수 있는 만큼 산 값으로 그린다.
   // 그래야 그래프와 루트 카드의 숫자가 같다
@@ -791,7 +813,7 @@ export function routesOf(res: WeekResult[], salesN: number, credit: CreditUse | 
   const n = Math.max(lo, Math.min(salesN, hi))
   // 최저가·최적화는 주마다 따로 고른다(최저가는 같으면 적게 파는 쪽). 곡선과 횟수 정하기는 모든 주에 같은 상한
   const best = res.length > 1 ? pickAt(res, perWeek(res, 0), credit) : picks[bn]!
-  const knee = res.length > 1 ? pickAt(res, kneeWeeks(res, perSale, minRate, credit), credit)
+  const knee = res.length > 1 ? pickAt(res, kneeFit(res, res.map(() => null), (groups ?? [res.map((_, i) => i)]).map(idx => ({ idx, perSale, minRate })), credit), credit)
     : picks[balancePoint(curve, picks.map(p => p?.sales ?? 0), lo, bn, perSale, picks.map(p => (p?.cost ? p.back / p.cost : 0)), minRate)]!
   return { curve, lo, hi, best, knee, count: picks[n]! }
 }
