@@ -280,8 +280,6 @@ export interface Solved {
 
 /** 판매 횟수를 이만큼까지만 층으로 쌓는다. 그 위는 최저가 루트와 같다고 본다 */
 const MAX_LAYERS = 600
-/** 상한 있는 아이템의 개수 조합을 늘어놓을 때 최대 몇 개까지. 넘으면 앞쪽(적게 사는 쪽)만 본다 */
-const MAX_COMBOS = 400
 /** 메이플포인트는 1,000원 단위로만 산다(계산 단위 100원의 10배) */
 const MU = 10
 
@@ -307,9 +305,10 @@ export function solve(o: SolveIn): Solved | null {
   // 계획을 따를 때는 먼저 계획 금액에 딱 맞춰 본다. 메포가 1,000원 단위라 안 맞으면 1,000원 안쪽으로 넘기고,
   // 그래도 안 되면(메소마켓 시세가 없을 때 등) 필요한 만큼 넘겨 산다
   const run = (mode: 'tight' | 'near' | 'free') => {
-    let A = mode === 'tight' ? need : mode === 'near' ? need + MU - 1 : need + Math.max(MU - 1, ...usable.map(v => v.u))
-    // 정해 둔 개수가 결제액보다 크면 그만큼은 산다
-    A = Math.max(A, fixedUnits)
+    const room = Math.max(MU - 1, ...usable.map(v => v.u))
+    let A = mode === 'tight' ? need : mode === 'near' ? need + MU - 1 : need + room
+    // 정해 둔 개수가 결제액보다 크면 그만큼은 사고, 그 위로도 결제액이 모자랄 때처럼 하나 더 얹어 볼 수 있다
+    A = Math.max(A, mode === 'free' ? fixedUnits + room : fixedUnits)
     const cost = new Float64Array(A + 1)
     for (let a = 0; a <= A; a++) cost[a] = o.costOf(a * U)
     return { A, cost }
@@ -318,21 +317,25 @@ export function solve(o: SolveIn): Solved | null {
 
   /**
    * 상한이 있는 아이템은 살 개수 조합을 늘어놓는다(C: 캐시 단위 합, V: 값, n: 개수 합).
+   * 캐시 합과 개수 합이 같은 조합은 값이 큰 것 하나만 남긴다. 나머지 계산에는 C·n·V만 쓰이니 답이 같다.
    * 상한이 없으면 조합은 '하나도 안 삼' 하나뿐이라 예전 계산과 같다
    */
   type Combo = { cnt: number[]; C: number; V: number; n: number }
   const combosOf = (lim: number) => {
-    const out: Combo[] = []
-    const walk = (i: number, cnt: number[], C: number, V: number, n: number) => {
-      if (out.length >= MAX_COMBOS) return
-      if (i === capIdx.length) { out.push({ cnt: [...cnt], C, V, n }); return }
-      const q = usable[capIdx[i]], cap = capOf(capIdx[i])!
-      for (let c = forced(capIdx[i]) ?? 0; c <= cap && C + c * q.u <= lim; c++) {
-        cnt.push(c); walk(i + 1, cnt, C + c * q.u, V + c * q.val, n + c); cnt.pop()
+    let cur = new Map<number, Combo>([[0, { cnt: [], C: 0, V: 0, n: 0 }]])
+    for (const j of capIdx) {
+      const q = usable[j], cap = capOf(j)!
+      const next = new Map<number, Combo>()
+      for (const b of cur.values()) {
+        for (let c = forced(j) ?? 0; c <= cap && b.C + c * q.u <= lim; c++) {
+          const x = { cnt: [...b.cnt, c], C: b.C + c * q.u, V: b.V + c * q.val, n: b.n + c }
+          const key = x.n * (lim + 1) + x.C, had = next.get(key)
+          if (!had || x.V > had.V) next.set(key, x)
+        }
       }
+      cur = next
     }
-    walk(0, [], 0, 0, 0)
-    return out
+    return [...cur.values()]
   }
   let combos = combosOf(A)
 
@@ -389,40 +392,67 @@ export function solve(o: SolveIn): Solved | null {
   if (o.bestOnly) { const b = best; return { best: b, lossAt: [b.loss], routeAt: () => b } }
   const K = best.sales
 
-  // 판매 횟수별: 상한 없는 아이템 k번으로 정확히 a를 만들 때 가장 많이 돌려받는 값을 층층이 쌓고,
-  // 층마다 상한 있는 조합을 얹는다. 값은 두 층만 들고, 되짚을 선택만 층마다 남긴다. 메소마켓을 쓰면 판매가 1회 는다
-  type At = { k: number; a: number; m: number; tot: number; c: number }
+  /**
+   * 판매 횟수별. row[s][a] = 판매 s번(메소마켓 빼고)으로 정확히 a를 채울 때 가장 많이 돌려받는 값.
+   * 어떤 조합이든 '상한 있는 아이템 조합(n개)' 위에 상한 없는 아이템을 하나씩 얹은 것이다. 그래서
+   *   row[s][a] = max(개수 합 s·캐시 합 a인 조합의 값, 상한 없는 아이템 j에 대해 row[s−1][a − u_j] + 값_j)
+   * 층을 하나씩 쌓으면 조합은 자기 개수 층에 한 번만 들어간다(층마다 조합을 다 훑지 않는다).
+   * 값은 두 층만 들고, 되짚을 선택만 층마다 남긴다(-2 = 여기서 조합이 시작). 메소마켓을 쓰면 판매가 1회 는다
+   */
+  type At = { k: number; a: number; m: number; tot: number }
   const L = Math.min(K, MAX_LAYERS)
   const top = new Array<number>(L + 1).fill(-Infinity)
   const atS = new Array<At | null>(L + 1).fill(null)
   const hows: Int8Array[] = []
   const put = (s: number, val: number, at: At) => { if (s <= L && val > top[s] + 0.5) { top[s] = val; atS[s] = at } }
-  const consider = (row: Float64Array, k: number) => {
-    combos.forEach((cb, c) => {
-      if (k + cb.n > L) return
-      for (let a = 0; a + cb.C <= A; a++) {
-        if (row[a] <= NEG) continue
-        const got = a + cb.C
-        if (got >= need) put(k + cb.n, row[a] + cb.V - cost[got], { k, a, m: 0, tot: got, c })
-        else if (mk1) {
-          // 모자라는 만큼 메포로. 1,000원 단위로 올려 산다
-          const m = Math.ceil((need - got) / MU) * MU, tot = got + m
-          if (tot <= A) put(k + cb.n + 1, row[a] + cb.V + m * mkVal - cost[tot], { k, a, m, tot, c })
-        }
-      }
-    })
-  }
-  let prev = new Float64Array(A + 1).fill(NEG); prev[0] = 0
-  consider(prev, 0)
-  for (let k = 1; k <= L && freeIdx.length; k++) {
-    const cur = new Float64Array(A + 1).fill(NEG), h = new Int8Array(A + 1).fill(-1)
-    for (let a = 1; a <= A; a++) for (const j of freeIdx) {
-      const q = usable[j]
-      if (q.u > a || prev[a - q.u] <= NEG) continue
-      const val = prev[a - q.u] + q.val
-      if (val > cur[a]) { cur[a] = val; h[a] = j }
+  const byN: Combo[][] = Array.from({ length: L + 1 }, () => [])
+  const comboAt = new Map<number, Combo>()
+  for (const cb of combos) if (cb.n <= L) { byN[cb.n].push(cb); comboAt.set(cb.n * (A + 1) + cb.C, cb) }
+  const lastN = byN.findLastIndex(x => x.length > 0)
+  /**
+   * 메포를 m(1,000원 단위)만큼 더 사서 결제액이 tot이 되면 값 = row[a] + m × mkVal − cost[tot], m = tot − a.
+   * 모자라는 만큼만이 아니라 더 사는 것도 본다(5만원권에 맞추면 더 싸질 때가 있다. 최저가 루트도 그렇게 고른다).
+   * tot마다 'row[a] − a × mkVal'이 가장 큰 a(tot − MU 이하, MU로 나눈 나머지가 tot과 같은 것)만 보면 된다.
+   * bestLow[a] = a 이하에서 나머지가 a와 같은 것 중 그 값이 가장 큰 곳(같으면 작은 a)
+   */
+  const bestLow = new Int32Array(A + 1)
+  const consider = (row: Float64Array, s: number, lo: number, hi: number) => {
+    // 결제액을 채우거나 넘기는 쪽
+    for (let a = Math.max(lo, need); a <= hi; a++) if (row[a] > NEG) put(s, row[a] - cost[a], { k: s, a, m: 0, tot: a })
+    if (!mk1 || s + 1 > L) return
+    for (let a = lo; a <= A; a++) {
+      const p = a - MU >= lo ? bestLow[a - MU] : -1
+      bestLow[a] = a <= hi && row[a] > NEG && (p < 0 || row[a] - a * mkVal > row[p] - p * mkVal) ? a : p
     }
-    hows.push(h); consider(cur, k); prev = cur
+    for (let tot = Math.max(need, lo + MU); tot <= A; tot++) {
+      const a = bestLow[tot - MU]
+      if (a >= 0) put(s + 1, row[a] + (tot - a) * mkVal - cost[tot], { k: s, a, m: tot - a, tot })
+    }
+  }
+  // 캐시가가 같으면 값이 큰(같으면 앞의) 아이템만 이길 수 있다. 나머지는 층 계산에서 뺀다
+  const layerIdx = freeIdx.filter((j, t) => !freeIdx.slice(0, t).some(i => usable[i].u === usable[j].u && usable[i].val >= usable[j].val)
+    && !freeIdx.slice(t + 1).some(i => usable[i].u === usable[j].u && usable[i].val > usable[j].val))
+  let prev: Float64Array | null = null
+  let lo = 0, hi = -1
+  for (let s = 0; s <= L; s++) {
+    // 앞 층이 비었고 더 얹을 조합도 없으면 끝
+    if (hi < 0 && s > lastN) break
+    const cur = new Float64Array(A + 1).fill(NEG), h = new Int8Array(A + 1).fill(-1)
+    // 상한 없는 아이템을 하나 얹는다. 아이템마다 한 줄씩 훑고, 커야만 바꾸니 칸마다 먼저 나온 아이템이 이긴다
+    if (prev && hi >= 0) for (const j of layerIdx) {
+      const u = usable[j].u, v = usable[j].val, end = Math.min(A, hi + u)
+      for (let a = lo + u; a <= end; a++) {
+        const p = prev[a - u]
+        if (p <= NEG) continue
+        if (p + v > cur[a]) { cur[a] = p + v; h[a] = j }
+      }
+    }
+    // 개수 합이 s인 조합에서 시작
+    for (const cb of byN[s]) if (cb.C <= A && cb.V > cur[cb.C]) { cur[cb.C] = cb.V; h[cb.C] = -2 }
+    lo = A + 1; hi = -1
+    for (let a = 0; a <= A; a++) if (cur[a] > NEG) { if (a < lo) lo = a; hi = a }
+    hows.push(h); prev = cur
+    if (hi >= 0) consider(cur, s, lo, hi)
   }
   // k회 이하로 바꾼다
   const lossAt: number[] = [], pickAt: (At | null)[] = []
@@ -438,11 +468,12 @@ export function solve(o: SolveIn): Solved | null {
     const at = pickAt[Math.max(0, k)]
     if (!at) return best!
     if (built.has(k)) return built.get(k)!
-    const counts = comboCounts(combos[at.c])
-    for (let i = at.k, a = at.a; i > 0; i--) {
-      const j = hows[i - 1][a]
-      counts.set(j, (counts.get(j) ?? 0) + 1); a -= usable[j].u
-    }
+    // 되짚기: 상한 없는 아이템을 하나씩 빼다가 조합이 시작된 칸에서 멈춘다
+    let s = at.k, a = at.a, j = hows[s][a]
+    const free = new Map<number, number>()
+    while (j !== -2) { free.set(j, (free.get(j) ?? 0) + 1); a -= usable[j].u; s--; j = hows[s][a] }
+    const counts = comboCounts(comboAt.get(s * (A + 1) + a)!)
+    for (const [i, n] of free) counts.set(i, (counts.get(i) ?? 0) + n)
     const r = finish(counts, at.m * U, at.tot * U)
     built.set(k, r)
     return r
@@ -503,6 +534,11 @@ export interface Plan {
   fixedFor?: (i: number) => Record<string, number | null> | undefined
   /** 가장 싼 조합 하나만(비교 칸·직접 짜기) */
   bestOnly?: boolean
+  /**
+   * 일반 충전(1:1)을 쓸지. 켜면(기본) 끝자리는 일반 충전으로 딱 맞추고 남기는 게 이득일 때만 한 권 더 산다.
+   * 끄면 끝자리도 늘 할인 수단으로 한 권 더 사서 남긴다(할인 한도가 없을 때만 일반 충전). 2026-09-30 사용자
+   */
+  plainOn?: boolean
 }
 
 export interface WeekResult {
@@ -515,6 +551,23 @@ export interface WeekResult {
   solved: Solved
   /** 이 주에 쓸 수 있던 잔액·한도. 어떤 루트든 이것으로 충전 내역을 만든다 */
   ctx: FundCtx
+}
+
+/**
+ * 충전 비용은 그 주 사정(ctx)만으로 정해진다. 루트·비교 칸마다 같은 주를 다시 풀 때 앞서 센 값을 다시 쓴다.
+ * 사정이 같은지는 ctx 전체를 글로 바꿔 비교한다. 최근 것만 둔다
+ */
+const costMemo = new Map<string, number[]>()
+function costOfCtx(ctx: FundCtx) {
+  const key = JSON.stringify(ctx)
+  let tab = costMemo.get(key)
+  if (!tab) {
+    tab = []
+    costMemo.set(key, tab)
+    if (costMemo.size > 400) costMemo.delete(costMemo.keys().next().value!)
+  }
+  const t = tab
+  return (c: number) => t[c / U] ?? (t[c / U] = fund(c, ctx).cost)
 }
 
 /** 그 달 마지막 충전에만 쓰는 결제수단 */
@@ -546,34 +599,69 @@ export function planAll(p: Plan): WeekResult[] | null {
       left -= reserve[i]
     }
   }
-  // 가진 캐시: 처음 잔액(1:1)에 끝자리로 남긴 캐시(산 값)가 더해진다
-  const held = { cash: p.balance, won: p.balance }
-  let capLeft = p.barcode.cap
+  /** 주를 지나며 바뀌는 것: 가진 캐시(처음 잔액 1:1에 끝자리로 남긴 캐시의 산 값이 더해진다), 달마다 남은 한도, 바코드 추가분 한도 */
+  interface St { held: { cash: number; won: number }; lim: typeof lim; capLeft: number }
+  const limOf = (st: St, m: string) => { if (!st.lim[m]) st.lim[m] = { ...monthLim(m) }; return st.lim[m] }
+  const ctxOf = (st: St, wi: number, spareOk: boolean): FundCtx => {
+    const w = p.weeks[wi]
+    const want = w.start in p.weekBarcode ? p.weekBarcode[w.start] : p.barcodeWant
+    return {
+      held: { ...st.held }, limits: { ...limOf(st, w.month), ...(last && !once ? { [LAST_KEY]: reserve[wi] } : {}) },
+      cards: !last ? others : once ? [...others, last] : reserve[wi] ? [last, ...others] : others,
+      barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft: st.capLeft, want } : null,
+      spareOk,
+    }
+  }
+  const spend = (st: St, wi: number, f: Funding) => {
+    const L = limOf(st, p.weeks[wi].month)
+    for (const q of f.parts) {
+      if (q.bonus) st.capLeft -= q.bonus
+      if (q.held) { st.held.cash -= q.cash; st.held.won -= q.won }
+      if (q.key) L[q.key] -= q.cash
+    }
+    if (f.spare) { st.held.cash += f.spare.cash; st.held.won += f.spare.won }
+  }
+  const copy = (st: St): St => ({ held: { ...st.held }, lim: Object.fromEntries(Object.entries(st.lim).map(([m, x]) => [m, { ...x }])), capLeft: st.capLeft })
+  /**
+   * 이 주 끝자리를 한 권 더 사서 남기는 게 이득인지. 이 주부터 계획 끝까지 두 경우(남김 / 일반 충전으로 딱)를 따라가
+   * 뒤 주는 지금 규칙대로(가운데 주는 남기고 마지막 주는 딱 맞춤) 계획 금액을 결제한다고 보고 비교한다.
+   * 남긴 캐시로 계획 전체의 일반 충전(1:1)이 실제로 줄고 낸 현금도 줄 때만 남긴다.
+   * 남긴 캐시가 매주 그대로 굴러가다 마지막 주에 같은 만큼 일반 충전하게 되면 일반 충전을 미룬 것뿐이다.
+   * 유지는 계획 뒤에도 이어지니 그런 캐시는 끝내 못 쓴다(2026-09-30 사용자 제보: 2만 원이 계속 남던 것)
+   */
+  const payOf = (i: number) => Math.ceil(p.weeks[i].amount / U) * U
+  const spareHelps = (st: St, wi: number) => {
+    if (!fund(payOf(wi), ctxOf(st, wi, true)).spare) return false
+    const run = (first: boolean) => {
+      const s = copy(st)
+      let won = 0, plain = 0
+      for (let j = wi; j < p.weeks.length; j++) {
+        const f = fund(payOf(j), ctxOf(s, j, j === wi ? first : j < p.weeks.length - 1))
+        for (const q of f.parts) if (!q.held) { won += q.won; if (!q.card) plain += q.cash }
+        spend(s, j, f)
+      }
+      return { won, plain }
+    }
+    const a = run(true), b = run(false)
+    return a.plain < b.plain && a.won < b.won - 0.5
+  }
+  const plainOn = p.plainOn ?? true
+  const st: St = { held: { cash: p.balance, won: p.balance }, lim, capLeft: p.barcode.cap }
   const out: WeekResult[] = []
   for (const [wi, w] of p.weeks.entries()) {
-    const L = monthLim(w.month)
-    const want = w.start in p.weekBarcode ? p.weekBarcode[w.start] : p.barcodeWant
+    // 끝자리: 일반 충전을 끄면 늘 할인 수단으로 한 권 더(한도가 없으면 그때만 일반 충전).
+    // 켜 두면 마지막 주는 딱 맞추고, 그 전 주는 남기는 게 이득일 때만 남긴다
+    const spareOk = !plainOn || (wi < p.weeks.length - 1 && spareHelps(st, wi))
     // 이 주의 사정을 떠 둔다. 뒤 주가 한도를 깎아도 이 주 계산은 그대로여야 한다
-    const ctx: FundCtx = {
-      held: { ...held }, limits: { ...L, ...(last && !once ? { [LAST_KEY]: reserve[wi] } : {}) },
-      cards: !last ? others : once ? [...others, last] : reserve[wi] ? [last, ...others] : others,
-      barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft, want } : null,
-      spareOk: wi < p.weeks.length - 1,
-    }
+    const ctx = ctxOf(st, wi, spareOk)
     const fee = p.fee ?? feeOf(w.tier)
     const creditPer = p.credit ? creditWonPer(p.credit.items, fee, p.um) : 0
     const combo = p.fixedFor?.(wi)
     const items = combo ? p.items.filter(x => x.id in combo) : p.items
     const fixed = combo ? Object.fromEntries(Object.entries(combo).filter(([, n]) => n != null)) as Record<string, number> : undefined
-    const solved = solve({ target: w.amount, costOf: c => fund(c, ctx).cost, fee, um: p.um, mk: p.mk, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
+    const solved = solve({ target: w.amount, costOf: costOfCtx(ctx), fee, um: p.um, mk: p.mk, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
     if (!solved) return null
-    const f = fund(solved.best.pay, ctx)
-    for (const q of f.parts) {
-      if (q.bonus) capLeft -= q.bonus
-      if (q.held) { held.cash -= q.cash; held.won -= q.won }
-      if (q.key) L[q.key] -= q.cash
-    }
-    if (f.spare) { held.cash += f.spare.cash; held.won += f.spare.won }
+    spend(st, wi, fund(solved.best.pay, ctx))
     out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, fee, um: p.um, solved, ctx })
   }
   return out

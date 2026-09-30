@@ -136,9 +136,11 @@
       <button class="addbtn" onclick={() => { close(); adding = true }}>+ 할인받는 결제수단 직접 추가</button>
     {/if}
 
-    <div class="row plain">
-      <span></span>
-      <span class="pl">일반 충전<small>할인 없음 · 1:1 · 위에서 못 채운 끝자리</small></span>
+    <div class="row plain" class:off={!eff.plainOn}>
+      <input type="checkbox" id="eff-plain" bind:checked={eff.plainOn} onchange={saveEff} />
+      <label for="eff-plain">일반 충전<small>{eff.plainOn
+        ? '할인 없음 · 1:1 · 끝자리를 딱 맞게 채워요. 남긴 캐시를 뒤에서 다 쓸 수 있을 때만 한 권 더 사요'
+        : '끔 · 끝자리도 할인 수단으로 한 권 더 사서 남는 캐시를 다음에 써요. 할인 한도가 다 차면 그때만 일반 충전'}</small></label>
       <span></span>
       <span class="nolimit">한도 없음</span>
     </div>
@@ -156,7 +158,7 @@
     </div>
   </div>
 
-  <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요. 상품권과 섞어 <b>할인이 큰 것부터</b> 쓰고, 권 단위로 파는 결제수단은 그 단위로만 사요. 한 권보다 작은 끝자리는 할인되는 결제수단으로 <b>한 권 더 사서 남는 캐시를 다음 주에</b> 쓰고, 마지막 주(금액 직접이면 그 한 번)만 {bc.on ? '바코드나 ' : ''}일반 충전(1:1)으로 딱 맞춰요. 권마다 할인율이 다르면 권별로 따로 추가해 주세요.
+  <p class="ef-hint">상품권은 <b>5만원권으로만</b> 할인이 큰 것부터 산다고 보고 계산해요. 목표 계획을 따르면 달마다 한도를 이렇게 주별로 나눠요. 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요. 상품권과 섞어 <b>할인이 큰 것부터</b> 쓰고, 권 단위로 파는 결제수단은 그 단위로만 사요. {#if eff.plainOn}한 권보다 작은 끝자리는 {bc.on ? '바코드나 ' : ''}<b>일반 충전(1:1)으로 딱 맞춰요.</b> 한 권 더 사서 남긴 캐시가 뒤 주에서 권 단위와 맞아떨어져 다 쓰일 때(그래서 더 쌀 때)만 할인 수단으로 한 권 더 사요.{:else}일반 충전을 꺼 두면 한 권보다 작은 끝자리도 할인되는 결제수단으로 <b>한 권 더 사서 남는 캐시를 다음에</b> 써요. 할인 한도가 다 차면 그때만 {bc.on ? '바코드나 ' : ''}일반 충전이에요.{/if} 권마다 할인율이 다르면 권별로 따로 추가해 주세요.
     <b>넥슨카드</b>는 먼저 쓰면 그 달에 다른 할인 충전(현대카드 포인트·중고 캐시 등)을 못 해서, 계획에서 <b>그 달 마지막 20만원</b>에만 써요. 한 번만 결제할 때는 다른 한도를 다 쓰고 모자랄 때만 써요.</p>
 </article>
 
@@ -193,7 +195,6 @@
   .add :global(.nb) { width: 140px; }
   .add .acts { display: flex; gap: 6px; margin-left: auto; }
   .plain { padding-top: 6px; border-top: 1px dashed var(--color-line); }
-  .pl { display: grid; line-height: 1.3; color: var(--color-tx); }
   .nolimit { text-align: right; color: var(--color-tx3); font-size: 12px; padding-right: 10px; }
   .bc { grid-template-columns: 18px minmax(0, 1fr) 216px; padding-top: 4px; border-top: 1px dashed var(--color-line); }
   .want { display: grid; gap: 3px; }
@@ -211,7 +212,7 @@
     .row.head span:nth-child(2) { display: none; }
     .row.head span:nth-child(n+3) { text-align: left; }
     .row + .row:not(.bc) { padding-top: 6px; border-top: 1px solid var(--color-line); }
-    .row.plain > .pl, .row.m > .ml { grid-column: 2 / -1; }
+    .row.plain > label, .row.m > .ml { grid-column: 2 / -1; }
     .row.plain > :nth-child(3) { display: none; }
     .ml label { grid-column: auto; }
     .row.m > .nolimit { text-align: left; padding: 0; }

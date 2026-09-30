@@ -158,7 +158,7 @@ describe('주별 상품권 한도', () => {
     expect(cash(2)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000]])
     for (const w of res) expect(w.solved.best.pay).toBe(250_000)
   })
-  it('한 달 한도를 5만원권으로 주마다 나눠 쓰고, 끝자리는 한 권 더 사서 다음 주에 쓴다(마지막 주만 일반 충전)', () => {
+  it('한 권 더 사도 뒤 주 한도를 앞당겨 쓸 뿐이면(일반 충전이 안 줄면) 끝자리는 일반 충전으로 딱 맞춘다', () => {
     const res = planAll({
       weeks: [
         { start: '2026-10-01', amount: 255_000, tier: 'gold', month: '2026-10' },
@@ -176,13 +176,44 @@ describe('주별 상품권 한도', () => {
       um: 1500, mk: 2250, items: [], fee: null, exact: true,
     })!
     const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
-    // 첫 주 255,000: 끝자리 5,000을 도서 5만원권 한 장 더로 사고 45,000이 남는다
-    expect(cash(0)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 100_000]])
-    expect(res[1].ctx.held).toEqual({ cash: 45_000, won: 45_000 * 0.94 })
-    // 둘째 주 400,000: 남은 45,000 먼저, 그 달 마지막 주라 넥슨카드 200,000, 도서 남은 한도 100,000, 끝자리 55,000은 일반 충전
-    expect(cash(1)).toEqual([['가진 캐시', 45_000], ['넥슨카드', 200_000], ['도서문화상품권', 100_000], ['일반 충전', 55_000]])
+    // 첫 주 255,000: 도서를 한 장 더 사서 45,000을 남겨도 둘째 주 도서 한도가 그만큼 줄어 일반 충전은 똑같이 55,000이다.
+    // 이득이 없으니 끝자리 5,000은 일반 충전
+    expect(cash(0)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000], ['일반 충전', 5_000]])
+    expect(res[1].ctx.held).toEqual({ cash: 0, won: 0 })
+    // 둘째 주 400,000: 그 달 마지막 주라 넥슨카드 200,000, 도서 남은 한도 150,000, 끝자리 50,000은 일반 충전
+    expect(cash(1)).toEqual([['넥슨카드', 200_000], ['도서문화상품권', 150_000], ['일반 충전', 50_000]])
   })
-  it('매주 193,000원을 5만원 단위 할인으로: 끝자리는 한 권 더 사서 넘기고, 마지막 주만 일반 충전', () => {
+
+  // 첫 주 163만 원 뒤 매주 20만 원(5만원 단위 할인 수단, 한도 없음)
+  const bigThenWeekly = (plainOn?: boolean) => planAll({
+    weeks: [1_630_000, ...Array(8).fill(200_000)].map((amount, i) => ({ start: `2026-10-${String(1 + i).padStart(2, '0')}`, amount, tier: 'black' as const, month: '2026-10' })),
+    balance: 0, cards: [],
+    methods: [{ key: 'pack', name: '넥슨팩', rate: 0.95, monthly: null, on: true, unit: 50_000 }],
+    leftNow: {}, thisMonth: '2026-10',
+    barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+    um: 1500, mk: 2250, items: [], fee: null, exact: true, plainOn,
+  })!
+  it('남긴 캐시가 매주 그대로 굴러가기만 하면 남기지 않는다(2026-09-30 제보: 2만 원이 계속 남던 것)', () => {
+    const fs = bigThenWeekly().map(w => fund(w.solved.best.pay, w.ctx))
+    expect(fs.map(f => f.spare?.cash ?? 0)).toEqual(Array(9).fill(0))
+    expect(fs[0].parts.map(p => [p.name, p.cash])).toEqual([['넥슨팩', 1_600_000], ['일반 충전', 30_000]])
+    for (const f of fs.slice(1)) expect(f.parts.map(p => [p.name, p.cash])).toEqual([['넥슨팩', 200_000]])
+  })
+  it('일반 충전을 끄면 끝자리도 할인 수단으로 한 권 더 사서 남긴다(마지막 주도)', () => {
+    const fs = bigThenWeekly(false).map(w => fund(w.solved.best.pay, w.ctx))
+    expect(fs.map(f => f.spare?.cash ?? 0)).toEqual(Array(9).fill(20_000))
+    for (const f of fs) expect(f.parts.some(p => p.name === '일반 충전')).toBe(false)
+  })
+  it('일반 충전을 꺼도 할인 한도가 다 차면 일반 충전', () => {
+    const res = planAll({
+      weeks: [{ start: '2026-10-01', amount: 230_000, tier: 'gold', month: '2026-10' }],
+      balance: 0, cards: [{ key: 'culture', name: '컬쳐랜드', disc: 6, on: true }], leftNow: { culture: 200_000 }, thisMonth: '2026-10',
+      barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+      um: 1500, mk: 2250, items: [], fee: null, exact: true, plainOn: false,
+    })!
+    expect(fund(res[0].solved.best.pay, res[0].ctx).parts.map(p => [p.name, p.cash])).toEqual([['컬쳐랜드', 200_000], ['일반 충전', 30_000]])
+  })
+  it('매주 193,000원을 5만원 단위 할인으로: 남긴 캐시가 불어나 뒤에서 쓰이니(일반 충전이 준다) 한 권 더 사서 넘기고, 마지막 주만 일반 충전', () => {
     const res = planAll({
       weeks: ['2026-10-01', '2026-10-08', '2026-10-15', '2026-10-22'].map(start => ({ start, amount: 193_000, tier: 'black' as const, month: '2026-10' })),
       balance: 0, cards: [],
@@ -347,6 +378,62 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
         if (Number.isFinite(run)) expect(r.lossAt[k]).toBeCloseTo(run, 0)
         const route = r.routeAt(k)
         if (Number.isFinite(run) && k < r.lossAt.length - 1) {
+          expect(route.sales).toBeLessThanOrEqual(k)
+          expect(route.loss).toBeCloseTo(run, 0)
+        }
+      }
+    }
+  })
+
+  it('주당 최대 조합이 아주 많아도(예전엔 400개에서 잘랐다) 전부 보고, 충전 비용이 계단이어도 같다', () => {
+    seed = 47
+    // 5만원권만 할인되는 충전: 비용이 금액에 비례하지 않는다
+    const costOf = (c: number) => Math.floor(c / 50_000) * 50_000 * 0.92 + c % 50_000
+    for (let t = 0; t < 40; t++) {
+      const items: Sellable[] = Array.from({ length: 5 }, (_, i) => {
+        const cash = pickInt(10, 120) * 100
+        return { id: `i${i}`, name: `i${i}`, set: 1, cash, price: Math.round(cash / 5900 * 3 * (0.8 + rnd() * 0.4) * 100) / 100, ...(i < 4 ? { cap: pickInt(4, 8) } : {}) }
+      })
+      const mk = rnd() < 0.2 ? 0 : pickInt(2000, 2600)
+      const target = pickInt(50, 1500) * 100
+      const exact = rnd() < 0.5
+      const r = solve({ target, costOf, fee: 0.03, um: 1500, mk, items, exact })
+
+      const keep = 0.97 * 1500, mk1 = mk ? 1500 / mk : 0
+      const T100 = Math.ceil(target / 100) * 100
+      const top = T100 + Math.max(900, ...items.map(x => x.cash))
+      let bySales = new Map<number, number>(), bestLoss = Infinity
+      let tier = exact ? 0 : 2
+      const walk = (j: number, cash: number, back: number, sales: number) => {
+        if (j === items.length) {
+          const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
+          const cands: [number, number, number][] = []
+          if (cash >= T100 && cash <= limit) cands.push([cash, back, sales])
+          if (mk1 && cash < T100) {
+            const m = Math.ceil((T100 - cash) / 1000) * 1000
+            if (cash + m <= limit) cands.push([cash + m, back + m * mk1, sales + 1])
+          }
+          for (const [pay, b, s] of cands) {
+            const loss = costOf(pay) - b
+            bestLoss = Math.min(bestLoss, loss)
+            bySales.set(s, Math.min(bySales.get(s) ?? Infinity, loss))
+          }
+          return
+        }
+        for (let k = 0; cash + k * items[j].cash <= top && k <= (items[j].cap ?? Infinity); k++) walk(j + 1, cash + k * items[j].cash, back + k * items[j].price * keep, sales + k)
+      }
+      walk(0, 0, 0, 0)
+      while (!Number.isFinite(bestLoss) && tier < 2) { tier++; bySales = new Map(); walk(0, 0, 0, 0) }
+      if (!Number.isFinite(bestLoss)) { expect(r).toBeNull(); continue }
+      expect(r).not.toBeNull()
+      if (!r) continue
+      expect(r.best.loss).toBeCloseTo(bestLoss, 0)
+      let run = Infinity
+      for (let k = 0; k < r.lossAt.length; k++) {
+        run = Math.min(run, bySales.get(k) ?? Infinity)
+        if (Number.isFinite(run)) expect(r.lossAt[k]).toBeCloseTo(run, 0)
+        if (Number.isFinite(run) && k < r.lossAt.length - 1) {
+          const route = r.routeAt(k)
           expect(route.sales).toBeLessThanOrEqual(k)
           expect(route.loss).toBeCloseTo(run, 0)
         }

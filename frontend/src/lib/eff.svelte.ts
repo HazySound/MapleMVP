@@ -47,6 +47,11 @@ interface Saved {
    * 할인이 큰 것부터 쓰고, 딱 맞지 않는 끝자리만 일반 충전(1:1)
    */
   methods: PayMethod[]
+  /**
+   * 일반 충전(1:1)을 쓸지. 켜면 끝자리는 일반 충전으로 딱 맞추고, 남기는 게 이득일 때만 할인 수단으로 한 권 더 산다.
+   * 끄면 끝자리도 늘 할인 수단으로 한 권 더 사서 남는 캐시를 다음에 쓴다(할인 한도가 없을 때만 일반 충전)
+   */
+  plainOn: boolean
   leftNow: Record<string, number>
   leftMonth: string
   barcodeOn: boolean
@@ -95,7 +100,7 @@ interface Saved {
 function fresh(): Saved {
   return {
     usePlan: true, amount: 0, balance: 0,
-    cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), methods: [],
+    cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), methods: [], plainOn: true,
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
@@ -349,7 +354,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
       weeks, balance: eff.balance, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on, unit: m.unit })),
       leftNow: $state.snapshot(eff.leftNow), thisMonth: thisMonth(),
       barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: $state.snapshot(eff.weekBarcode),
-      um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit, bestOnly,
+      um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn,
     }
     const combos = fixedFor ? weeks.map((_, i) => fixedFor(i) ?? null) : null
     const key = JSON.stringify([input, combos])
