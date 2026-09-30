@@ -69,6 +69,10 @@ export function acceptReading(v: number[], collected: number[], carry: number[] 
                               black = false, loose: boolean[] = []): boolean {
   if (v.length !== TOOLTIP_ROWS) return false
   const known = knownRows(v, carry)
+  // 12줄 모두 0: 이번 주 결제만으로 12주 내내 지금 등급이 지켜지는 표다(이번 주에 크게 산 경우).
+  // 주별 금액은 알 수 없고 13주 합계(상단 '○○ 등급까지')만 쓴다. 맞춰 볼 가운데 주가 없으니 받아 둔다
+  // (2026-09-30 제보: 레드인데 12줄이 전부 0이라 '구매내역 불일치'로 막혔다)
+  if (!black && known.every(k => !k)) return true
   if (!known[known.length - 1] || known.some((k, i) => i > 0 && known[i - 1] && !k)) return false
   // 가운데 주들은 차분이 곧 그 주의 금액이다
   const mid = middleWeeks(v, carry)

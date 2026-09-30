@@ -228,3 +228,19 @@ describe.skipIf(!real)('운영자 0 캐시 캡처', () => {
     expect(totalsFor(o.needs, o.spent, o.amounts).size).toBeGreaterThan(0)
   })
 })
+
+describe('12줄 모두 0인 표(블랙 아님)', () => {
+  it('이번 주 결제만으로 12주 내내 등급이 지켜지면 모두 0이다. 받아 두고 합계는 상단 금액으로', () => {
+    // 이번 주에 160만을 결제한 레드: 옛 주가 다 빠져도 레드
+    const collected = [0, 20_000, 0, 0, 0, 0, 10_000, 0, 0, 0, 0, 0, 1_600_000]
+    const zeros = Array(12).fill(0)
+    expect(acceptReading(zeros, collected)).toBe(true)
+    const s = solveScan({ readings: [zeros], carries: [], amounts: [870_000], scale: 1 }, collected)
+    expect(s?.needs).toEqual(zeros)
+    // 상단 '블랙 등급까지 870,000' → 13주 합계 1,630,000(레드)
+    expect([s?.total, ...(s?.choices ?? []).map(c => c.total)]).toContain(1_630_000)
+    const r = restore(zeros, 1_500_000, 1_630_000)
+    expect(r.ok, r.issues.join(' ')).toBe(true)
+    expect(r.blocks).toEqual([{ from: 0, to: 12, sum: 1_630_000 }])
+  })
+})
