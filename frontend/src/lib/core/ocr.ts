@@ -260,13 +260,16 @@ const bridge = (scale: number) => (2 * scale < 1 ? 0 : Math.max(1, Math.round(2 
 function score(g: Gray, rows: [number, number][], x0: number, x1: number,
                scale: number, th = 220): number {
   const ends: number[] = []
-  let plausible = 0
+  let plausible = 0, single = 0
   for (const [y0, y1] of rows) {
     const segs = digitSegs(g, y0, y1, x0, x1, scale, th)
     if (!segs.length) return 0
     ends.push(segs[segs.length - 1][1])
     if (segs.length >= 3 && segs.length <= 9) plausible++
+    if (segs.length === 1) single++
   }
+  // 12줄 모두 한 글자('0 캐시')인 칸: 이월만 쓰는 블랙의 '유지까지'. 금액 칸일 수 있다(2026-09-30 제보)
+  if (single === rows.length) plausible = rows.length
   const spread = Math.max(...ends) - Math.min(...ends)
   const aligned = spread <= Math.max(4, 10 * scale) ? 1 : Math.max(0, 1 - spread / (60 * scale))
   return aligned * (plausible / rows.length)
@@ -347,7 +350,14 @@ function tablesAt(g: Gray, th: number, win: number, step: number, limit: number)
         for (let x = 0; x < W; x++) if (g.data[y * W + x] > th) cols[x] = 1
       }
     }
-    for (const [lo0, hi0] of runs(x => !!cols[x], W, s(24), s(30))) {
+    // 줄마다 글자가 있는지. 12줄 모두 '0 캐시'인 칸(이월만 쓰는 블랙의 '유지까지')은 숫자 한 글자라
+    // 폭이 좁아 칸으로 안 잡혔다. 좁아도 모든 줄에 글자가 있으면 칸 후보로 둔다(2026-09-30 제보)
+    const everyRow = (lo: number, hi: number) => rows.every(([y0, y1]) => {
+      for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) for (let x = lo; x < hi; x++) if (g.data[y * W + x] > th) return true
+      return false
+    })
+    for (const [lo0, hi0] of runs(x => !!cols[x], W, s(24), s(4))) {
+      if (hi0 - lo0 < s(30) && !everyRow(lo0, hi0)) continue
       if (hi0 - lo0 > s(420)) continue
       const lo = Math.max(0, lo0 - s(6))
       const hi = Math.min(W, hi0 + s(7))
@@ -559,10 +569,12 @@ export interface ScanResult {
   carries: number[][]
   amounts: number[]
   scale: number
+  /** 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월 N / 10,000,000'의 N(지금 이월 잔액). 못 읽으면 null */
+  balance?: number | null
 }
 
 /** 한 열을 임계값·블러를 바꿔 가며 읽어 서로 다른 답을 모은다. */
-function readColumn(g: Gray, t: Table): number[][] {
+export function readColumn(g: Gray, t: Table): number[][] {
   const seen: number[][] = []
   for (const th of THRESHOLDS) {
     for (const b of BLURS) {
@@ -598,6 +610,52 @@ function rightColumns(g: Gray, tables: Table[], chosen: Table): number[][] {
   return out
 }
 
+/** 이월 한도. 잔액 줄은 'N / 10,000,000 캐시'로 적힌다 */
+const CARRY_CAP_TEXT = '10000000'
+
+/**
+ * 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월 N / 10,000,000 캐시' 줄에서 N(지금 이월 잔액)을 읽는다.
+ * 사용 이월 열만으로는 12줄 내내 이월이 남으면 잔액을 알 수 없다(2026-09-30 제보).
+ * 표 아래로 내려가며 글자 줄을 찾고, 그 줄의 숫자 덩어리 중 10,000,000 바로 앞 숫자를 잔액으로 본다
+ */
+function readBalance(g: Gray, tables: Table[], t: Table): number | null {
+  const { width: W, height: H } = g
+  const s = (v: number) => Math.max(1, Math.round(v * t.scale))
+  const right = Math.max(t.x1, ...tables.filter(u => u.x0 > t.x1 && sameRows(u, t)).map(u => u.x1))
+  const x0 = Math.max(0, t.x0 - s(260)), x1 = Math.min(W, right + s(120))
+  const last = t.rows[t.rows.length - 1]
+  const pitch = t.rows[1][0] - t.rows[0][0]
+  /** 한 줄의 숫자 덩어리(가로 위치, 읽은 글자). 글자 사이 틈보다 넓게 떨어진 곳에서 끊는다 */
+  const chunksAt = (y0: number, y1: number, th: number) => {
+    const out: { p: number; q: number; text: string }[] = []
+    for (const [p, q] of digitSegs(g, y0, y1, x0, x1, t.scale, th)) {
+      const c = out[out.length - 1]
+      if (c && p - c.q <= s(7)) c.q = q; else out.push({ p, q, text: '' })
+    }
+    for (const c of out) c.text = lineGlyphs(g, y0, y1, x0 + c.p - s(2), x0 + c.q + s(2), t.scale, th).map(match).join('').replace(/,/g, '')
+    return out
+  }
+  // 잔액 숫자는 흰색, 뒤의 '/ 10,000,000 캐시'는 회색이다. 표 바로 아래 줄에서 밝은 숫자를 잔액으로 읽고,
+  // 어둡게까지 보면 그 오른쪽에 '…000000'(10,000,000)이 있는지로 잔액 줄인지 확인한다.
+  // 작은 화면에서는 회색 10,000,000이 조각나 읽혀 그 자체를 숫자로 믿지는 않는다
+  const lit = (y: number) => { for (let x = x0; x < x1; x++) if (g.data[y * W + x] > 130) return true; return false }
+  for (const [a, b] of runs(lit, Math.min(H, last[1] + pitch * 4), s(2), s(6))) {
+    if (a < last[1] || b - a > pitch) continue
+    const y0 = a - s(3), y1 = b + s(3)
+    const votes = new Map<number, number>()
+    for (const th of [200, 210, 220, 230]) {
+      const bright = chunksAt(y0, y1, th).filter(c => /^\d+$/.test(c.text))
+      const n = bright[bright.length - 1]
+      if (!n) continue
+      const cap = chunksAt(y0, y1, 130).some(c => c.p > n.q && /0{6}$/.test(c.text))
+      if (cap) votes.set(Number(n.text), (votes.get(Number(n.text)) ?? 0) + 1)
+    }
+    const best = [...votes].sort((p, q) => q[1] - p[1])[0]
+    if (best) return best[0]
+  }
+  return null
+}
+
 /**
  * 금액 열인지: 금액 바로 오른쪽에 회색 '캐시'가 붙어 있다. 등급 이름('다이아')이나 '1 주차 뒤' 같은
  * 한글 열은 숫자로 잘못 읽혀도 오른쪽에 회색 글자가 없다. 줄 대부분에서 보이면 금액 열로 본다
@@ -623,7 +681,7 @@ export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
   const found = (t: Table, seen: number[][]): ScanResult =>
     ({ readings: seen, scale: t.scale, carries: rightColumns(g, tables, t),
-       amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }) })
+       amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }), balance: readBalance(g, tables, t) })
   // 금액 열은 아래로 갈수록 줄지 않는다. 앞 줄이 '0 캐시'로 짧으면 '1 주차 뒤' 열이 더 표처럼 보여
   // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다.
   // 다만 12줄이 모두 같은 등급('다이아')이면 그 열이 늘 같은 숫자(601)로 읽혀 줄지 않는 열이 된다.

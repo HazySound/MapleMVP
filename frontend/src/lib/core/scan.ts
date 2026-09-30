@@ -22,6 +22,8 @@ export interface ScanRaw {
   carries?: number[][]
   amounts: number[]       // 화면에서 읽은 숫자 후보
   scale: number
+  /** 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월'의 지금 잔액. 못 읽으면 null */
+  balance?: number | null
 }
 
 export interface Solved {
@@ -31,6 +33,8 @@ export interface Solved {
   /** 툴팁 '사용 이월 금액' 열. 줄마다 그 갱신에서 꺼내 쓸 이월이고 블랙에만 있다 */
   carry: number[]
   scale: number
+  /** 블랙이면 지금 이월 잔액(툴팁 맨 아래 줄). 못 읽었으면 null */
+  balance?: number | null
   /** 상단 '○○ 등급까지'로 볼 수 있는 숫자가 여럿이라 사용자가 골라야 한다. 그동안 total은 null */
   choices?: TotalPick[]
 }
@@ -224,7 +228,7 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   if (hasCarryColumn(scan)) {
     if (tied) return null
     const [needs, carry] = unkey(ranked[0][0])
-    return { needs, tierTh: BLACK.th, total: null, carry, scale }
+    return { needs, tierTh: BLACK.th, total: null, carry, scale, balance: scan.balance ?? prev?.balance ?? null }
   }
 
   // 검증만으로는 1행 오독이 걸러지지 않는 경우가 있다(앞자리를 놓쳐도 차이가 100의 배수면 통과).

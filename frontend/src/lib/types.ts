@@ -39,6 +39,8 @@ export interface PcRoomScan {
   carries?: number[][]
   amounts: number[]
   scale: number
+  /** 블랙 툴팁 맨 아래 이월 잔액. 못 읽으면 null */
+  balance?: number | null
 }
 
 export interface PcRoomResult {

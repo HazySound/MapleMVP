@@ -172,8 +172,10 @@
     // 예) 1주 뒤 0 · 사용 93,090 / 2주 뒤 356,780 · 사용 117,620 → 잔액 210,710 (화면 아래 잔액과 같다).
     // 12줄 내내 0이면 이월이 끝까지 남는다는 뜻이라 잔액을 알 수 없다.
     // 블랙이 아니면 이월은 없다. 떨어졌다면 다 쓴 것이다
+    // 툴팁 맨 아래 'MVP 블랙 구매 금액 이월' 줄을 읽었으면 그 잔액을 그대로 쓴다(12줄 내내 0이어도 안다)
     const drained = needTexts.findIndex(t => num(t) > 0)
-    const carryNow = !isTop ? 0 : drained >= 0 ? carry.slice(0, drained + 1).reduce((s, v) => s + v, 0) : null
+    const carryNow = !isTop ? 0 : prev?.balance != null ? prev.balance
+      : drained >= 0 ? carry.slice(0, drained + 1).reduce((s, v) => s + v, 0) : null
     // 빨간 줄이 있으면 숫자부터 바로잡아야 한다. 그 전에는 범위를 셈해 봐야 소용없다
     const st = gaps.some(g => g.note && !missed[g.start]) ? null : settleScan(b, r, carryNow)
     result = {
@@ -327,7 +329,8 @@
       // 블랙은 위 등급이 없어 '○○ 등급까지'가 화면에 없다. 한 장 더 찍어도 나오지 않는다
       scanPartial = false
       scanMsg = '블랙이라 13주 합계가 화면에 안 나와요. 확정하지 못한 주는 아래에 범위로 보여 드려요.'
-        + (usesCarry(s) ? ` (사용 이월 ${s.carry[0].toLocaleString('ko-KR')}원 반영)` : '')
+        + (s.balance != null ? ` (이월 잔액 ${s.balance.toLocaleString('ko-KR')}원 반영)`
+          : usesCarry(s) ? ` (사용 이월 ${s.carry[0].toLocaleString('ko-KR')}원 반영)` : '')
       calc()
     } else if (s.total == null) {
       scanPartial = true

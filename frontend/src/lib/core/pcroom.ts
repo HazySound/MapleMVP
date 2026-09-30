@@ -72,9 +72,18 @@ export function anchor(ths: number[], nextIndex: number, remaining: number): [nu
  * 줄마다 그 갱신 때의 13주 합계를 아는지.
  * 인게임은 모자란 금액이 없으면 '유지까지'를 0으로 적는다. 그때 합계는 기준 이상이라는 것만 안다.
  * 다만 블랙이 이월로 메우는 줄은 0이어도 '사용 이월'이 곧 모자란 금액이라 합계를 안다.
+ * 그리고 이월로 메운 갱신 뒤에는 합계가 딱 기준이다. 그 뒤 '유지까지 0 · 사용 0'인 줄은 빠진 주가 0원이라
+ * 합계가 그대로 기준이다(기준보다 작으면 이월을 썼을 것이고, 클 수는 없다). 그 줄도 합계를 안다
+ * (2026-09-30 제보: 이월만 쓰는 블랙은 이런 줄이 사이사이 끼어 '잘못 읽었다'로 막혔다)
  */
-export const knownRows = (needs: number[], carry: number[] = NO_CARRY) =>
-  needs.map((n, i) => n > 0 || (carry[i] ?? 0) > 0)
+export const knownRows = (needs: number[], carry: number[] = NO_CARRY) => {
+  let filled = false
+  return needs.map((n, i) => {
+    const k = n > 0 || (carry[i] ?? 0) > 0 || filled
+    if ((carry[i] ?? 0) > 0) filled = true
+    return k
+  })
+}
 
 /**
  * 툴팁 12줄을 넥슨 기준 주차별 금액 13개로 되돌린다.
