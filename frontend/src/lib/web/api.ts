@@ -258,6 +258,7 @@ function raw(): Raw {
     demo: false,
     rows: load<Row[]>(KEY.rows, []),
     pcroom: load<Record<string, number>>(KEY.pcroom, {}),
+    fixedAt: Math.max(0, ...Object.values(load<Record<string, number>>(KEY.pcroomAt, {}))),
   }
 }
 

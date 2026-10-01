@@ -167,6 +167,14 @@
    */
   const noRows = $derived(!d.syncedAt)
 
+  /** 맞춰 둔 주가 있다. 새 주가 비어 있으면(needPc) 다시 맞추라고 부른다 */
+  const fixed = $derived(Object.keys(d.pcroom.weeks).length > 0 && !noRows)
+  const fixedOn = $derived.by(() => {
+    if (!d.fixedAt) return ''
+    const k = new Date(d.fixedAt + 9 * 3600e3)
+    return `${k.getUTCMonth() + 1}/${k.getUTCDate()}`
+  })
+
   /** 지금 해야 할 일로 보낸다. exe는 스스로 읽어 오고, 웹은 동기화 창을 연다 */
   function want() {
     if (app.web) app.showImport = true
@@ -180,20 +188,21 @@
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
     {#if canFix}
-      <button class="pc" class:on={!!d.pcroom.totalMax && !noRows} class:hl={needPc} class:off={noRows}
+      <button class="pc" class:on={fixed && !needPc} class:hl={needPc} class:off={noRows}
         onclick={() => (noRows ? want() : (app.showPcRoom = true))}
         use:tip={noRows
           ? '구매내역을 먼저 동기화해 주세요. 수집한 결제가 있어야 그 차이를 PC방으로 볼 수 있어요'
           : needPc
             ? `인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
             : [pcCaveat(d.pcroom) || '인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 인게임 캡처로 맞출 수 있어요',
-               ...(d.pcroom.missTotal ? ['', `수집 못 한 결제(넥슨쇼핑 쿠폰 등) ${won(d.pcroom.missTotal)}원도 인게임에 맞춰 넣어 뒀어요.`] : [])].join('\n')}>
-        {#if d.pcroom.totalMax && !noRows}PC방 +{pcRange(d.pcroom)}원{:else if Object.keys(d.pcroom.weeks).length && !noRows}인게임 금액 맞춤 ✓{:else}인게임 금액 맞추기{/if}
+               ...(d.pcroom.missTotal ? ['', `수집 못 한 결제(넥슨쇼핑 쿠폰 등) ${won(d.pcroom.missTotal)}원도 인게임에 맞춰 넣어 뒀어요.`] : []),
+               ...(fixedOn ? ['', `마지막으로 맞춘 날 ${fixedOn}`] : [])].join('\n')}>
+        {#if fixed && !needPc}맞춤 완료 ✓{#if fixedOn}<span class="when">· {fixedOn}</span>{/if}{:else}인게임 금액 맞추기{/if}
       </button>
-    {:else if d.pcroom.totalMax}
+    {:else if fixed}
       <span class="pc tag on"
-        use:tip={`PC에서 맞춰 둔 프리미엄 PC방 접속분이에요. 고치는 건 PC에서만 돼요.${pcCaveat(d.pcroom) ? '\n\n' + pcCaveat(d.pcroom) : ''}`}>
-        PC방 +{pcRange(d.pcroom)}원
+        use:tip={`PC에서 인게임 금액과 맞춰 뒀어요. 고치는 건 PC에서만 돼요.${pcCaveat(d.pcroom) ? '\n\n' + pcCaveat(d.pcroom) : ''}`}>
+        맞춤 완료 ✓{#if fixedOn}<span class="when">· {fixedOn}</span>{/if}
       </span>
     {/if}
   </h3>
@@ -219,6 +228,7 @@
         <span class="plus mono">
           {#if sim.extra}<span style="color:var(--color-mint)">시뮬레이션 +{won(sim.extra)}</span>{/if}
           {#if d.carry}<span style="color:var(--color-butter)">이월 +{won(d.carry)}</span>{/if}
+          {#if d.pcroom.totalMax && !noRows}<span style="color:var(--color-peach)">인게임 보정 +{pcRange(d.pcroom)}</span>{/if}
         </span>
       {/if}
     </button>
@@ -275,6 +285,7 @@
   /* 휴대폰에서는 읽는 것만 된다. 누를 것처럼 보이면 안 된다 */
   /* 아직 맞출 수 없는 상태. 눌리기는 해야 왜 안 되는지 알려줄 수 있다 */
   .pc.off { opacity: .45; }
+  .pc .when { margin-left: 7px; opacity: .7; }
   .pc.off:hover { color: var(--color-tx3); border-color: var(--color-line); }
   .pc.tag { cursor: default; }
   .pc.tag:hover { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }

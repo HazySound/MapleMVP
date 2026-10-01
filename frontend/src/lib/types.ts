@@ -67,6 +67,8 @@ export interface Raw {
   usageError?: string | null
   rows: Row[]
   pcroom: Record<string, number>
+  /** 인게임 금액을 마지막으로 맞춘 시각(웹). 주별로 고친 시각 가운데 가장 늦은 것 */
+  fixedAt?: number
 }
 
 /** 화면이 쓰는 상태 = 원본 + TS 코어가 계산한 값 */
