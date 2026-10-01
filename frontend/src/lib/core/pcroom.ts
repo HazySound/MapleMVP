@@ -20,6 +20,7 @@ export const MINUTES_PER_UNIT = 6       // 6분마다 100캐시
 
 export const MAX_WEEK_MINUTES = 7 * 24 * 60   // 한 주를 넘는 접속은 있을 수 없다
 export const HIGH_WEEK_MINUTES = 20 * 60      // 주 20시간을 넘으면 PC방치고 이례적이다
+const BLACK_TH = 2_500_000                     // 블랙 기준(이월이 있는 등급)
 
 /** PC방 반영액을 접속 시간(분)으로 환산한다. */
 export const minutesOf = (amount: number) => Math.floor(amount / UNIT) * MINUTES_PER_UNIT
@@ -76,7 +77,11 @@ export function anchor(ths: number[], nextIndex: number, remaining: number): [nu
  * 합계가 그대로 기준이다(기준보다 작으면 이월을 썼을 것이고, 클 수는 없다). 그 줄도 합계를 안다
  * (2026-09-30 제보: 이월만 쓰는 블랙은 이런 줄이 사이사이 끼어 '잘못 읽었다'로 막혔다)
  */
-export const knownRows = (needs: number[], carry: number[] = NO_CARRY) => {
+export const knownRows = (needs: number[], carry: number[] = NO_CARRY, black = false) => {
+  // 블랙인데 12줄 모두 0이고 이월도 한 번도 안 쓴다: 이번 주가 혼자 기준을 채운다(갱신 때 이월이 이번 주를
+  // 기준까지 채웠다). 기준을 넘는 결제는 이월로만 가니 이번 주는 딱 기준이고 옛 주는 0이다. 모든 줄 합계가 딱 기준
+  // (2026-10-01 제보: 레드로 떨어졌다가 이번 주 결제로 다시 블랙, 툴팁 전부 0)
+  if (black && needs.every(n => n === 0) && carry.every(c => !c)) return needs.map(() => true)
   let filled = false
   return needs.map((n, i) => {
     const k = n > 0 || (carry[i] ?? 0) > 0 || filled
@@ -102,7 +107,7 @@ export function restore(needs: number[], tierTh: number, total: number | null,
   if (tierTh <= 0) return fail('지금 등급을 알 수 없어요.')
 
   const won = (n: number) => n.toLocaleString('ko-KR')
-  const known = knownRows(needs, carry)
+  const known = knownRows(needs, carry, tierTh >= BLACK_TH)
   const used = (k: number) => (k >= 1 && k <= TOOLTIP_ROWS ? carry[k - 1] ?? 0 : 0)
   const S: (number | null)[] = [total]
   for (let k = 1; k <= TOOLTIP_ROWS; k++) S.push(known[k - 1] ? tierTh - needs[k - 1] - used(k) : null)

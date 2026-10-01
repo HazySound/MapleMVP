@@ -35,6 +35,8 @@ export interface Solved {
   scale: number
   /** 블랙이면 지금 이월 잔액(툴팁 맨 아래 줄). 못 읽었으면 null */
   balance?: number | null
+  /** 구매내역과 맞춰 보는 검사 없이 표 모양만으로 고른 판독. 인게임이 수집보다 적은 주도 받아들인다 */
+  relaxed?: boolean
   /** 상단 '○○ 등급까지'로 볼 수 있는 숫자가 여럿이라 사용자가 골라야 한다. 그동안 total은 null */
   choices?: TotalPick[]
 }
@@ -68,7 +70,7 @@ function tierFits(th: number, lastNeed: number, collected: number[]): boolean {
 export function acceptReading(v: number[], collected: number[], carry: number[] = NO_CARRY,
                               black = false, loose: boolean[] = []): boolean {
   if (v.length !== TOOLTIP_ROWS) return false
-  const known = knownRows(v, carry)
+  const known = knownRows(v, carry, black)
   // 12줄 모두 0: 이번 주 결제만으로 12주 내내 지금 등급이 지켜지는 표다(이번 주에 크게 산 경우).
   // 주별 금액은 알 수 없고 13주 합계(상단 '○○ 등급까지')만 쓴다. 맞춰 볼 가운데 주가 없으니 받아 둔다
   // (2026-09-30 제보: 레드인데 12줄이 전부 0이라 '구매내역 불일치'로 막혔다)
@@ -213,6 +215,8 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
     const k = key(v, carry)
     count.set(k, (count.get(k) ?? 0) + 1)
   }
+  const relaxed = !count.size && !hasCarryColumn(scan) ? relaxedPick(scan, collected, scale) : null
+  if (relaxed) return relaxed
 
   if (!count.size) {
     // 툴팁이 없는 장. 먼저 읽어 둔 값으로 합계만 채운다. 블랙은 채울 합계가 화면에 없다
@@ -257,6 +261,43 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   const fits = THS.filter(th => tierFits(th, needs[needs.length - 1], collected))
   if (fits.length !== 1) return null
   return { needs, tierTh: fits[0], total: null, carry, scale }
+}
+
+/**
+ * 수집한 결제와 맞춰 보는 검사를 통과한 판독이 하나도 없을 때(블랙 아님).
+ * 최근까지 블랙이었던 계정은 갱신 때 꺼내 쓴 이월이 그 주 금액으로 잡혀 인게임 주별 금액이 구매내역과 크게
+ * 다르다(100원 단위도 아니고 더 적은 주도 있다). 사이트는 그 이월을 모르니 맞춰 볼 수 없다.
+ * 그래서 표 모양만 본다: '유지까지'가 아래로 갈수록 줄지 않고, 0은 앞쪽에만 있는 판독. 그중 하나로 떨어질 때만 쓰고,
+ * 합계는 상단 '○○ 등급까지'로 등급마다 후보를 낸다(여럿이면 사용자가 고른다). 주별 차이는 인게임을 믿는다
+ * (2026-10-01 제보: 블랙에서 레드로 내려온 계정, 캡처를 계속 못 읽었다)
+ */
+function relaxedPick(scan: ScanRaw, collected: number[], scale: number): Solved | null {
+  const shaped = scan.readings.filter(v => v.length === TOOLTIP_ROWS && v[v.length - 1] > 0
+    && v.every((n, i) => i === 0 || n >= v[i - 1]))
+  const uniq = [...new Set(shaped.map(v => v.join(',')))]
+  if (uniq.length !== 1) return null
+  const needs = uniq[0].split(',').map(Number)
+  const last = needs[needs.length - 1]
+  // 이월 때문에 인게임이 수집보다 적어지는 주는 결제가 통째로 이월로 가서 0원이 된다. 조금만 모자라면
+  // (19,900 vs 20,000) 숫자를 잘못 읽은 것이다
+  const known = knownRows(needs)
+  const mid = middleWeeks(needs)
+  for (let k = 1; k <= mid.length; k++) if (known[k - 1] && mid[k - 1] < collected[k] && mid[k - 1] !== 0) return null
+  const picks: TotalPick[] = []
+  for (let i = 0; i + 1 < THS.length; i++) {
+    const th = THS[i]
+    const now = th - last
+    if (th < last || (now < collected[collected.length - 1] && now !== 0)) continue
+    for (const a of scan.amounts) {
+      const total = THS[i + 1] - a
+      // 캐시 금액은 10원 단위다. 1원 단위로 읽힌 건 화면의 다른 글자를 주운 것이다
+      if (a > 0 && a % 10 === 0 && total >= th && !picks.some(p => p.tierTh === th && p.total === total)) picks.push({ tierTh: th, total })
+    }
+  }
+  if (!picks.length) return null
+  const carry = NO_CARRY
+  if (picks.length === 1) return { needs, carry, scale, ...picks[0], relaxed: true }
+  return { needs, carry, scale, tierTh: picks[0].tierTh, total: null, choices: picks, relaxed: true }
 }
 
 /**

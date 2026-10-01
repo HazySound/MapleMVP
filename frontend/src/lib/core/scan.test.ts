@@ -244,3 +244,24 @@ describe('12줄 모두 0인 표(블랙 아님)', () => {
     expect(r.blocks).toEqual([{ from: 0, to: 12, sum: 1_630_000 }])
   })
 })
+
+describe('구매내역과 맞춰 볼 수 없는 표', () => {
+  it('최근까지 블랙이던 레드: 이월이 섞여 검사를 못 넘으면 표 모양(줄지 않는 판독)으로 하나를 고른다', () => {
+    // 인게임 주별이 이월 때문에 수집과 크게 다르다(더 적은 주, 100원 단위 아닌 주)
+    const collected = [0, 0, 300_000, 400_000, 0, 0, 600_000, 7_130, 0, 40_000, 700_000, 0, 70_000]
+    const good = [0, 0, 0, 0, 0, 0, 100_210, 100_210, 100_210, 100_210, 100_210, 1_300_010]
+    const bad1 = [0, 0, 0, 0, 0, 0, 100_210, 1_002_111, 100_210, 100_210, 100_210, 1_300_010]
+    const bad2 = [0, 0, 0, 0, 0, 0, 100_210, 100_210, 100_210, 100_210, 100_210, 13_010]
+    const s = solveScan({ readings: [good, bad1, bad2], carries: [], amounts: [11_111, 200_470], scale: 1 }, collected)
+    expect(s?.needs).toEqual(good)
+    expect(s?.relaxed).toBe(true)
+    expect(s?.tierTh).toBe(1_500_000)
+    expect(s?.total).toBe(2_500_000 - 200_470)
+  })
+  it('블랙인데 12줄 모두 0이고 이월도 안 쓴다: 이번 주가 딱 기준, 옛 주는 0', () => {
+    const zeros = Array(12).fill(0)
+    const r = restore(zeros, 2_500_000, null, null, zeros)
+    expect(r.ok, r.issues.join(' ')).toBe(true)
+    expect(r.weeks.slice(1)).toEqual([...Array(11).fill(0), 2_500_000])
+  })
+})
