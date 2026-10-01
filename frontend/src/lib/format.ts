@@ -157,3 +157,13 @@ export const eun = (word: string) => (coda(word) ? '은' : '는')
 export const iga = (word: string) => (coda(word) ? '이' : '가')
 /** 으로/로. ㄹ 받침은 '로'다 (레드로 / 블랙으로 / 미달로) */
 export const ro = (word: string) => { const k = coda(word); return k && k !== 8 ? '으로' : '로' }
+
+/** 마지막 동기화처럼 '오늘 (목) 14:32', '어제 (수) 9:05', '9월 28일 (월) 21:10' */
+export function dayTime(at: number, now = Date.now()): string {
+  const t = new Date(at)
+  const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`
+  const when = day(t) === day(new Date(now)) ? '오늘'
+    : day(t) === day(new Date(now - 864e5)) ? '어제'
+    : `${t.getMonth() + 1}월 ${t.getDate()}일`
+  return `${when} (${'일월화수목금토'[t.getDay()]}) ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`
+}

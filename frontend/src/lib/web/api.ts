@@ -284,7 +284,7 @@ export const webApi: PyApi = {
       const px = ctx.getImageData(0, 0, cv.width, cv.height)
       const r = scan(toGray(px.data, cv.width, cv.height), scale || 0)
       const ok = !!(r.readings.length || r.amounts.length)
-      return { ok, ...r,
+      return { ok, ...r, size: `${cv.width}x${cv.height}`,
                message: ok ? '' : 'MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요.' }
     } catch (e) {
       return { ok: false, readings: [], amounts: [], scale: 1, message: `이미지를 읽지 못했어요. ${e}` }

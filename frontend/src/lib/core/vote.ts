@@ -32,7 +32,7 @@ export interface Vote {
 export const AGREE = 2
 
 /** loose: 13주 중 갱신 때 이월이 쓰인 주 (core/scan의 acceptReading 참고) */
-export function createVote(collected: number[], agree = AGREE, loose: boolean[] = []): Vote {
+export function createVote(collected: number[], agree = AGREE, loose: boolean[] = [], items: number[][] = []): Vote {
   const needsVotes = new Map<string, number>()
   const hits = new Map<string, number>()   // '등급기준:합계' → 그렇게 읽힌 프레임 수
   // 한 프레임에서 합계 후보가 여럿 나온 경우. 같은 목록이 이어지면 사용자에게 고르게 넘긴다
@@ -50,7 +50,7 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
   /** 상단 패널이 찍힌 프레임에서 합계를 찾는다. 답이 갈리는 프레임은 버린다. */
   function addAmounts(amounts: number[]) {
     if (!needs || !amounts.length) return
-    const picks = pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose), carry)
+    const picks = pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose, items), carry)
     if (picks.length > 1) {
       const key = picks.map(p => `${p.tierTh}:${p.total}`).join('|')
       choiceLists.set(key, picks)
@@ -91,7 +91,7 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
     if (raw.scale) scale = raw.scale
 
     if (!needs) {
-      const s = solveScan(raw, collected, null, loose)
+      const s = solveScan(raw, collected, null, loose, items)
       if (s) {
         const key = `${s.needs.join(',')}|${s.carry.join(',')}`
         const n = (needsVotes.get(key) ?? 0) + 1

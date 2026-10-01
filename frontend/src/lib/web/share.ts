@@ -81,12 +81,20 @@ export function canShare(): boolean {
 }
 
 /** 표 상태에 '몇 장을 집어 봤는지'와 '지금 무엇이 보이는지'를 더한 것 */
-export interface ShareStatus extends VoteState { shots: number; stage: Stage }
+export interface ShareStatus extends VoteState {
+  shots: number
+  stage: Stage
+  /** 마지막으로 읽은 장과 그 크기. 막혔을 때 진단에 남긴다 */
+  last?: ScanRaw | null
+  size?: string
+}
 
 export interface ShareOpts {
   collected: number[]
   /** 13주 중 갱신 때 이월이 쓰인 주 */
   loose?: boolean[]
+  /** 13주 주마다 산 물건값. 인게임이 적은 주를 그 물건이 MVP에 안 들어간 것으로 설명할 때 쓴다 */
+  items?: number[][]
   /** 게임 위에 띄울 안내 창. 화면을 고른 뒤에 연다 */
   guide?(): Promise<Guide | null>
   onStream(stream: MediaStream): void
@@ -128,7 +136,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   const worker = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
-  const vote = createVote(o.collected, undefined, o.loose)
+  const vote = createVote(o.collected, undefined, o.loose, o.items)
   // 화면을 고르고 나서 연다. 고르는 창이 이 위에 겹치지 않도록
   let guide = o.guide ? await o.guide() : null
 
@@ -257,7 +265,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
     const state = vote.feed(raw)
     announce(look(raw, state))
     nudge()
-    o.onState({ ...state, shots, stage: stage || 'blank' })
+    o.onState({ ...state, shots, stage: stage || 'blank', last: raw, size: `${canvas.width}x${canvas.height}` })
     if (!state.solved) return false
 
     // 다 됐다는 것은 보고 나서 사라져야 한다. 그냥 닫히면 됐는지 모른다

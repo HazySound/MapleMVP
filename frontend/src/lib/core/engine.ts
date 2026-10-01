@@ -92,6 +92,12 @@ export function looseWeeks(b: Base): boolean[] {
   })
 }
 
+/** 13주 주마다 산 것(구매내역 행). 인게임이 적은 주를 물건값으로 설명할 때 쓴다 */
+export function weekRows(b: Base): Row[][] {
+  return b.starts.map(s => b.rows.filter(r => weekStart(r.date) === s))
+}
+export const weekItems = (b: Base): number[][] => weekRows(b).map(rs => rs.map(r => r.price))
+
 /** 한 주에 들어갈 수 있는 가장 큰 PC방 반영액 (일주일 내내 접속) */
 const PC_CAP = Math.floor(MAX_WEEK_MINUTES / 6) * UNIT
 

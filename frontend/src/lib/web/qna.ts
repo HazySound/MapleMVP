@@ -44,6 +44,8 @@ export interface Post extends Omit<Item, 'replies'> {
 }
 
 /** 버그 문의에 같이 보내는 것. 쓴 사람과 관리자만 본다 */
+import type { ScanLog } from './scanlog'
+
 export interface Diag {
   build: string
   ua: string
@@ -52,6 +54,8 @@ export interface Diag {
   tier: string | null
   carry: number
   weeks: { start: string; amount: number; spent: number; pc: number }[]
+  /** 최근 인게임 금액 맞추기 시도(이 기기). 판독·검사 어디서 막혔는지 */
+  scans?: ScanLog[]
 }
 
 export interface Note { id: number; post: number; kind: 'new' | 'more' | 'answer' | 'done' | 'update'; at: number; seen: boolean; title: string }

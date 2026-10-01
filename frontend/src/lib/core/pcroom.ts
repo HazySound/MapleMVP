@@ -22,6 +22,28 @@ export const MAX_WEEK_MINUTES = 7 * 24 * 60   // 한 주를 넘는 접속은 있
 export const HIGH_WEEK_MINUTES = 20 * 60      // 주 20시간을 넘으면 PC방치고 이례적이다
 const BLACK_TH = 2_500_000                     // 블랙 기준(이월이 있는 등급)
 
+/**
+ * 인게임이 수집보다 gap원 적은 주: 그 주에 산 물건 몇 개 값의 합이 gap과 원 단위로 맞으면 그 물건들의 자리.
+ * 넥슨이 그 결제를 MVP에 넣지 않은 것이다(2026-10-01 제보: 1초 간격으로 산 1,400원짜리 둘 중 하나만 들어갔다).
+ * 결제 수단은 넥슨캐시 사용 내역에 없어 왜 빠졌는지는 모른다. 맞는 조합이 없으면 null
+ */
+export function unpaid(prices: number[], gap: number): number[] | null {
+  if (gap <= 0 || !prices.length) return null
+  // 합 → (직전 합, 더한 물건 자리). 물건마다 이전까지의 합에만 더해 한 번씩만 쓴다
+  const from = new Map<number, [number, number]>([[0, [-1, -1]]])
+  for (let i = 0; i < prices.length && !from.has(gap); i++) {
+    for (const s of [...from.keys()]) {
+      const t = s + prices[i]
+      if (t <= gap && !from.has(t)) from.set(t, [s, i])
+    }
+    if (from.size > 100_000) return null   // 셈이 너무 커지면 모른다고 한다
+  }
+  if (!from.has(gap)) return null
+  const out: number[] = []
+  for (let s = gap; s > 0;) { const [p, i] = from.get(s)!; out.push(i); s = p }
+  return out.reverse()
+}
+
 /** PC방 반영액을 접속 시간(분)으로 환산한다. */
 export const minutesOf = (amount: number) => Math.floor(amount / UNIT) * MINUTES_PER_UNIT
 
@@ -176,7 +198,8 @@ export interface Gap {
  * 그걸로 한 번 거르고, 접속 시간으로 환산해서 말이 되는지로 한 번 더 거른다.
  */
 export function compare(nexon: number[], collected: number[], starts: string[],
-                        unknown: number[] = [], mixed: number[] = [], black = false): Gap[] {
+                        unknown: number[] = [], mixed: number[] = [], black = false,
+                        items: number[][] = []): Gap[] {
   const out: Gap[] = []
   for (let i = 0; i < Math.min(nexon.length, collected.length, starts.length); i++) {
     if (unknown.includes(i)) {
@@ -193,6 +216,11 @@ export function compare(nexon: number[], collected: number[], starts: string[],
       // 9/29에는 넥슨이 PC방 비정상 적립분을 주 금액에서 걷어냈다. 툴팁 금액을 그대로 믿는다
       out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
                  warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 블랙 기준을 넘겨 이월로 간 결제이거나 넥슨이 걷어낸 금액이에요.`,
+                 ok: true, unknown: false })
+      continue
+    } else if (gap < 0 && unpaid(items[i] ?? [], -gap)) {
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
+                 warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 그 주에 산 것 중 이만큼이 MVP에 들어가지 않았어요.`,
                  ok: true, unknown: false })
       continue
     } else if (gap < 0) {

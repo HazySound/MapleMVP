@@ -183,6 +183,25 @@
               </tbody>
             </table>
           </div>
+          {#if post.diag.scans?.length}
+            <div class="scans">
+              <p>최근 인게임 금액 맞추기</p>
+              {#each post.diag.scans as x (x.at)}
+                <div class="scan" class:bad={!x.ok}>
+                  <p><b>{stamp(x.at)}</b> · {x.how === 'share' ? '화면 공유' : '캡처'} · {x.ok ? '읽음' : '실패'}
+                    {#if x.size}· <span class="mono">{x.size}{x.scale ? ` 배율 ${x.scale}` : ''}</span>{/if}
+                    {#if x.frames}· {x.frames}장 중 {x.seen ?? 0}장 읽힘 · 마지막 {x.stage}{/if}</p>
+                  <p>{x.msg}</p>
+                  {#if x.after}<p>계산: {x.after}</p>{/if}
+                  <p class="small mono">
+                    {#each x.readings as r, i (i)}표{i + 1}({r.n}표) {r.v.map(won).join(' / ')}<br>{/each}
+                    {#if x.carries.length}이월 열 {x.carries.map(c => c.map(won).join(' / ')).join(' | ')}<br>{/if}
+                    잔액 {x.balance == null ? '못 읽음' : won(x.balance)} · 숫자 {x.amounts.map(won).join(', ') || '없음'}
+                  </p>
+                </div>
+              {/each}
+            </div>
+          {/if}
           <p class="small mono">{post.diag.build} · {post.diag.screen}<br>{post.diag.ua}</p>
         </div>
       </details>
@@ -334,6 +353,9 @@
   .dg p { margin: 0; font-size: 12.5px; color: var(--color-tx3); }
   .dg b { color: var(--color-tx); font-weight: 500; }
   .dg .small { font-size: 10.5px; line-height: 1.5; word-break: break-all; }
+  .scans { display: grid; gap: 6px; }
+  .scan { display: grid; gap: 3px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--color-line); }
+  .scan.bad { border-color: color-mix(in srgb, var(--color-peach) 45%, transparent); }
   .wk { overflow-x: auto; }
   .wk table { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
   .wk th, .wk td { padding: 3px 7px; text-align: right; border-bottom: 1px solid var(--color-line); }

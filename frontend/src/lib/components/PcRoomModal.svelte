@@ -1,17 +1,19 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
-  import { META, NO_CARRY, anchor, compare, readWeek, restore, writeWeeks } from '../core/pcroom'
-  import { buildBase, looseWeeks, settleScan } from '../core/engine'
+  import { META, NO_CARRY, anchor, compare, readWeek, restore, unpaid, writeWeeks } from '../core/pcroom'
+  import { buildBase, looseWeeks, settleScan, weekItems, weekRows } from '../core/engine'
   import { isCoupon, placeCoupons } from '../core/coupons'
-  import { weekStart } from '../core/mvp'
-  import { type Solved, type TotalPick, acceptReading, carryFor, hasCarryColumn, isTop as topTier, panelFields, solveScan,
+  import { forecast, weekStart } from '../core/mvp'
+  import { onMount } from 'svelte'
+  import { type ScanRaw, type Solved, type TotalPick, acceptReading, carryFor, hasCarryColumn, isTop as topTier, panelFields, solveScan,
     relaxedShape, usesCarry, whyReject } from '../core/scan'
   import HelpModal from './HelpModal.svelte'
   import { STAGE, type ShareHandle, type ShareStatus, canShare, startShare } from '../web/share'
   import { primeChime } from '../web/chime'
   import { type Guide, canGuide, openGuide } from '../web/pip'
-  import type { PcRoomResult, Tier } from '../types'
-  import { type PcFuzzy, TIER_COLOR, TIER_INK_VAR, addDays, md, pcCaveat, pcRange, spotlight, won } from '../format'
+  import type { PcRoomResult, PcRoomScan, Row, Tier } from '../types'
+  import { type ScanLog, fromRaw, logScan } from '../web/scanlog'
+  import { type PcFuzzy, TIER_COLOR, TIER_INK_VAR, addDays, dayTime, md, pcCaveat, pcRange, spotlight, won } from '../format'
   import { tip } from '../tip'
 
   const d = $derived(app.data!)
@@ -74,11 +76,15 @@
     return found
   }
 
-  /** 입력한 값으로 '예상 등급'을 되짚는다. 인게임 화면과 다르면 잘못 넣은 것이다. */
+  /**
+   * 입력한 값으로 '예상 등급'을 되짚는다. 인게임 화면과 다르면 잘못 넣은 것이다.
+   * 그 갱신에서 꺼내 쓰는 이월도 등급에 들어간다(인게임도 '유지까지 0 · 사용 이월 N' 줄을 블랙으로 적는다).
+   * 그래서 등급은 기준 − 유지까지로 매기고, 이월을 뺀 합계가 음수면 잘못 넣은 것이다
+   */
   const predicted = $derived(needTexts.map((t, i) => {
     if (!t.trim() || !tierTh) return null
     const sum = tierTh - num(t) - (carry[i] ?? 0)
-    return { sum, tier: sum < 0 ? null : tierOf(sum), bad: sum < 0 }
+    return { sum, tier: sum < 0 ? null : tierOf(sum + (carry[i] ?? 0)), bad: sum < 0 }
   }))
 
   const rows = $derived(result?.rows ?? [])
@@ -168,7 +174,22 @@
       return !!w && !w.unknown && !w.group && !r.unknown.includes(i) && r.weeks[i] - b.purchases[i] === w.gapMin
     }
     const mixed = b.used13.flatMap((u, i) => (u > 0 || lenient || (isTop && i === last) || same(i) ? [i] : []))
-    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed, isTop || lenient)
+    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed, isTop || lenient, weekItems(b))
+    // 인게임이 적은 만큼이 그 주에 산 물건값과 꼭 맞는 주(블랙 아님): 넥슨이 그 결제를 MVP에 안 넣었다.
+    // 그 물건을 빼고 계산하고, 저장할 때는 그만큼 빼서 인게임 금액 그대로 남긴다
+    const dropped = new Set<Row>()
+    const dropAt: Record<string, { amount: number; names: string[] }> = {}
+    if (!isTop && !lenient) {
+      const wr = weekRows(b)
+      gaps.forEach((g, i) => {
+        if (g.unknown || g.amount >= 0 || g.note) return
+        const pick = unpaid(wr[i].map(x => x.price), -g.amount)
+        if (!pick) return
+        for (const k of pick) dropped.add(wr[i][k])
+        dropAt[g.start] = { amount: -g.amount, names: pick.map(k => wr[i][k].item) }
+      })
+    }
+    const bS = dropped.size ? buildBase(rowsNow.filter(x => !dropped.has(x)), b0.saved) : b
     // 지난번에 '수집 못 한 결제'로 저장한 주는 이번에도 그렇게 본다. 다시 누르게 하지 않는다
     if (!keepMissed) {
       missed = Object.fromEntries(gaps.filter(g => g.note && readWeek(b.saved, g.start)?.miss
@@ -183,21 +204,28 @@
     // 툴팁 맨 아래 'MVP 블랙 구매 금액 이월' 줄을 읽었으면 그 잔액을 그대로 쓴다(12줄 내내 0이어도 안다)
     const drained = needTexts.findIndex(t => num(t) > 0)
     const carryNow = !isTop ? 0 : prev?.balance != null ? prev.balance
+      : savedBalance != null ? savedBalance
       : drained >= 0 ? carry.slice(0, drained + 1).reduce((s, v) => s + v, 0) : null
     // 빨간 줄이 있으면 숫자부터 바로잡아야 한다. 그 전에는 범위를 셈해 봐야 소용없다
-    const st = gaps.some(g => g.note && !missed[g.start]) ? null : settleScan(b, r, carryNow)
+    const st = gaps.some(g => g.note && !missed[g.start]) ? null : settleScan(bS, r, carryNow)
     result = {
       ok: gaps.every(g => g.ok),
       issues: gaps.filter(g => g.note && !missed[g.start]).map(g => g.note),
       rows: gaps.map((g, i) => {
         const w = st?.weeks[i]
+        const dr = dropAt[g.start]
+        const cut = dr?.amount ?? 0
         return { start: g.start, end: addDays(g.start, 6),
-                 spent: g.collected, amount: w ? w.pcMin : g.amount, minutes: g.minutes,
-                 note: g.note, warn: w && w.pcMax > w.pcMin ? '' : g.warn, unknown: w ? w.unknown : g.unknown,
-                 pcMin: w?.pcMin, pcMax: w?.pcMax, gapMin: w?.gapMin, gapMax: w?.gapMax, group: w?.group,
-                 nexon: w && !w.unknown && !w.group ? g.collected + w.gapMin : g.nexon }
+                 spent: g.collected, amount: w ? w.pcMin : dr ? 0 : g.amount, minutes: g.minutes,
+                 note: g.note,
+                 warn: dr ? `${dr.names.join(', ')} ${won(cut)}원이 인게임 MVP에 들어가지 않았어요. 인게임 금액대로 저장해요.`
+                   : w && w.pcMax > w.pcMin ? '' : g.warn,
+                 unknown: w ? w.unknown : g.unknown,
+                 pcMin: w?.pcMin, pcMax: w?.pcMax,
+                 gapMin: w ? w.gapMin - cut : undefined, gapMax: w ? w.gapMax - cut : undefined, group: w?.group,
+                 nexon: w && !w.unknown && !w.group ? g.collected + w.gapMin - cut : g.nexon }
       }),
-      total, tierTh, pcTotal: gaps.reduce((s, g) => s + g.amount, 0),
+      total, tierTh, pcTotal: gaps.reduce((s, g) => s + (dropAt[g.start] ? 0 : g.amount), 0),
       conflict: st?.conflict, carry: st?.carry,
     }
   }
@@ -263,25 +291,34 @@
       : `${curTier?.name ?? '등급 미정'} · ${(isTop ? carryText && `이월 ${carryText}` : remainText) || '?'} 캐시`
         + ` · ${doneCount}/12줄`)
 
+  /** 이번 시도를 진단 기록에 남긴다. 계산까지 갔으면 그 오류·빨간 줄도 */
+  function record(how: ScanLog['how'], raw: ScanRaw | null | undefined, extra: Partial<ScanLog> = {}) {
+    const after = error || result?.issues.join(' ') || ''
+    logScan({ at: Date.now(), how, ok: !scanBad, msg: scanMsg, ...(after ? { after } : {}), ...fromRaw(raw), ...extra })
+  }
+
   async function grab(dataUrl = '') {
     scanning = true
     scanBad = scanPartial = false
+    let raw: PcRoomScan | null = null
     try {
       const b = getBase()
-      const raw = await pcroomScan(dataUrl, prev?.scale ?? 0)
+      raw = await pcroomScan(dataUrl, prev?.scale ?? 0)
       if (!b || !raw.ok) {
         scanBad = true
         scanMsg = raw.message || '이미지를 읽지 못했어요.'
         return
       }
-      const s = solveScan(raw, b.purchases, prev, looseOf(b))
+      const items = weekItems(b)
+      const s = solveScan(raw, b.purchases, prev, looseOf(b), items)
       if (!s) {
         scanBad = true
         // 왜 실패했는지 말해 주지 않으면 매번 처음부터 원인을 찾게 된다
         const black = hasCarryColumn(raw)
         const col = raw.carries?.find(c => c.length === NO_CARRY.length) ?? NO_CARRY
         const ok = raw.readings.filter(v => acceptReading(
-          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b)) ?? NO_CARRY, black, looseOf(b))).length
+          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b), items) ?? NO_CARRY, black, looseOf(b),
+          items)).length
         scanMsg = !raw.readings.length
           ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `
             + `(화면에서 숫자 ${raw.amounts.length}개만 봤어요)`
@@ -292,12 +329,13 @@
             : !black && relaxedShape(raw, b.purchases, looseOf(b).some(Boolean))
               ? "표는 읽었어요. 이월이 섞여 구매내역으로는 맞출 수 없는 계정이라 상단 '○○ 등급까지' 금액이 같이 있어야 해요. "
                 + '툴팁과 상단 패널이 한 화면에 같이 보이게 찍거나, 화면 공유로 읽어 주세요.'
-              : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b))}`
+              : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b), items)}`
         return
       }
       apply(s)
     } finally {
       scanning = false
+      if (raw) record('file', raw, { size: raw.size })
     }
   }
 
@@ -318,8 +356,46 @@
     calc()
   }
 
+  /**
+   * 다시 열었을 때 지난번 맞춘 값으로 칸을 채운다. 사이트는 읽은 12줄을 따로 두지 않고 주별 보정값만 두는데,
+   * 보정값이 맞으면 그것으로 12줄·사용 이월·13주 합계가 인게임과 원 단위까지 같게 다시 나온다.
+   * 목요일이 지났으면 주별 금액이 한 칸 밀리고(가장 오래된 주는 빠지고 새 주는 그동안의 결제로 채워진다)
+   * 거기서 다시 계산한 12줄은 예상값이다. 새 주의 PC방처럼 구매내역에 없는 금액은 모른다.
+   * 그래서 같은 주면 결과표까지 보여 주고, 지났으면 칸만 채우고 다시 읽어 달라고 한다
+   */
+  let savedBalance: number | null = null
+  function fromSaved() {
+    const b = getBase()
+    const cur = b?.current
+    if (!b || !cur || !Object.keys(b.saved).some(k => /^\d{4}-/.test(k))) return
+    const ti = d.tiers.findIndex(t => t.key === cur.key)
+    if (ti < 0) return
+    const black = ti === d.tiers.length - 1
+    const f = forecast(b.last13, b.carry).slice(0, 12)
+    const col = black ? f.map(x => x.carryUsed) : NO_CARRY
+    needTexts = f.map((x, i) => Math.max(0, cur.th - x.sum - col[i]).toLocaleString('ko-KR'))
+    nextIndex = ti + 1
+    carryText = col[0] ? col[0].toLocaleString('ko-KR') : ''
+    carryRest = col.slice(1)
+    remainText = black ? '' : (d.tiers[ti + 1].th - b.last13.reduce((a, x) => a + x, 0)).toLocaleString('ko-KR')
+    savedBalance = black ? b.carry : null
+    const at = d.fixedAt ?? 0
+    const kst = (t: number) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10)
+    if (at && weekStart(kst(at)) === b.thisWeek) {
+      calc()
+      scanMsg = `마지막 맞춤(${dayTime(at)})에 읽은 값이에요. 인게임과 같으면 그대로 두셔도 돼요.`
+    } else {
+      openInput = true
+      scanPartial = true
+      scanMsg = `${at ? `마지막 맞춤(${dayTime(at)}) 뒤 목요일이 지나 ` : ''}인게임 숫자가 바뀌었어요. `
+        + '아래는 저장된 값으로 계산한 이번 주 예상값이에요. 다시 읽어 주세요.'
+    }
+  }
+  onMount(fromSaved)
+
   /** 읽어낸 값을 입력칸에 넣는다. 캡처로 읽든 화면공유로 읽든 같다. */
   function apply(s: Solved) {
+    savedBalance = null
     prev = s
     needTexts = s.needs.map(v => v.toLocaleString('ko-KR'))
     const f = panelFields(s)
@@ -448,6 +524,7 @@
       handle = await startShare({
         collected: b.purchases,
         loose: looseOf(b),
+        items: weekItems(b),
         guide: async () => {
           const g = await openGuide(() => handle?.stop(), () => handle?.save())
           guided = !!g
@@ -471,6 +548,10 @@
           } else {
             scanBad = true
             scanMsg = !shareState?.shots ? '읽기 전에 멈췄어요.' : STAGE[shareState.stage].body
+          }
+          if (shareState?.shots) {
+            record('share', shareState.last, { size: shareState.size, frames: shareState.shots,
+                                               seen: shareState.seen, stage: shareState.stage })
           }
         },
       })

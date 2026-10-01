@@ -2,7 +2,7 @@
   import gsap from 'gsap'
   import { app, refresh, toggleMedal } from '../store.svelte'
   import { fit, onResize } from '../canvas'
-  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, pcCaveat, pcRange, spotlight, tierIdx, won } from '../format'
+  import { C, FONT, REDUCED, TIER_COLOR, TIER_INK, TIER_INK_VAR, TIER_VAR, TOUCH, countup, hexA, pcCaveat, pcRange, spotlight, tierIdx, won, dayTime } from '../format'
   import Badge from './Badge.svelte'
   import { CARRY_MAX } from '../core/mvp'
   import Medal from './Medal.svelte'
@@ -175,16 +175,7 @@
     const t = setInterval(() => (clock = Date.now()), 60_000)
     return () => clearInterval(t)
   })
-  /** 마지막 동기화처럼 '오늘 (목) 14:32', '어제 (수) 9:05', '9월 28일 (월) 21:10' */
-  const fixedOn = $derived.by(() => {
-    if (!d.fixedAt) return ''
-    const t = new Date(d.fixedAt)
-    const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`
-    const when = day(t) === day(new Date(clock)) ? '오늘'
-      : day(t) === day(new Date(clock - 864e5)) ? '어제'
-      : `${t.getMonth() + 1}월 ${t.getDate()}일`
-    return `${when} (${'일월화수목금토'[t.getDay()]}) ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`
-  })
+  const fixedOn = $derived(d.fixedAt ? dayTime(d.fixedAt, clock) : '')
 
   /** 지금 해야 할 일로 보낸다. exe는 스스로 읽어 오고, 웹은 동기화 창을 연다 */
   function want() {

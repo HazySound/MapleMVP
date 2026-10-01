@@ -18,6 +18,7 @@
   import { app } from '../store.svelte'
   import { board, go, loginHere } from '../qna.svelte'
   import { create, type Diag, type Kind, type Topic } from '../web/qna'
+  import { lastScans } from '../web/scanlog'
   import { ro } from '../format'
 
   const DRAFT = 'maplemvp.qnaDraft'
@@ -136,6 +137,8 @@
       tier: app.data.current ?? null,
       carry: app.data.carry ?? 0,
       weeks: app.data.weeks.map(w => ({ start: w.start, amount: w.amount, spent: w.spent, pc: w.pc })),
+      // 2주 안에 해 본 것만. 오래된 시도는 지금 문제와 상관없다
+      scans: lastScans().filter(x => Date.now() - x.at < 14 * 86400e3),
     }
   }
 

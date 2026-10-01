@@ -11,7 +11,7 @@
  */
 import { BLACK, TIERS } from './mvp'
 import {
-  MAX_WEEK_MINUTES, NO_CARRY, TOOLTIP_ROWS, UNIT, compare, knownRows, lastWeek, middleWeeks, minutesOf, restore,
+  MAX_WEEK_MINUTES, NO_CARRY, TOOLTIP_ROWS, UNIT, compare, knownRows, lastWeek, middleWeeks, minutesOf, restore, unpaid,
 } from './pcroom'
 
 export interface ScanRaw {
@@ -70,7 +70,7 @@ function tierFits(th: number, lastNeed: number, collected: number[]): boolean {
  * 0으로 적힌 줄(기준을 넘어 모자란 금액이 없는 줄)은 앞쪽에만 올 수 있고, 그 옆 주는 따지지 않는다.
  */
 export function acceptReading(v: number[], collected: number[], carry: number[] = NO_CARRY,
-                              black = false, loose: boolean[] = []): boolean {
+                              black = false, loose: boolean[] = [], items: number[][] = []): boolean {
   if (v.length !== TOOLTIP_ROWS) return false
   const known = knownRows(v, carry, black)
   // 12줄 모두 0: 이번 주 결제만으로 12주 내내 지금 등급이 지켜지는 표다(이번 주에 크게 산 경우).
@@ -86,7 +86,9 @@ export function acceptReading(v: number[], collected: number[], carry: number[] 
     const spent = collected[k]
     // 블랙은 인게임이 수집보다 적을 수 있다(기준을 넘긴 결제는 이월로만, 9/29 넥슨 차감). 음수만 거른다
     if (black && week < spent) { if (week < 0) return false; continue }
-    if (week < spent || (!loose[k] && (week - spent) % UNIT !== 0)) return false
+    // 모자란 만큼이 그 주에 산 물건값과 꼭 맞으면 넥슨이 그 결제를 MVP에 안 넣은 것이다(items: 주마다 산 물건값)
+    if (week < spent) { if (week < 0 || !unpaid(items[k] ?? [], spent - week)) return false; continue }
+    if (!loose[k] && (week - spent) % UNIT !== 0) return false
   }
   const last = collected.length - 1
   if (black) return lastWeek(v, BLACK.th, carry) >= 0
@@ -107,10 +109,10 @@ export const hasCarryColumn = (scan: ScanRaw) =>
  * 화면에서 읽은 숫자 중 합이 같은 후보가 있으면 그것만 남긴다.
  */
 export function carryFor(v: number[], collected: number[], carries: number[][] = [],
-                         amounts: number[] = [], loose: boolean[] = []): number[] | null {
+                         amounts: number[] = [], loose: boolean[] = [], items: number[][] = []): number[] | null {
   const cols = carries.filter(c => c.length === TOOLTIP_ROWS)
-  if (!cols.length) return acceptReading(v, collected, NO_CARRY, false, loose) ? NO_CARRY : null
-  const fits = cols.filter(c => acceptReading(v, collected, c, true, loose))
+  if (!cols.length) return acceptReading(v, collected, NO_CARRY, false, loose, items) ? NO_CARRY : null
+  const fits = cols.filter(c => acceptReading(v, collected, c, true, loose, items))
   const sure = fits.filter(c => sumOf(c) > 0 && amounts.includes(sumOf(c)))
   const uniq = [...new Set((sure.length ? sure : fits).map(c => c.join(',')))]
   return uniq.length === 1 ? uniq[0].split(',').map(Number) : null
@@ -124,7 +126,7 @@ export const usesCarry = (s: Solved) => s.carry.some(n => n > 0)
  * '맞지 않아요'만으로는 표를 잘못 읽은 건지 받아 둔 결제가 어긋난 건지 알 수 없다.
  */
 export function whyReject(v: number[], collected: number[], carry: number[] = NO_CARRY,
-                          black = false, loose: boolean[] = []): string {
+                          black = false, loose: boolean[] = [], items: number[][] = []): string {
   const w = (n: number) => n.toLocaleString('ko-KR')
   if (v.length !== TOOLTIP_ROWS) return `표가 ${TOOLTIP_ROWS}줄이 아니라 ${v.length}줄로 읽혔어요.`
   const known = knownRows(v, carry)
@@ -138,7 +140,7 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
     if (week < 0) {
       return `${k}주 뒤(${w(v[k - 1])})가 ${k + 1}주 뒤(${w(v[k])})보다 커요. 잘못 읽은 자리가 있어요.`
     }
-    if (week < spent && !black) {
+    if (week < spent && !black && !unpaid(items[k] ?? [], spent - week)) {
       return `${k + 1}번째 주: 표에서는 ${w(week)}원인데 받아 둔 결제는 ${w(spent)}원이에요.`
     }
     if (week < spent) continue
@@ -152,7 +154,7 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
 
 /** 화면에서 읽은 숫자 하나가 '○○ 등급까지'라고 가정했을 때 앞뒤가 맞는지 본다. */
 export function totalsFor(needs: number[], collected: number[], amounts: number[],
-                          carry: number[] = NO_CARRY, loose: boolean[] = []): Set<string> {
+                          carry: number[] = NO_CARRY, loose: boolean[] = [], items: number[][] = []): Set<string> {
   const mixed = loose.flatMap((l, i) => (l ? [i] : []))
   const found = new Set<string>()
   for (let i = 1; i < THS.length; i++) {
@@ -162,7 +164,7 @@ export function totalsFor(needs: number[], collected: number[], amounts: number[
       const r = restore(needs, THS[i - 1], total, null, carry)
       if (!r.ok) continue
       // 0으로 적힌 줄 사이의 주는 하나하나는 모르니 건너뛰고, 묶음의 합으로 따진다
-      if (!compare(r.weeks, collected, collected.map(() => ''), r.unknown, mixed).every(g => g.ok)) continue
+      if (!compare(r.weeks, collected, collected.map(() => ''), r.unknown, mixed, false, items).every(g => g.ok)) continue
       const gaps = r.blocks.map(k => {
         let gap = k.sum
         for (let w = k.from; w <= k.to; w++) gap -= collected[w]
@@ -201,7 +203,7 @@ export function pickTotal(needs: number[], collected: number[], found: Set<strin
  * prev: 먼저 읽어 둔 값. 툴팁이 없는 두 번째 장에서 합계만 채울 때 쓴다.
  */
 export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | null = null,
-                          loose: boolean[] = []): Solved | null {
+                          loose: boolean[] = [], items: number[][] = []): Solved | null {
   const scale = scan.scale || prev?.scale || 1
   const key = (needs: number[], carry: number[]) => `${needs.join(',')}|${carry.join(',')}`
   const unkey = (k: string): [number[], number[]] => {
@@ -212,7 +214,7 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   // 같은 값이 여러 번 나올수록 믿을 만하다
   const count = new Map<string, number>()
   scan.readings.forEach((v, i) => {
-    const carry = carryFor(v, collected, scan.carries ?? [], scan.amounts, loose)
+    const carry = carryFor(v, collected, scan.carries ?? [], scan.amounts, loose, items)
     if (carry == null) return
     const k = key(v, carry)
     count.set(k, (count.get(k) ?? 0) + (scan.votes?.[i] ?? 1))
@@ -223,7 +225,7 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   if (!count.size) {
     // 툴팁이 없는 장. 먼저 읽어 둔 값으로 합계만 채운다. 블랙은 채울 합계가 화면에 없다
     if (!prev || isTop(prev)) return prev
-    const picks = pickTotal(prev.needs, collected, totalsFor(prev.needs, collected, scan.amounts, prev.carry, loose),
+    const picks = pickTotal(prev.needs, collected, totalsFor(prev.needs, collected, scan.amounts, prev.carry, loose, items),
                             prev.carry)
     if (!picks.length) return { ...prev, scale: prev.scale }
     if (picks.length > 1) return { ...prev, total: null, choices: picks, scale: prev.scale }
@@ -246,7 +248,7 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   const solved: Solved[] = []
   for (const k of count.keys()) {
     const [needs, carry] = unkey(k)
-    const picks = pickTotal(needs, collected, totalsFor(needs, collected, scan.amounts, carry, loose), carry)
+    const picks = pickTotal(needs, collected, totalsFor(needs, collected, scan.amounts, carry, loose, items), carry)
     if (!picks.length) continue
     solved.push(picks.length === 1 ? { needs, carry, scale, ...picks[0] }
       : { needs, carry, scale, tierTh: picks[0].tierTh, total: null, choices: picks })

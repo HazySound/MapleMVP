@@ -41,6 +41,10 @@ export interface PcRoomScan {
   scale: number
   /** 블랙 툴팁 맨 아래 이월 잔액. 못 읽으면 null */
   balance?: number | null
+  /** 판독마다 몇 번 그렇게 읽혔는지 */
+  votes?: number[]
+  /** 읽은 이미지 크기 (진단용) */
+  size?: string
 }
 
 export interface PcRoomResult {
