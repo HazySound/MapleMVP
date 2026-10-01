@@ -764,7 +764,8 @@
 <svelte:window onkeydown={e => e.key === 'Escape' && (app.showPcRoom = false)} onpaste={onPaste} />
 
 <style>
-  .h2s { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--color-tx3); }
+  /* 제목 글꼴(Orbit)을 물려받으면 자간이 벌어져 옆 '지금 적용 중'과 다른 글꼴로 보인다 */
+  .h2s { margin-left: 6px; font-family: var(--font-sans); font-size: 12px; font-weight: 400; color: var(--color-tx3); }
   .unsure { opacity: .6 }
   .range { font-size: 12px; color: var(--color-peach); background: none; border: 1px dashed var(--color-line);
            border-radius: 6px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
@@ -785,8 +786,9 @@
     box-shadow: 0 30px 90px -30px rgba(0, 0, 0, .85); overflow: hidden;
   }
   header { display: flex; align-items: center; gap: 12px; padding: 18px 20px 12px; }
-  h2 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 0; }
-  .meta { font-size: 12px; color: var(--color-tx3); }
+  /* 제목 옆 작은 글씨들은 글자 밑선을 맞춘다(가운데 맞춤이면 큰 제목 옆에서 위로 떠 보인다) */
+  h2 { font-family: var(--font-display); font-weight: 400; font-size: 19px; margin: 0; align-self: baseline; }
+  .meta { font-size: 12px; color: var(--color-tx3); align-self: baseline; }
   .meta em { font-style: normal; color: var(--color-butter); }
   .help {
     margin-left: auto; appearance: none; cursor: pointer; font: inherit; font-size: 12.5px;
