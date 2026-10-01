@@ -74,10 +74,27 @@ function hide() {
   box.style.transform = 'translateY(2px)'
 }
 
-function paint(node: HTMLElement, text: string) {
-  const { box: d, arrow: a } = make()
-  d.textContent = text
+/** 글자만, 또는 [글자, 색] 조각들. 색은 금액만 강조할 때(예: 이월 잔액 노랑) */
+export type TipText = string | [string, string?][]
+const isEmpty = (t: TipText) => (typeof t === 'string' ? !t : !t.length)
+
+function write(d: HTMLDivElement, a: HTMLDivElement, text: TipText) {
+  if (typeof text === 'string') d.textContent = text
+  else {
+    d.textContent = ''
+    for (const [t, color] of text) {
+      const s = document.createElement('span')
+      s.textContent = t
+      if (color) s.style.color = color
+      d.appendChild(s)
+    }
+  }
   d.appendChild(a)   // textContent가 화살표를 지운다
+}
+
+function paint(node: HTMLElement, text: TipText) {
+  const { box: d, arrow: a } = make()
+  write(d, a, text)
   owner = node
   place(node)
   d.style.opacity = '1'
@@ -88,11 +105,11 @@ function paint(node: HTMLElement, text: string) {
  * 설명을 붙인다. 빈 문자열이면 아무것도 하지 않는다.
  * 내용이 바뀌면 떠 있는 동안에도 글자만 바뀐다. 자리는 그대로 둔다.
  */
-export function tip(node: HTMLElement, text: string) {
+export function tip(node: HTMLElement, text: TipText) {
   let now = text
 
   const show = () => {
-    if (!now) return
+    if (isEmpty(now)) return
     clearTimeout(timer)
     // 방금까지 다른 설명이 떠 있었으면 기다리지 않는다
     const wait = owner || Date.now() - lastHid < LINGER ? 0 : WAIT
@@ -111,13 +128,12 @@ export function tip(node: HTMLElement, text: string) {
   node.addEventListener('blur', off)
 
   return {
-    update(next: string) {
+    update(next: TipText) {
       now = next
       if (owner !== node || !box) return
-      if (!next) return hide()
+      if (isEmpty(next)) return hide()
       // 글자만 갈아 끼운다. 다시 가운데 맞추면 떠 있는 채로 흔들린다
-      box.textContent = next
-      box.appendChild(arrow!)
+      write(box, arrow!, next)
     },
     destroy() {
       off()
