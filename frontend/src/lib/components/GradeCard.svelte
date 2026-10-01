@@ -169,10 +169,21 @@
 
   /** 맞춰 둔 주가 있다. 새 주가 비어 있으면(needPc) 다시 맞추라고 부른다 */
   const fixed = $derived(Object.keys(d.pcroom.weeks).length > 0 && !noRows)
+  // '오늘'·'어제'가 자정을 넘기면 바뀌어야 한다
+  let clock = $state(Date.now())
+  $effect(() => {
+    const t = setInterval(() => (clock = Date.now()), 60_000)
+    return () => clearInterval(t)
+  })
+  /** 마지막 동기화처럼 '오늘 (목) 14:32', '어제 (수) 9:05', '9월 28일 (월) 21:10' */
   const fixedOn = $derived.by(() => {
     if (!d.fixedAt) return ''
-    const k = new Date(d.fixedAt + 9 * 3600e3)
-    return `${k.getUTCMonth() + 1}/${k.getUTCDate()}`
+    const t = new Date(d.fixedAt)
+    const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`
+    const when = day(t) === day(new Date(clock)) ? '오늘'
+      : day(t) === day(new Date(clock - 864e5)) ? '어제'
+      : `${t.getMonth() + 1}월 ${t.getDate()}일`
+    return `${when} (${'일월화수목금토'[t.getDay()]}) ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`
   })
 
   /** 지금 해야 할 일로 보낸다. exe는 스스로 읽어 오고, 웹은 동기화 창을 연다 */
@@ -187,6 +198,7 @@
     MVP 등급
     <button class="tog" aria-pressed={!!preview}
       onclick={() => (preview ? (app.previewTier = null) : openPreview())}>등급 미리보기</button>
+    <span class="pcwrap">
     {#if canFix}
       <button class="pc" class:on={fixed && !needPc} class:hl={needPc} class:off={noRows}
         onclick={() => (noRows ? want() : (app.showPcRoom = true))}
@@ -197,14 +209,17 @@
             : [pcCaveat(d.pcroom) || '인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 인게임 캡처로 맞출 수 있어요',
                ...(d.pcroom.missTotal ? ['', `수집 못 한 결제(넥슨쇼핑 쿠폰 등) ${won(d.pcroom.missTotal)}원도 인게임에 맞춰 넣어 뒀어요.`] : []),
                ...(fixedOn ? ['', `마지막으로 맞춘 날 ${fixedOn}`] : [])].join('\n')}>
-        {#if fixed && !needPc}맞춤 완료 ✓{#if fixedOn}<span class="when">· {fixedOn}</span>{/if}{:else}인게임 금액 맞추기{/if}
+        {#if fixed && !needPc}맞춤 완료 ✓{:else}인게임 금액 맞추기{/if}
       </button>
     {:else if fixed}
       <span class="pc tag on"
         use:tip={`PC에서 인게임 금액과 맞춰 뒀어요. 고치는 건 PC에서만 돼요.${pcCaveat(d.pcroom) ? '\n\n' + pcCaveat(d.pcroom) : ''}`}>
-        맞춤 완료 ✓{#if fixedOn}<span class="when">· {fixedOn}</span>{/if}
+        맞춤 완료 ✓
       </span>
     {/if}
+    <!-- 제목 줄 높이를 늘리지 않게 단추 아래에 띄운다(게이지 위 모서리는 비어 있다) -->
+    {#if fixed && fixedOn && (!canFix || !needPc)}<span class="when">마지막 맞춤 {fixedOn}</span>{/if}
+    </span>
   </h3>
 
   {#if preview}
@@ -277,7 +292,7 @@
   .center:hover .lbl { color: var(--color-tx2); }
   .lbl { font-size: 12px; color: var(--color-tx3); transition: color .2s; }
   .pc {
-    margin-left: auto; appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
+    appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
     padding: 4px 10px; border-radius: 8px; border: 1px solid var(--color-line);
     background: var(--color-bg2); color: var(--color-tx3);
   }
@@ -285,7 +300,11 @@
   /* 휴대폰에서는 읽는 것만 된다. 누를 것처럼 보이면 안 된다 */
   /* 아직 맞출 수 없는 상태. 눌리기는 해야 왜 안 되는지 알려줄 수 있다 */
   .pc.off { opacity: .45; }
-  .pc .when { margin-left: 7px; opacity: .7; }
+  .pcwrap { margin-left: auto; position: relative; display: flex; }
+  .when {
+    position: absolute; top: calc(100% + 5px); right: 2px; white-space: nowrap; pointer-events: none;
+    font-size: 11px; font-weight: 400; color: var(--color-tx3);
+  }
   .pc.off:hover { color: var(--color-tx3); border-color: var(--color-line); }
   .pc.tag { cursor: default; }
   .pc.tag:hover { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }

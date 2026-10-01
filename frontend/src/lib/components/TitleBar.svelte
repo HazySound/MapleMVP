@@ -30,7 +30,7 @@
     const when = day(t) === day(new Date(now)) ? '오늘'
       : day(t) === day(new Date(now - 864e5)) ? '어제'
       : `${t.getMonth() + 1}월 ${t.getDate()}일`
-    return `마지막 동기화 ${when} ${hm}`
+    return `마지막 동기화 ${when} (${'일월화수목금토'[t.getDay()]}) ${hm}`
   })
 
   // 웹에는 로그인이 없다. 받아 둔 내역이 하나도 없으면 여기부터 시작해야 하므로
