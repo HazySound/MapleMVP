@@ -130,6 +130,9 @@ async function build(db: D1Database) {
   // 효율표 입력값(시세·상품권 할인·아이템 가격·직접 추가한 아이템)과 마지막으로 고친 시각
   try { await db.exec('ALTER TABLE vault ADD COLUMN eff TEXT') } catch { /* 이미 있다 */ }
   try { await db.exec('ALTER TABLE vault ADD COLUMN eff_at INTEGER') } catch { /* 이미 있다 */ }
+  // 목표 계획 입력값(목표·날짜·고정 금액·유지 설정)과 마지막으로 고친 시각
+  try { await db.exec('ALTER TABLE vault ADD COLUMN plan TEXT') } catch { /* 이미 있다 */ }
+  try { await db.exec('ALTER TABLE vault ADD COLUMN plan_at INTEGER') } catch { /* 이미 있다 */ }
   // 이름은 카카오에서 받지 않는다. 이용자가 직접 정한 것을 여기 둔다.
   // tag는 같은 이름을 쓰는 사람들 사이에서 몇 번째인지다. 지금은 화면에 안 쓰지만,
   // 이름이 남에게 보이게 될 때 '느긋한 핑크빈 #2'로 구분하려면 그때 매길 수가 없다.

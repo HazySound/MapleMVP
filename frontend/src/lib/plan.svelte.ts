@@ -12,10 +12,13 @@ export const planner = $state({
 
 let py: PyApi
 let saveTimer: number | undefined
+let upTimer: number | undefined
+let lastData: State | undefined
 
 /** 저장된 계획을 불러오고, 없으면 "한 단계 위 등급을 8주 뒤까지"로 시작한다. */
 export async function initPlan(api: PyApi, data: State) {
   py = api
+  lastData = data
   const saved = await py.get_plan()
   const idx = data.tiers.findIndex(t => t.key === data.current)
   const fallbackTarget = data.tiers[Math.min(idx + 1, data.tiers.length - 1)].key
@@ -23,6 +26,11 @@ export async function initPlan(api: PyApi, data: State) {
   planner.input = { target: saved.target ?? fallbackTarget, date, fixed: saved.fixed ?? {}, skipThisWeek: saved.skipThisWeek ?? false,
     keep: { ...KEEP_DEFAULT, ...saved.keep }, ...(saved.unit ? { unit: saved.unit } : {}) }
   requestPlan()
+}
+
+/** 계정에서 더 새 계획을 받아 왔을 때 다시 읽는다 */
+export async function reloadPlan() {
+  if (py && lastData) await initPlan(py, lastData)
 }
 
 // 계획도 브라우저 안에서 바로 계산한다
@@ -38,7 +46,27 @@ export function requestPlan() {
 function changed() {
   requestPlan()
   clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(() => planner.input && py.save_plan($state.snapshot(planner.input)), 400)
+  saveTimer = window.setTimeout(async () => {
+    if (!planner.input) return
+    await py.save_plan($state.snapshot(planner.input))
+    // 로그인해 있으면 계정에도 올린다. 쓰기 횟수 제한이 있어 마지막으로 고친 뒤 잠깐 기다렸다가 한 번에
+    clearTimeout(upTimer)
+    upTimer = window.setTimeout(pushNow, 15_000)
+  }, 400)
+}
+
+async function pushNow() {
+  clearTimeout(upTimer)
+  upTimer = undefined
+  const { app, pushUp } = await import('./store.svelte')
+  if (app.web && app.user) await pushUp()
+}
+
+// 올리기를 기다리는 중에 탭을 떠나면 그때 바로 올린다
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && upTimer !== undefined) void pushNow()
+  })
 }
 
 // ---- 입력 조작 ----

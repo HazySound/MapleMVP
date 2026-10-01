@@ -168,6 +168,12 @@ export function mergeVault(rows: Row[], v: VaultIn): void {
     save('maplemvp.eff', v.eff)
     save('maplemvp.effAt', v.effAt)
   }
+  // 목표 계획도 같은 규칙이다
+  const minePlan = load<Record<string, unknown>>(KEY.plan, {})
+  if (v.plan && (!Object.keys(minePlan).length || (v.planAt ?? 0) > load<number>(`${KEY.plan}At`, 0))) {
+    save(KEY.plan, v.plan)
+    save(`${KEY.plan}At`, v.planAt)
+  }
 }
 
 interface VaultIn {
@@ -176,6 +182,8 @@ interface VaultIn {
   syncedAt: string | null
   eff?: unknown
   effAt?: number
+  plan?: unknown
+  planAt?: number
 }
 
 /** 지금 이 브라우저가 들고 있는 것 전부. 계정에 올릴 때 쓴다 */
@@ -187,6 +195,8 @@ export function snapshot() {
     syncedAt: load<string | null>('maplemvp.syncedAt', null),
     eff: load<unknown>('maplemvp.eff', null) ?? undefined,
     effAt: load<number>('maplemvp.effAt', 0),
+    plan: load<unknown>(KEY.plan, null) ?? undefined,
+    planAt: load<number>(`${KEY.plan}At`, 0),
   }
 }
 
@@ -304,7 +314,7 @@ export const webApi: PyApi = {
   async get_ui() { return load(KEY.ui, {}) },
   async save_ui(data) { save(KEY.ui, data) },
   async get_plan() { return load<Partial<PlanInput>>(KEY.plan, {}) },
-  async save_plan(p) { save(KEY.plan, p) },
+  async save_plan(p) { save(KEY.plan, p); save(`${KEY.plan}At`, Date.now()) },
 
   async history(page, size, q, start, end, sort, desc) {
     const all = load<Row[]>(KEY.rows, [])

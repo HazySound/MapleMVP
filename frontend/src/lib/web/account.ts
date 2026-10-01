@@ -29,6 +29,9 @@ export interface Vault {
   /** 효율표 입력값과 마지막으로 고친 시각. 이 칸이 생기기 전 계정은 비어 있다 */
   eff?: unknown
   effAt?: number
+  /** 목표 계획 입력값과 마지막으로 고친 시각. 이 칸이 생기기 전 계정은 비어 있다 */
+  plan?: unknown
+  planAt?: number
 }
 
 /** 지금 로그인한 사람. 안 했으면 null */

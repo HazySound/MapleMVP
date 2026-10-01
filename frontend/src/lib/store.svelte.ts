@@ -183,6 +183,7 @@ async function signedIn() {
   mergeVault(v.rows, v)
   // 계정 쪽 효율표 입력값이 더 새것이면 화면에도 바로 반영한다
   ;(await import('./eff.svelte')).reloadEff()
+  await (await import('./plan.svelte')).reloadPlan()
   await reloadWeb()
   // 이 브라우저에만 있던 것이 있으면 계정에도 올려 둔다
   void pushUp()

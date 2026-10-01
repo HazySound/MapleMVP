@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mergeVault, saveRows } from './api'
+import { mergeVault, saveRows, snapshot, webApi } from './api'
 
 /** 브라우저 저장소 흉내. 시험마다 비운다 */
 const mem = new Map<string, string>()
@@ -100,5 +100,32 @@ describe('뒤늦게 가져온 결제 (넥슨쇼핑 쿠폰 등)', () => {
     scanned()
     mergeVault([coupon], { pcroom: {}, syncedAt: null })
     expect(pc()['2026-09-17']).toBe(203_500)
+  })
+})
+
+describe('목표 계획 계정 동기화', () => {
+  const plan = { target: 'black', date: '2026-12-30', fixed: { '2026-10-01': 50_000 }, skipThisWeek: false }
+  const planIn = () => JSON.parse(mem.get('maplemvp.plan') ?? 'null')
+
+  it('고치면 시각과 함께 계정에 올라갈 묶음에 들어간다', async () => {
+    await webApi.save_plan(plan as never)
+    const s = snapshot()
+    expect(s.plan).toEqual(plan)
+    expect(Date.now() - s.planAt).toBeLessThan(5_000)
+  })
+
+  it('이 기기에 계획이 없으면(휴대폰 첫 접속) 계정 것을 받는다', () => {
+    mergeVault([], { pcroom: {}, syncedAt: null, plan, planAt: 100 })
+    expect(planIn()).toEqual(plan)
+  })
+
+  it('계정 것이 더 나중에 고친 것이면 받고, 이 기기가 더 나중이면 그대로 둔다', () => {
+    const mine = { ...plan, target: 'red' }
+    mem.set('maplemvp.plan', JSON.stringify(mine))
+    mem.set('maplemvp.planAt', '200')
+    mergeVault([], { pcroom: {}, syncedAt: null, plan, planAt: 100 })
+    expect(planIn()).toEqual(mine)
+    mergeVault([], { pcroom: {}, syncedAt: null, plan, planAt: 300 })
+    expect(planIn()).toEqual(plan)
   })
 })
