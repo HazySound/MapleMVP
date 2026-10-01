@@ -1,11 +1,11 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
   import { META, NO_CARRY, anchor, compare, readWeek, restore, writeWeeks } from '../core/pcroom'
-  import { buildBase, settleScan } from '../core/engine'
+  import { buildBase, looseWeeks, settleScan } from '../core/engine'
   import { isCoupon, placeCoupons } from '../core/coupons'
   import { weekStart } from '../core/mvp'
   import { type Solved, type TotalPick, acceptReading, carryFor, hasCarryColumn, isTop as topTier, panelFields, solveScan,
-    usesCarry, whyReject } from '../core/scan'
+    relaxedShape, usesCarry, whyReject } from '../core/scan'
   import HelpModal from './HelpModal.svelte'
   import { STAGE, type ShareHandle, type ShareStatus, canShare, startShare } from '../web/share'
   import { primeChime } from '../web/chime'
@@ -83,8 +83,7 @@
 
   const rows = $derived(result?.rows ?? [])
   const amountOf = (start: string, fallback: number) => edited[start] ?? fallback
-  /** 13주 중 목요일 갱신에서 이월이 쓰인 주. 그 주는 100원 단위로 떨어지지 않는다 */
-  const looseOf = (b: { used13: number[] }) => b.used13.map(u => u > 0)
+  const looseOf = looseWeeks
   /** 확정하지 못한 주: 사용자가 직접 고치지 않은 범위·확인 불가 주 */
   const loose = (r: { start: string; pcMin?: number; pcMax?: number; unknown?: boolean; group?: string }) =>
     edited[r.start] === undefined && (!!r.unknown || !!r.group || (r.pcMax ?? 0) > (r.pcMin ?? 0))
@@ -162,7 +161,13 @@
     // 구매내역과 맞춰 보지 못하고 표 모양으로만 읽은 경우(최근까지 블랙): 이월이 섞인 주를 사이트가 모르니
     // 모든 주를 이월이 섞일 수 있는 주로 보고, 인게임이 수집보다 적은 주도 블랙처럼 받아들인다
     const lenient = !!prev?.relaxed
-    const mixed = b.used13.flatMap((u, i) => (u > 0 || lenient || (isTop && i === last) ? [i] : []))
+    // 지난번 툴팁으로 확인해 저장한 금액과 똑같이 나온 주도 그렇다. 저장한 값이 들어가면 그 주에 쓰인 이월을
+    // 되짚지 못해, 다시 읽을 때마다 같은 주가 '한 주에 들어갈 수 없는 접속 시간'으로 막혔다(2026-10-01 제보)
+    const same = (i: number) => {
+      const w = readWeek(b.saved, b.starts[i])
+      return !!w && !w.unknown && !w.group && !r.unknown.includes(i) && r.weeks[i] - b.purchases[i] === w.gapMin
+    }
+    const mixed = b.used13.flatMap((u, i) => (u > 0 || lenient || (isTop && i === last) || same(i) ? [i] : []))
     const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed, isTop || lenient)
     // 지난번에 '수집 못 한 결제'로 저장한 주는 이번에도 그렇게 본다. 다시 누르게 하지 않는다
     if (!keepMissed) {
@@ -283,7 +288,11 @@
           : ok
             ? `표는 읽었는데 어느 값이 맞는지 가릴 수 없었어요. `
               + `(후보 ${raw.readings.length}개 중 ${ok}개 통과, 숫자 ${raw.amounts.length}개)`
-            : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b))}`
+            // 최근까지 블랙이던 계정은 구매내역 대신 상단 '○○ 등급까지'로 맞춘다. 그게 안 찍혔으면 그렇다고 말한다
+            : !black && relaxedShape(raw, b.purchases, looseOf(b).some(Boolean))
+              ? "표는 읽었어요. 이월이 섞여 구매내역으로는 맞출 수 없는 계정이라 상단 '○○ 등급까지' 금액이 같이 있어야 해요. "
+                + '툴팁과 상단 패널이 한 화면에 같이 보이게 찍거나, 화면 공유로 읽어 주세요.'
+              : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b))}`
         return
       }
       apply(s)

@@ -246,7 +246,7 @@ function digitSegs(g: Gray, y0: number, y1: number, x0: number, x1: number,
     for (let y = 0; y < b.height; y++) if (b.data[y * b.width + x] > th) return true
     return false
   }
-  return runs(col, b.width, bridge(scale), s(2)).filter(([a, c]) => c - a <= s(MAX_GLYPH))
+  return glyphRuns(col, b.width, bridge(scale), s(2), s(MAX_GLYPH))
 }
 
 /**
@@ -255,6 +255,17 @@ function digitSegs(g: Gray, y0: number, y1: number, x0: number, x1: number,
  * 한 덩어리가 돼 글자 폭을 넘고 버려진다. 원래 화소로 1px이 안 되는 틈은 잇지 않는다
  */
 const bridge = (scale: number) => (2 * scale < 1 ? 0 : Math.max(1, Math.round(2 * scale)))
+
+/**
+ * 글자 조각. 틈을 이어 붙였더니 한 글자보다 넓어지면 그 틈은 글자 사이였던 것이라 잇지 않고 다시 자른다.
+ * 1px 틈인 작은 화면을 2배로 키운 캡처는 틈이 2px이 돼 bridge가 숫자 전체를 한 덩어리로 이었다
+ * (2026-10-01 제보: '20,000'이 통째로 버려져 이월 칸을 못 찾았다)
+ */
+function glyphRuns(mask: (i: number) => boolean, n: number, gap: number, minw: number, maxw: number): [number, number][] {
+  return runs(mask, n, gap, minw).flatMap(([a, c]) => (c - a <= maxw || !gap ? [[a, c] as [number, number]]
+    : runs(i => mask(a + i), c - a, 0, minw).map(([p, q]) => [a + p, a + q] as [number, number])))
+    .filter(([a, c]) => c - a <= maxw)
+}
 
 /** 금액 열다운 정도. 오른쪽 정렬이고 글자 수가 그럴듯하면 높다. */
 function score(g: Gray, rows: [number, number][], x0: number, x1: number,
@@ -395,7 +406,7 @@ export function lineGlyphs(g: Gray, y0: number, y1: number, x0: number, x1: numb
     for (let y = 0; y < b.height; y++) if (b.data[y * b.width + x] > th) return true
     return false
   }
-  let segs = runs(colHit, b.width, gap ?? s(2), s(2)).filter(([a, c]) => c - a <= s(MAX_GLYPH))
+  let segs = glyphRuns(colHit, b.width, gap ?? s(2), s(2), s(MAX_GLYPH))
   // 작게 그려진 화면에서는 '0'의 위아래 곡선이 끊겨 세로 획 두 개로 갈린다.
   // 좁은 조각이 바싹 붙어 있으면 하나로 보는 경우도 후보에 넣는다.
   if (mergeNarrow && segs.length > 1) {
@@ -565,6 +576,8 @@ function findAmounts(g: Gray, scale: number, skip?: Skip): number[] {
 
 export interface ScanResult {
   readings: number[][]
+  /** readings마다 임계값·흐림 조합 몇 개에서 그렇게 읽혔는지. 많을수록 믿을 만하다 */
+  votes?: number[]
   /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 블랙이 아니면 모두 0이다 */
   carries: number[][]
   amounts: number[]
@@ -575,16 +588,30 @@ export interface ScanResult {
 
 /** 한 열을 임계값·블러를 바꿔 가며 읽어 서로 다른 답을 모은다. */
 export function readColumn(g: Gray, t: Table): number[][] {
-  const seen: number[][] = []
+  return readVotes(g, t).readings
+}
+
+/**
+ * readColumn과 같되 답마다 몇 번 나왔는지도 센다. 한 자리('7'과 '1')만 다른 두 답이 모두 검사를
+ * 통과하면 어느 쪽인지 이것으로 가린다(2026-10-01 제보: 32번 대 2번인데 같게 쳐서 못 골랐다)
+ */
+function readVotes(g: Gray, t: Table): { readings: number[][]; votes: number[] } {
+  const readings: number[][] = []
+  const votes: number[] = []
   for (const th of THRESHOLDS) {
     for (const b of BLURS) {
       for (const merge of [false, true]) {
         const v = readAmounts(g, t, th, b, merge)
-        if (v && !seen.some(x => x.every((n, i) => n === v[i]))) seen.push(v)
+        if (!v) continue
+        const i = readings.findIndex(x => x.every((n, j) => n === v[j]))
+        if (i >= 0) votes[i]++
+        else { readings.push(v); votes.push(1) }
       }
     }
   }
-  return seen
+  // 많이 나온 답부터. 못 읽었을 때 첫 답으로 까닭을 말하는데, 한 번 나온 오독으로 말하면 엉뚱한 줄을 탓한다
+  const order = readings.map((_, i) => i).sort((a, b) => votes[b] - votes[a])
+  return { readings: order.map(i => readings[i]), votes: order.map(i => votes[i]) }
 }
 
 const sameRows = (a: Table, b: Table) =>
@@ -643,10 +670,11 @@ function readBalance(g: Gray, tables: Table[], t: Table): number | null {
     if (a < last[1] || b - a > pitch) continue
     const y0 = a - s(3), y1 = b + s(3)
     const votes = new Map<number, number>()
-    for (const th of [200, 210, 220, 230]) {
-      const bright = chunksAt(y0, y1, th).filter(c => /^\d+$/.test(c.text))
-      const n = bright[bright.length - 1]
-      if (!n) continue
+    for (const th of [180, 190, 200, 210, 220, 230]) {
+      // 밝은 덩어리 중 마지막이 잔액이다. 그 덩어리를 못 읽었으면 이 기준은 버린다. 읽힌 앞 조각만
+      // 잔액으로 쓰면 '12,530'이 '12'가 된다(2026-10-01 제보)
+      const n = chunksAt(y0, y1, th).at(-1)
+      if (!n || !/^\d+$/.test(n.text)) continue
       const cap = chunksAt(y0, y1, 130).some(c => c.p > n.q && /0{6}$/.test(c.text))
       if (cap) votes.set(Number(n.text), (votes.get(Number(n.text)) ?? 0) + 1)
     }
@@ -679,8 +707,8 @@ function cashAfter(g: Gray, t: Table): boolean {
 /** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
-  const found = (t: Table, seen: number[][]): ScanResult =>
-    ({ readings: seen, scale: t.scale, carries: rightColumns(g, tables, t),
+  const found = (t: Table, { readings, votes }: { readings: number[][]; votes: number[] }): ScanResult =>
+    ({ readings, votes, scale: t.scale, carries: rightColumns(g, tables, t),
        amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }), balance: readBalance(g, tables, t) })
   // 금액 열은 아래로 갈수록 줄지 않는다. 앞 줄이 '0 캐시'로 짧으면 '1 주차 뒤' 열이 더 표처럼 보여
   // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다.
@@ -690,9 +718,9 @@ export function scan(g: Gray, fallbackScale = 0): ScanResult {
   let mono: ScanResult | null = null
   let first: ScanResult | null = null
   for (const t of tables) {
-    const seen = readColumn(g, t)
-    if (!seen.length) continue
-    const up = seen.some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))
+    const seen = readVotes(g, t)
+    if (!seen.readings.length) continue
+    const up = seen.readings.some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))
     if (up && cashAfter(g, t)) return found(t, seen)
     if (up) mono ??= found(t, seen)
     first ??= found(t, seen)

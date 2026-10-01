@@ -79,6 +79,19 @@ export function buildBase(rows: Row[], saved: Record<string, number> = {},
   }
 }
 
+/**
+ * 13주 중 목요일 갱신에서 이월이 쓰였을 수 있는 주. 그 주는 꺼내 쓴 이월이 채워져 100원 단위로 떨어지지 않는다.
+ * 구매내역으로 되짚어 쓰인 주(used13)에 더해, 지난번 툴팁으로 확인해 저장한 금액이 100원 단위가 아닌 주도 넣는다.
+ * 저장한 값이 들어가면 그 주에 쓰인 이월을 되짚지 못해, 한 번 맞춘 뒤 다시 읽으면 막혔다(2026-10-01 제보)
+ */
+export function looseWeeks(b: Base): boolean[] {
+  return b.used13.map((u, i) => {
+    if (u > 0) return true
+    const w = readWeek(b.saved, b.starts[i])
+    return !!w && !w.unknown && !w.group && w.gapMin % UNIT !== 0
+  })
+}
+
 /** 한 주에 들어갈 수 있는 가장 큰 PC방 반영액 (일주일 내내 접속) */
 const PC_CAP = Math.floor(MAX_WEEK_MINUTES / 6) * UNIT
 
@@ -109,8 +122,22 @@ export interface Settled {
  * carryNow: 블랙이면 1주 뒤 줄에서 읽은 이월 잔액. 블랙이 아니면 0이다(떨어졌다면 다 썼다).
  *   1주 뒤 '유지까지'가 0이면 이월이 남아서 잔액을 알 수 없다. 그때는 null로 맞춰 보지 않는다.
  */
-export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blocks'>,
+export function settleScan(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blocks' | 'floor'>,
                            carryNow: number | null): Settled {
+  const st = settleOpen(b, r, carryNow)
+  // 블랙의 가장 오래된 주를 끝내 못 정했으면 최솟값부터의 범위로 둔다(저장 금액은 최솟값). 비워 두면 13주 합계가
+  // 기준에 못 미쳐 인게임은 블랙인데 사이트는 한 단계 아래로 보인다. 9/17 전 결제로 기준을 넘긴 블랙은
+  // 합계가 기준보다 클 수 있어 위는 열어 둔다. 수집한 결제보다 적게 잡지는 않는다
+  if (r.floor != null && st.weeks[0].unknown) {
+    const gap = Math.max(0, r.floor - b.purchases[0])
+    const hi = Math.max(gap, PC_CAP)
+    st.weeks[0] = { start: b.starts[0], gapMin: gap, gapMax: hi, pcMin: gap, pcMax: hi, unknown: false }
+  }
+  return st
+}
+
+function settleOpen(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blocks'>,
+                    carryNow: number | null): Settled {
   const { purchases, allStarts } = span(b.rows, b.thisWeek)
   const off = SPAN - WINDOW
   const last = WINDOW - 1

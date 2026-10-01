@@ -18,6 +18,8 @@ export interface ScanRaw {
   ok?: boolean
   message?: string
   readings: number[][]    // 툴팁 12줄 후보
+  /** readings마다 몇 번 그렇게 읽혔는지. 없으면 하나씩으로 본다 */
+  votes?: number[]
   /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 없으면 이월을 안 쓴 것으로 본다 */
   carries?: number[][]
   amounts: number[]       // 화면에서 읽은 숫자 후보
@@ -209,13 +211,13 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
 
   // 같은 값이 여러 번 나올수록 믿을 만하다
   const count = new Map<string, number>()
-  for (const v of scan.readings) {
+  scan.readings.forEach((v, i) => {
     const carry = carryFor(v, collected, scan.carries ?? [], scan.amounts, loose)
-    if (carry == null) continue
+    if (carry == null) return
     const k = key(v, carry)
-    count.set(k, (count.get(k) ?? 0) + 1)
-  }
-  const relaxed = !count.size && !hasCarryColumn(scan) ? relaxedPick(scan, collected, scale) : null
+    count.set(k, (count.get(k) ?? 0) + (scan.votes?.[i] ?? 1))
+  })
+  const relaxed = !count.size && !hasCarryColumn(scan) ? relaxedPick(scan, collected, scale, loose.some(Boolean)) : null
   if (relaxed) return relaxed
 
   if (!count.size) {
@@ -271,18 +273,10 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
  * 합계는 상단 '○○ 등급까지'로 등급마다 후보를 낸다(여럿이면 사용자가 고른다). 주별 차이는 인게임을 믿는다
  * (2026-10-01 제보: 블랙에서 레드로 내려온 계정, 캡처를 계속 못 읽었다)
  */
-function relaxedPick(scan: ScanRaw, collected: number[], scale: number): Solved | null {
-  const shaped = scan.readings.filter(v => v.length === TOOLTIP_ROWS && v[v.length - 1] > 0
-    && v.every((n, i) => i === 0 || n >= v[i - 1]))
-  const uniq = [...new Set(shaped.map(v => v.join(',')))]
-  if (uniq.length !== 1) return null
-  const needs = uniq[0].split(',').map(Number)
+function relaxedPick(scan: ScanRaw, collected: number[], scale: number, wasBlack: boolean): Solved | null {
+  const needs = relaxedShape(scan, collected, wasBlack)
+  if (!needs) return null
   const last = needs[needs.length - 1]
-  // 이월 때문에 인게임이 수집보다 적어지는 주는 결제가 통째로 이월로 가서 0원이 된다. 조금만 모자라면
-  // (19,900 vs 20,000) 숫자를 잘못 읽은 것이다
-  const known = knownRows(needs)
-  const mid = middleWeeks(needs)
-  for (let k = 1; k <= mid.length; k++) if (known[k - 1] && mid[k - 1] < collected[k] && mid[k - 1] !== 0) return null
   const picks: TotalPick[] = []
   for (let i = 0; i + 1 < THS.length; i++) {
     const th = THS[i]
@@ -298,6 +292,33 @@ function relaxedPick(scan: ScanRaw, collected: number[], scale: number): Solved 
   const carry = NO_CARRY
   if (picks.length === 1) return { needs, carry, scale, ...picks[0], relaxed: true }
   return { needs, carry, scale, tierTh: picks[0].tierTh, total: null, choices: picks, relaxed: true }
+}
+
+/**
+ * relaxedPick의 앞부분: 표 모양으로 고른 12줄. 합계(상단 '○○ 등급까지')는 따지지 않는다.
+ * 표는 읽었는데 상단이 안 찍혀 못 맞춘 경우를 사용자에게 알려 줄 때도 쓴다
+ */
+export function relaxedShape(scan: ScanRaw, collected: number[], wasBlack: boolean): number[] | null {
+  // 줄지 않는 판독 중 가장 많이 나온 것. 동점이면 못 고른다
+  const tally = new Map<string, number>()
+  scan.readings.forEach((v, i) => {
+    if (v.length !== TOOLTIP_ROWS || v[v.length - 1] <= 0 || v.some((n, j) => j > 0 && n < v[j - 1])) return
+    const k = v.join(',')
+    tally.set(k, (tally.get(k) ?? 0) + (scan.votes?.[i] ?? 1))
+  })
+  const ranked = [...tally].sort((a, b) => b[1] - a[1])
+  if (!ranked.length || (ranked.length > 1 && ranked[0][1] === ranked[1][1])) return null
+  const needs = ranked[0][0].split(',').map(Number)
+  // 이월 때문에 인게임이 수집보다 적은 주가 생긴다. 결제가 통째로 이월로 가면 0원이다. 조금만 모자라면
+  // (19,900 vs 20,000) 숫자를 잘못 읽은 것이다. 다만 사이트 기록으로도 13주 안에 이월을 쓴 계정(wasBlack)은
+  // 기준을 넘긴 주가 일부만 남고, 넥슨이 9/29에 걷어낸 주는 아무 금액이나 된다(2026-10-01 제보: 300,000 → 277,810).
+  // 그때는 캐시 금액이라 10원 단위인지만 본다
+  const known = knownRows(needs)
+  const mid = middleWeeks(needs)
+  for (let k = 1; k <= mid.length; k++) {
+    if (known[k - 1] && mid[k - 1] < collected[k] && (wasBlack ? mid[k - 1] % 10 : mid[k - 1]) !== 0) return null
+  }
+  return needs
 }
 
 /**

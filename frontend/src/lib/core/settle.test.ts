@@ -206,11 +206,13 @@ describe('블랙 첫 스캔 — 이번 주에 이월을 안 쓴 경우', () => {
   const pc = { '2026-07-23': 700, '2026-08-13': 300, '2026-09-10': 1_200, '2026-10-15': 600 }
   const w = world('2026-10-15', spent, pc)
 
-  it('가장 오래된 주는 확인 불가, 250만에 닿은 9/17부터는 PC방이 이월로 숨어 범위, 나머지는 확정', () => {
+  it('가장 오래된 주는 최솟값부터의 범위, 250만에 닿은 9/17부터는 PC방이 이월로 숨어 범위, 나머지는 확정', () => {
     expect(w.black).toBe(true)
     const s = scan(w)
     honest(s, w)
-    expect(s.weeks[0].unknown).toBe(true)
+    // 블랙이면 13주 합계가 기준 이상이라 가장 오래된 주의 아래는 안다. 9/17 전 결제로 넘긴 블랙은 위가 열려 있다
+    expect(s.weeks[0].unknown).toBe(false)
+    expect(s.weeks[0].gapMax).toBeGreaterThan(s.weeks[0].gapMin)
     expect(exactWeeks(s)).toEqual(w.starts.slice(1, 8))
     // 10/15 주 PC방 600은 이월 잔액으로만 보여 어느 주인지 모른다
     expect(s.weeks.slice(8).map(x => x.pcMax)).toEqual([600, 600, 600, 600, 600])

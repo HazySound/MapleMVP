@@ -34,6 +34,11 @@ export interface Restored {
   unknown: number[]
   /** unknown 중 합은 아는 묶음 */
   blocks: Block[]
+  /**
+   * 블랙인데 가장 오래된 주를 모를 때 그 주의 최솟값. 지금 블랙이면 13주 합계가 기준 이상이라
+   * 가장 오래된 주는 적어도 '기준 − 나머지 12주'다. 정확한 값은 몰라도 이것이면 12줄과 지금 등급이 인게임과 같다
+   */
+  floor?: number
   issues: string[]
   ok: boolean
 }
@@ -147,7 +152,9 @@ export function restore(needs: number[], tierTh: number, total: number | null,
   if (keepNeed != null && keepNeed !== needs[0]) {
     issues.push(`상단의 유지 필요 금액(${won(keepNeed)})과 툴팁 1주 뒤(${won(needs[0])})가 달라요.`)
   }
-  return { weeks, unknown, blocks, issues, ok: issues.length === 0 }
+  // 1주 뒤 합계를 알면: 가장 오래된 주 ≥ 기준 − 1주 뒤 합계 (2026-10-01 제보: 모름으로 두니 22,800원 모자라 레드로 보였다)
+  const floor = total == null && tierTh >= BLACK_TH && S[1] != null ? Math.max(0, tierTh - S[1]) : undefined
+  return { weeks, unknown, blocks, ...(floor != null ? { floor } : {}), issues, ok: issues.length === 0 }
 }
 
 export interface Gap {
