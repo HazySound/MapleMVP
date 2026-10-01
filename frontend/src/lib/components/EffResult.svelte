@@ -23,6 +23,12 @@
   const pick = $derived(out?.sel ?? null)
   const cur = $derived(pick ? pick.weeks[Math.min(sel, pick.weeks.length - 1)] : null)
   const per = $derived(out?.mode === 'plan' ? '주마다 ' : '')
+  /**
+   * 메소마켓이 고른 아이템 모두보다 덜 남으면, 그 금액은 메소마켓이 나아서가 아니라 결제액을 맞추려고 남은 끝자리다.
+   * '메소마켓을 사라는 거냐'는 오해가 있었다(2026-10-01 댓글)
+   */
+  const fillerOnly = (r: { fee: number; lines: { item: { price: number; cash: number } }[] }) =>
+    !!eff.mk && r.lines.every(l => l.item.price * (1 - r.fee) / l.item.cash > 1 / eff.mk)
 
   const missing = $derived.by(() => {
     const m: string[] = []
@@ -357,7 +363,7 @@
         {#if cur.route.market}
           <li>
             <div class="t">캐시 {won(cur.route.market)} → 메이플포인트로 사서 메소마켓에 팔기 (1회)</div>
-            <div class="dd">{(cur.route.market / eff.mk).toFixed(2)}억 메소{cur.route.lines.length ? ' · 아이템으로 채우지 않은 금액' : ''}</div>
+            <div class="dd">{(cur.route.market / eff.mk).toFixed(2)}억 메소{cur.route.lines.length ? (fillerOnly(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
           </li>
         {/if}
         {#if cur.credit && (cur.credit.buys.length || cur.credit.earned)}

@@ -242,7 +242,6 @@
         <span class="big mono" style="font-size:{bigSize}px" use:countup={sim.total}>0</span>
         <span class="plus mono">
           {#if sim.extra}<span style="color:var(--color-mint)">시뮬레이션 +{won(sim.extra)}</span>{/if}
-          {#if d.carry}<span style="color:var(--color-butter)">이월 +{won(d.carry)}</span>{/if}
           {#if d.pcroom.totalMax && !noRows}<span style="color:var(--color-peach)">인게임 보정 +{pcRange(d.pcroom)}</span>{/if}
         </span>
       {/if}
