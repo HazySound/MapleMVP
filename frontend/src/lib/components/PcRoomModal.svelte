@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
   import { META, NO_CARRY, anchor, compare, readWeek, restore, unpaid, writeWeeks } from '../core/pcroom'
-  import { buildBase, looseWeeks, settleScan, weekItems, weekRows } from '../core/engine'
+  import { buildBase, knownOf, looseWeeks, settleScan, weekRows } from '../core/engine'
   import { isCoupon, placeCoupons } from '../core/coupons'
   import { forecast, weekStart } from '../core/mvp'
   import { onMount } from 'svelte'
@@ -174,7 +174,7 @@
       return !!w && !w.unknown && !w.group && !r.unknown.includes(i) && r.weeks[i] - b.purchases[i] === w.gapMin
     }
     const mixed = b.used13.flatMap((u, i) => (u > 0 || lenient || (isTop && i === last) || same(i) ? [i] : []))
-    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed, isTop || lenient, weekItems(b))
+    const gaps = compare(r.weeks, b.purchases, b.starts, r.unknown, mixed, isTop || lenient, knownOf(b))
     // 인게임이 적은 만큼이 그 주에 산 물건값과 꼭 맞는 주(블랙 아님): 넥슨이 그 결제를 MVP에 안 넣었다.
     // 그 물건을 빼고 계산하고, 저장할 때는 그만큼 빼서 인게임 금액 그대로 남긴다
     const dropped = new Set<Row>()
@@ -309,16 +309,16 @@
         scanMsg = raw.message || '이미지를 읽지 못했어요.'
         return
       }
-      const items = weekItems(b)
-      const s = solveScan(raw, b.purchases, prev, looseOf(b), items)
+      const known = knownOf(b)
+      const s = solveScan(raw, b.purchases, prev, looseOf(b), known)
       if (!s) {
         scanBad = true
         // 왜 실패했는지 말해 주지 않으면 매번 처음부터 원인을 찾게 된다
         const black = hasCarryColumn(raw)
         const col = raw.carries?.find(c => c.length === NO_CARRY.length) ?? NO_CARRY
         const ok = raw.readings.filter(v => acceptReading(
-          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b), items) ?? NO_CARRY, black, looseOf(b),
-          items)).length
+          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b), known) ?? NO_CARRY, black, looseOf(b),
+          known)).length
         scanMsg = !raw.readings.length
           ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `
             + `(화면에서 숫자 ${raw.amounts.length}개만 봤어요)`
@@ -329,7 +329,7 @@
             : !black && relaxedShape(raw, b.purchases, looseOf(b).some(Boolean))
               ? "표는 읽었어요. 이월이 섞여 구매내역으로는 맞출 수 없는 계정이라 상단 '○○ 등급까지' 금액이 같이 있어야 해요. "
                 + '툴팁과 상단 패널이 한 화면에 같이 보이게 찍거나, 화면 공유로 읽어 주세요.'
-              : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b), items)}`
+              : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b), known)}`
         return
       }
       apply(s)
@@ -524,7 +524,7 @@
       handle = await startShare({
         collected: b.purchases,
         loose: looseOf(b),
-        items: weekItems(b),
+        known: knownOf(b),
         guide: async () => {
           const g = await openGuide(() => handle?.stop(), () => handle?.save())
           guided = !!g

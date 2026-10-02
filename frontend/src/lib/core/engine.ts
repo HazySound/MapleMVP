@@ -11,7 +11,7 @@ import {
   needFor, needNow, plan as planCalc, replay, tierIndex, tierNow, todayKst, weekStart, weeklyAmounts,
 } from './mvp'
 import {
-  MAX_WEEK_MINUTES, META, type Restored, UNIT, type WeekPc, applyCorrections, minutesOf, missing, readWeek,
+  type Known, MAX_WEEK_MINUTES, META, type Restored, UNIT, type WeekPc, applyCorrections, minutesOf, missing, readWeek,
 } from './pcroom'
 
 /** 이월 잔액을 재현할 갱신 횟수. 이 기간 이전의 이월은 0으로 본다. */
@@ -97,6 +97,8 @@ export function weekRows(b: Base): Row[][] {
   return b.starts.map(s => b.rows.filter(r => weekStart(r.date) === s))
 }
 export const weekItems = (b: Base): number[][] => weekRows(b).map(rs => rs.map(r => r.price))
+/** 판독을 견줄 때 함께 볼 것: 주마다 산 물건값과 사이트가 지금 계산한 13주 금액 */
+export const knownOf = (b: Base): Known => ({ items: weekItems(b), model: b.last13 })
 
 /** 한 주에 들어갈 수 있는 가장 큰 PC방 반영액 (일주일 내내 접속) */
 const PC_CAP = Math.floor(MAX_WEEK_MINUTES / 6) * UNIT

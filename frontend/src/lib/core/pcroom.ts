@@ -22,6 +22,17 @@ export const MAX_WEEK_MINUTES = 7 * 24 * 60   // 한 주를 넘는 접속은 있
 export const HIGH_WEEK_MINUTES = 20 * 60      // 주 20시간을 넘으면 PC방치고 이례적이다
 const BLACK_TH = 2_500_000                     // 블랙 기준(이월이 있는 등급)
 
+/** 판독을 구매내역과 견줄 때 함께 보는 것 */
+export interface Known {
+  /** 13주 주마다 산 물건값. 인게임이 적은 주를 그 물건이 MVP에 안 들어간 것으로 설명할 때 쓴다 */
+  items?: number[][]
+  /**
+   * 사이트가 지금 계산한 13주 금액(지난번 맞춘 보정값·이월까지 들어간 것). 툴팁의 주 금액이 이것과 같으면
+   * 이미 확인한 값이다. 이월로 옮겨진 금액은 구매내역과 달라 다시 맞출 때마다 막혔다(2026-10-02 제보)
+   */
+  model?: number[]
+}
+
 /**
  * 인게임이 수집보다 gap원 적은 주: 그 주에 산 물건 몇 개 값의 합이 gap과 원 단위로 맞으면 그 물건들의 자리.
  * 넥슨이 그 결제를 MVP에 넣지 않은 것이다(2026-10-01 제보: 1초 간격으로 산 1,400원짜리 둘 중 하나만 들어갔다).
@@ -199,7 +210,7 @@ export interface Gap {
  */
 export function compare(nexon: number[], collected: number[], starts: string[],
                         unknown: number[] = [], mixed: number[] = [], black = false,
-                        items: number[][] = []): Gap[] {
+                        known: Known = {}): Gap[] {
   const out: Gap[] = []
   for (let i = 0; i < Math.min(nexon.length, collected.length, starts.length); i++) {
     if (unknown.includes(i)) {
@@ -211,6 +222,11 @@ export function compare(nexon: number[], collected: number[], starts: string[],
     const gap = nexon[i] - collected[i]
     let note = ''
     let warn = ''
+    if (!black && known.model?.[i] === nexon[i] && (gap < 0 || gap % UNIT)) {
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
+                 warn: '지금 사이트 계산과 같아요. 지난번에 맞춘 값(이월로 옮겨진 금액 등)이에요.', ok: true, unknown: false })
+      continue
+    }
     if (gap < 0 && black) {
       // 블랙은 인게임이 더 적을 수 있다. 기준을 넘긴 결제는 이월로만 가고(9/17부터),
       // 9/29에는 넥슨이 PC방 비정상 적립분을 주 금액에서 걷어냈다. 툴팁 금액을 그대로 믿는다
@@ -218,7 +234,7 @@ export function compare(nexon: number[], collected: number[], starts: string[],
                  warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 블랙 기준을 넘겨 이월로 간 결제이거나 넥슨이 걷어낸 금액이에요.`,
                  ok: true, unknown: false })
       continue
-    } else if (gap < 0 && unpaid(items[i] ?? [], -gap)) {
+    } else if (gap < 0 && unpaid(known.items?.[i] ?? [], -gap)) {
       out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
                  warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 그 주에 산 것 중 이만큼이 MVP에 들어가지 않았어요.`,
                  ok: true, unknown: false })

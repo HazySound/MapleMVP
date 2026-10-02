@@ -14,6 +14,7 @@
  * 읽기는 워커에서 한 장씩 차례로 돌린다. 앞 장이 끝나야 다음 장을 뜨므로
  * 프레임이 밀려 쌓이지 않는다.
  */
+import type { Known } from '../core/pcroom'
 import type { ScanRaw, Solved } from '../core/scan'
 import { type VoteState, createVote } from '../core/vote'
 import { TONE, chime } from './chime'
@@ -93,8 +94,8 @@ export interface ShareOpts {
   collected: number[]
   /** 13주 중 갱신 때 이월이 쓰인 주 */
   loose?: boolean[]
-  /** 13주 주마다 산 물건값. 인게임이 적은 주를 그 물건이 MVP에 안 들어간 것으로 설명할 때 쓴다 */
-  items?: number[][]
+  /** 구매내역과 견줄 때 함께 볼 것(주마다 산 물건값, 사이트가 지금 계산한 주 금액) */
+  known?: Known
   /** 게임 위에 띄울 안내 창. 화면을 고른 뒤에 연다 */
   guide?(): Promise<Guide | null>
   onStream(stream: MediaStream): void
@@ -136,7 +137,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!
   const worker = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
-  const vote = createVote(o.collected, undefined, o.loose, o.items)
+  const vote = createVote(o.collected, undefined, o.loose, o.known)
   // 화면을 고르고 나서 연다. 고르는 창이 이 위에 겹치지 않도록
   let guide = o.guide ? await o.guide() : null
 
@@ -147,6 +148,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
   let scale = 0
   let mark = -1                // 직전 화면의 표식. 똑같으면 다시 읽지 않는다
   let last: ScanRaw | null = null   // 그때 나온 답. 멈춘 화면에서 그대로 쓴다
+  let lastTable: ScanRaw | null = null   // 표가 읽힌 마지막 장. 막혔을 때 진단에 남긴다
   let shots = 0                // 집어 본 장 수. 멈춰 있어 건너뛴 것도 센다
   let stage: Stage | '' = ''   // 지금까지 인정한 상황. 아직 아무것도 못 봤으면 빈 값
   let held: Stage | null = null
@@ -265,7 +267,8 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
     const state = vote.feed(raw)
     announce(look(raw, state))
     nudge()
-    o.onState({ ...state, shots, stage: stage || 'blank', last: raw, size: `${canvas.width}x${canvas.height}` })
+    if (raw.readings.length) lastTable = raw
+    o.onState({ ...state, shots, stage: stage || 'blank', last: lastTable ?? raw, size: `${canvas.width}x${canvas.height}` })
     if (!state.solved) return false
 
     // 다 됐다는 것은 보고 나서 사라져야 한다. 그냥 닫히면 됐는지 모른다

@@ -10,7 +10,7 @@
  * 한 프레임을 판단할 때 앞선 결론을 끌어들이지도 않는다. 한 번 잘못 읽은 값이
  * 뒤따르는 프레임의 근거가 되면 틀린 답이 표를 쌓는다.
  */
-import { NO_CARRY } from './pcroom'
+import { type Known, NO_CARRY } from './pcroom'
 import { type ScanRaw, type Solved, type TotalPick, isTop, pickTotal, solveScan, totalsFor } from './scan'
 
 export interface VoteState {
@@ -32,7 +32,7 @@ export interface Vote {
 export const AGREE = 2
 
 /** loose: 13주 중 갱신 때 이월이 쓰인 주 (core/scan의 acceptReading 참고) */
-export function createVote(collected: number[], agree = AGREE, loose: boolean[] = [], items: number[][] = []): Vote {
+export function createVote(collected: number[], agree = AGREE, loose: boolean[] = [], known: Known = {}): Vote {
   const needsVotes = new Map<string, number>()
   const hits = new Map<string, number>()   // '등급기준:합계' → 그렇게 읽힌 프레임 수
   // 한 프레임에서 합계 후보가 여럿 나온 경우. 같은 목록이 이어지면 사용자에게 고르게 넘긴다
@@ -50,7 +50,7 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
   /** 상단 패널이 찍힌 프레임에서 합계를 찾는다. 답이 갈리는 프레임은 버린다. */
   function addAmounts(amounts: number[]) {
     if (!needs || !amounts.length) return
-    const picks = pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose, items), carry)
+    const picks = pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose, known), carry)
     if (picks.length > 1) {
       const key = picks.map(p => `${p.tierTh}:${p.total}`).join('|')
       choiceLists.set(key, picks)
@@ -91,7 +91,7 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
     if (raw.scale) scale = raw.scale
 
     if (!needs) {
-      const s = solveScan(raw, collected, null, loose, items)
+      const s = solveScan(raw, collected, null, loose, known)
       if (s) {
         const key = `${s.needs.join(',')}|${s.carry.join(',')}`
         const n = (needsVotes.get(key) ?? 0) + 1
