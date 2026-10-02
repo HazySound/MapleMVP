@@ -317,7 +317,7 @@
         const black = hasCarryColumn(raw)
         const col = raw.carries?.find(c => c.length === NO_CARRY.length) ?? NO_CARRY
         const ok = raw.readings.filter(v => acceptReading(
-          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b), known) ?? NO_CARRY, black, looseOf(b),
+          v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b), known, raw.carryVotes) ?? NO_CARRY, black, looseOf(b),
           known)).length
         scanMsg = !raw.readings.length
           ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `

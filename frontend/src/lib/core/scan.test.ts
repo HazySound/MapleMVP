@@ -160,6 +160,9 @@ describe('블랙 등급', () => {
       .toEqual(BLACK_CARRY)
     // 가릴 근거가 없으면 고르지 않는다. 틀린 값을 쓰느니 못 읽은 것으로 둔다
     expect(carryFor(BLACK_TIP, BLACK_COLLECTED, [MISREAD_CARRY, BLACK_CARRY])).toBeNull()
+    // 판독마다 득표가 있으면 많이 읽힌 쪽을 쓰고, 표가 같으면 여전히 고르지 않는다
+    expect(carryFor(BLACK_TIP, BLACK_COLLECTED, [MISREAD_CARRY, BLACK_CARRY], [], [], {}, [2, 28])).toEqual(BLACK_CARRY)
+    expect(carryFor(BLACK_TIP, BLACK_COLLECTED, [MISREAD_CARRY, BLACK_CARRY], [], [], {}, [5, 5])).toBeNull()
   })
 
   it('이월 열을 못 읽었으면 결론을 내지 않는다', () => {

@@ -580,6 +580,8 @@ export interface ScanResult {
   votes?: number[]
   /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 블랙이 아니면 모두 0이다 */
   carries: number[][]
+  /** carries마다 몇 번 그렇게 읽혔는지 */
+  carryVotes?: number[]
   amounts: number[]
   scale: number
   /** 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월 N / 10,000,000'의 N(지금 이월 잔액). 못 읽으면 null */
@@ -626,15 +628,20 @@ const sameRows = (a: Table, b: Table) =>
  * 화면 숫자 더미에서 이월을 골라내려 해 봤지만, 오독한 값이 같은 끝자리를 달고
  * 따라와서 가릴 수 없었다. 자리로 찾는 편이 확실하다.
  */
-function rightColumns(g: Gray, tables: Table[], chosen: Table): number[][] {
+function rightColumns(g: Gray, tables: Table[], chosen: Table): { carries: number[][]; carryVotes: number[] } {
   const out: number[][] = []
+  const votes: number[] = []
   for (const t of tables) {
     if (t.x0 <= chosen.x1 || !sameRows(t, chosen)) continue
-    for (const v of readColumn(g, t)) {
-      if (!out.some(x => x.every((n, i) => n === v[i]))) out.push(v)
-    }
+    const r = readVotes(g, t)
+    r.readings.forEach((v, j) => {
+      const i = out.findIndex(x => x.every((n, k) => n === v[k]))
+      if (i >= 0) votes[i] += r.votes[j]
+      else { out.push(v); votes.push(r.votes[j]) }
+    })
   }
-  return out
+  const order = out.map((_, i) => i).sort((a, b) => votes[b] - votes[a])
+  return { carries: order.map(i => out[i]), carryVotes: order.map(i => votes[i]) }
 }
 
 /** 이월 한도. 잔액 줄은 'N / 10,000,000 캐시'로 적힌다 */
@@ -665,7 +672,13 @@ function readBalance(g: Gray, tables: Table[], t: Table): number | null {
   // 잔액 숫자는 흰색, 뒤의 '/ 10,000,000 캐시'는 회색이다. 표 바로 아래 줄에서 밝은 숫자를 잔액으로 읽고,
   // 어둡게까지 보면 그 오른쪽에 '…000000'(10,000,000)이 있는지로 잔액 줄인지 확인한다.
   // 작은 화면에서는 회색 10,000,000이 조각나 읽혀 그 자체를 숫자로 믿지는 않는다
-  const lit = (y: number) => { for (let x = x0; x < x1; x++) if (g.data[y * W + x] > 130) return true; return false }
+  // 밝은 점이 한두 개뿐인 가로줄은 글자가 아니다. 화면 가장자리의 밝은 세로선이 위아래 줄을 한 줄로 이어
+  // 잔액 줄이 너무 높다며 건너뛰었다(2026-10-03 제보: 2560폭 캡처 오른쪽 끝 2픽셀)
+  const lit = (y: number) => {
+    let n = 0
+    for (let x = x0; x < x1; x++) if (g.data[y * W + x] > 130 && ++n >= 3) return true
+    return false
+  }
   for (const [a, b] of runs(lit, Math.min(H, last[1] + pitch * 4), s(2), s(6))) {
     if (a < last[1] || b - a > pitch) continue
     const y0 = a - s(3), y1 = b + s(3)
@@ -708,7 +721,7 @@ function cashAfter(g: Gray, t: Table): boolean {
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
   const found = (t: Table, { readings, votes }: { readings: number[][]; votes: number[] }): ScanResult =>
-    ({ readings, votes, scale: t.scale, carries: rightColumns(g, tables, t),
+    ({ readings, votes, scale: t.scale, ...rightColumns(g, tables, t),
        amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }), balance: readBalance(g, tables, t) })
   // 금액 열은 아래로 갈수록 줄지 않는다. 앞 줄이 '0 캐시'로 짧으면 '1 주차 뒤' 열이 더 표처럼 보여
   // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다.

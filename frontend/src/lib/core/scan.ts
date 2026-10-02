@@ -23,6 +23,8 @@ export interface ScanRaw {
   votes?: number[]
   /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 없으면 이월을 안 쓴 것으로 본다 */
   carries?: number[][]
+  /** carries마다 몇 번 그렇게 읽혔는지 */
+  carryVotes?: number[]
   amounts: number[]       // 화면에서 읽은 숫자 후보
   scale: number
   /** 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월'의 지금 잔액. 못 읽으면 null */
@@ -112,13 +114,19 @@ export const hasCarryColumn = (scan: ScanRaw) =>
  * 화면에서 읽은 숫자 중 합이 같은 후보가 있으면 그것만 남긴다.
  */
 export function carryFor(v: number[], collected: number[], carries: number[][] = [],
-                         amounts: number[] = [], loose: boolean[] = [], ref: Known = {}): number[] | null {
+                         amounts: number[] = [], loose: boolean[] = [], ref: Known = {},
+                         votes: number[] = []): number[] | null {
   const cols = carries.filter(c => c.length === TOOLTIP_ROWS)
   if (!cols.length) return acceptReading(v, collected, NO_CARRY, false, loose, ref) ? NO_CARRY : null
   const fits = cols.filter(c => acceptReading(v, collected, c, true, loose, ref))
   const sure = fits.filter(c => sumOf(c) > 0 && amounts.includes(sumOf(c)))
   const uniq = [...new Set((sure.length ? sure : fits).map(c => c.join(',')))]
-  return uniq.length === 1 ? uniq[0].split(',').map(Number) : null
+  if (uniq.length === 1) return uniq[0].split(',').map(Number)
+  // 블랙은 인게임이 수집보다 적어도 되고 이월은 아무 금액이나 되어 한 자리 오독(4,500 / 4,600)도 검사를 통과한다.
+  // 그때는 많이 읽힌 쪽을 쓴다. 표가 같으면 못 고른다(2026-10-03 제보: 둘 다 통과해 '숫자 오류'로 못 읽었다)
+  const n = (k: string) => carries.reduce((s, c, i) => (c.join(',') === k ? s + (votes[i] ?? 1) : s), 0)
+  const ranked = uniq.map(k => ({ k, n: n(k) })).sort((a, b) => b.n - a.n)
+  return ranked.length > 1 && ranked[0].n > ranked[1].n ? ranked[0].k.split(',').map(Number) : null
 }
 
 /** 이월을 한 푼이라도 쓰는 표인지. 화면에 쓸 말이 갈린다 */
@@ -218,7 +226,7 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   // 같은 값이 여러 번 나올수록 믿을 만하다
   const count = new Map<string, number>()
   scan.readings.forEach((v, i) => {
-    const carry = carryFor(v, collected, scan.carries ?? [], scan.amounts, loose, ref)
+    const carry = carryFor(v, collected, scan.carries ?? [], scan.amounts, loose, ref, scan.carryVotes)
     if (carry == null) return
     const k = key(v, carry)
     count.set(k, (count.get(k) ?? 0) + (scan.votes?.[i] ?? 1))

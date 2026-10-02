@@ -37,6 +37,8 @@ export interface PcRoomScan {
   readings: number[][]
   /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 블랙이 아니면 모두 0이다 */
   carries?: number[][]
+  /** carries마다 몇 번 그렇게 읽혔는지 */
+  carryVotes?: number[]
   amounts: number[]
   scale: number
   /** 블랙 툴팁 맨 아래 이월 잔액. 못 읽으면 null */
