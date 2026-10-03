@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
   import { META, NO_CARRY, anchor, compare, readWeek, restore, unpaid, writeWeeks } from '../core/pcroom'
-  import { buildBase, knownOf, looseWeeks, settleScan, weekRows } from '../core/engine'
+  import { buildBase, knownOf, looseWeeks, placeMoved, settleScan, weekRows } from '../core/engine'
   import { isCoupon, placeCoupons } from '../core/coupons'
   import { forecast, weekStart } from '../core/mvp'
   import { onMount } from 'svelte'
@@ -153,13 +153,18 @@
       return
     }
     // 넥슨쇼핑 쿠폰을 인게임이 센 주로 옮겨 본 뒤에 견준다. 옮길 게 없으면 그대로다
-    moves = app.web ? placeCoupons(b0.rows, b0.starts, r.weeks, r.unknown) : new Map()
-    const rowsNow = moves.size
-      ? b0.rows.map(x => (x.id && moves.has(x.id) ? { ...x, bought: x.bought ?? x.date, date: moves.get(x.id)! } : x))
-      : b0.rows
-    const b = moves.size ? buildBase(rowsNow, b0.saved) : b0
+    const withMoves = (rows: Row[], m: Map<string, string>) => (m.size
+      ? rows.map(x => (x.id && m.has(x.id) ? { ...x, bought: x.bought ?? x.date, date: m.get(x.id)! } : x))
+      : rows)
+    const coupons = app.web ? placeCoupons(b0.rows, b0.starts, r.weeks, r.unknown) : new Map<string, string>()
     movedIn = {}
-    for (const x of b0.rows) if (x.id && moves.has(x.id)) movedIn[moves.get(x.id)!] = (movedIn[moves.get(x.id)!] ?? 0) + x.price
+    for (const x of b0.rows) if (x.id && coupons.has(x.id)) movedIn[coupons.get(x.id)!] = (movedIn[coupons.get(x.id)!] ?? 0) + x.price
+    // 넥슨이 다음 주로 센 결제도 그 주로 옮긴다. 쿠폰을 옮기고 남은 차이로 본다. 옮기지 않으면 앞 주는
+    // '안 들어간 결제', 다음 주는 '100의 배수 아님'으로 갈려 막힌다(2026-10-03 제보: 9/16 693원 → 9/17 주)
+    const b1 = coupons.size ? buildBase(withMoves(b0.rows, coupons), b0.saved) : b0
+    moves = new Map([...coupons, ...placeMoved(b1, r.weeks, r.unknown)])
+    const rowsNow = withMoves(b0.rows, moves)
+    const b = moves.size ? buildBase(rowsNow, b0.saved) : b0
     couponWeeks = Object.fromEntries(rowsNow.filter(isCoupon).map(x => [weekStart(x.date), true]))
     // 목요일 갱신에서 이월이 쓰인 주는 그 금액이 사용 금액으로 채워져 100원 단위가 아니다.
     // 블랙의 이번 주는 앱이 모르는 사이에 그랬을 수 있어 늘 그렇게 본다
@@ -255,8 +260,9 @@
       const used = carry.reduce((s, v) => s + v, 0)
       const anchor = result?.carry ?? (isTop && result?.conflict && used > 0 ? used : null)
       if (b && anchor != null) weeks[META.carry + b.thisWeek] = anchor
-      // 쿠폰을 옮긴 채로 계산했으니 구매내역에도 옮겨 둔다. 보정값보다 먼저 적어야 다시 계산할 때 맞는다
-      if (moves.size) (await import('../web/api')).moveRows(moves)
+      // 쿠폰을 옮긴 채로 계산했으니 구매내역에도 옮겨 둔다. 보정값보다 먼저 적어야 다시 계산할 때 맞는다.
+      // exe는 구매내역을 파이썬이 들고 있어 못 옮긴다. 다음에 맞출 때 같은 자리에서 다시 옮겨지니 결과는 같다
+      if (app.web && moves.size) (await import('../web/api')).moveRows(moves)
       await pcroomSave(weeks)
       app.showPcRoom = false
     } finally {

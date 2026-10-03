@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import fixture from './scan.fixture.json'
-import { restore } from './pcroom'
+import { NO_CARRY, restore } from './pcroom'
 import { forecast } from './mvp'
 import { real } from '../../../test/private'
 import {
@@ -266,5 +266,62 @@ describe('구매내역과 맞춰 볼 수 없는 표', () => {
     const r = restore(zeros, 2_500_000, null, null, zeros)
     expect(r.ok, r.issues.join(' ')).toBe(true)
     expect(r.weeks.slice(1)).toEqual([...Array(11).fill(0), 2_500_000])
+  })
+})
+
+/**
+ * 2026-10-03 제보 둘.
+ *  - 실버: 9/16에 산 693원이 인게임에서는 9/17 주에 들어갔다. 9/10 주는 수집보다 693원 적고
+ *    9/17 주는 693원 많아 '100의 배수가 아니다'로 막혔다. 바로 앞 주에서 빠진 만큼은 PC방이 아니다
+ *  - 블랙: 9/10 주가 수집보다 3,420원 많다. 블랙은 기준에 닿는 순간 결제가 쪼개지고 넥슨이 걷어낸
+ *    금액도 1원 단위라 100원 단위를 물을 수 없다. 13주 합계는 인게임을 믿는다
+ * 숫자는 두 제보의 캡처 기록을 그대로 옮긴 것이다
+ */
+describe('넥슨이 결제를 다음 주로 센 경우 (실버)', () => {
+  const TIP = [0, 0, 0, 8_712, 32_595, 65_166, 134_766, 134_766, 134_766, 229_707, 300_000, 300_000]
+  const SPENT = [0, 17_325, 8_316, 49_800, 21_483, 33_691, 69_600, 0, 0, 95_634, 69_600, 0, 0]
+  // 8/13 주의 1,120원은 MVP에 안 들어간 결제, 9/10 주의 693원은 9/17 주로 넘어간 결제
+  const ITEMS = SPENT.map((v, i) => (i === 5 ? [1_120, 32_571] : i === 9 ? [693, 94_941] : v ? [v] : []))
+
+  it('앞 주에서 빠진 만큼 다음 주가 더 잡혀 있으면 통과한다', () => {
+    expect(acceptReading(TIP, SPENT, NO_CARRY, false, [], { items: ITEMS })).toBe(true)
+  })
+
+  it('물건값으로 설명되지 않으면 여전히 막힌다', () => {
+    expect(acceptReading(TIP, SPENT)).toBe(false)
+    expect(whyReject(TIP, SPENT)).toContain('6번째 주')
+  })
+
+  it('넘어온 만큼을 빼고도 100원 단위가 아니면 막힌다', () => {
+    const spent = [...SPENT]
+    spent[10] = 69_650                      // 9/17 주 차이 643원. 693원이 넘어왔다고 볼 수 없다
+    expect(acceptReading(TIP, spent, NO_CARRY, false, [], { items: ITEMS })).toBe(false)
+    expect(whyReject(TIP, spent, NO_CARRY, false, [], { items: ITEMS })).toContain('11번째 주')
+  })
+
+  it("상단 '골드 등급까지 233,271'과 합쳐 한 장으로 풀린다", () => {
+    const s = solveScan({ readings: [TIP], amounts: [1_141, 233_271], scale: 1 }, SPENT, null, [], { items: ITEMS })!
+    expect(s).not.toBeNull()
+    expect(s.tierTh).toBe(300_000)
+    expect(s.total).toBe(600_000 - 233_271)
+  })
+})
+
+describe('블랙 주 금액이 1원 단위인 경우', () => {
+  const TIP = [0, 0, 320_450, 582_350, 628_950, 1_052_380, 1_353_610, 1_372_210, 1_886_010, 1_922_820,
+               1_922_820, 1_941_120]
+  const CARRY = [13_100, 12_100, 188_780, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  const SPENT = [0, 0, 495_930, 250_000, 30_000, 404_130, 283_130, 0, 500_000, 33_390, 177_600, 320_000, 30_000]
+
+  it('수집보다 3,420원 많은 주가 있어도 블랙은 통과한다', () => {
+    expect(acceptReading(TIP, SPENT, CARRY, true)).toBe(true)
+    expect(whyReject(TIP, SPENT, CARRY, true)).not.toContain('100의 배수')
+  })
+
+  it('이월 열 합이 화면 잔액과 같으면 그 열로 결론이 난다', () => {
+    const s = solveScan({ readings: [TIP], carries: [CARRY], amounts: [213_980], scale: 1 }, SPENT)!
+    expect(s).not.toBeNull()
+    expect(s.tierTh).toBe(2_500_000)
+    expect(s.carry).toEqual(CARRY)
   })
 })

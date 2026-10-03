@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBase, buildState, makePlan, simulate } from './engine'
+import { buildBase, buildState, makePlan, placeMoved, simulate } from './engine'
 import { addDays, type Row } from './mvp'
 
 /**
@@ -80,5 +80,45 @@ describe('시뮬레이션과 목표 계획', () => {
 
   it('지난 날짜는 거절한다', () => {
     expect((makePlan(base, 'red', '2026-09-01', {}, false) as any).error).toBeTruthy()
+  })
+})
+
+/**
+ * 2026-10-03 제보: 9/16에 산 693원이 인게임에서는 9/17 주에 들어갔다.
+ * 앞 주는 그만큼 적고 다음 주는 꼭 그만큼 많으면 그 행을 다음 주로 옮긴다.
+ */
+describe('넥슨이 다음 주로 센 결제 옮기기', () => {
+  const NOW2 = new Date('2026-10-03T03:00:00Z')   // 한국 시간 10/3 12:00, 이번 주는 10/1
+  const rows2: Row[] = [
+    { date: '2026-09-11', item: '큰 것', price: 94_941, id: 'big' },
+    { date: '2026-09-16', item: '작은 것', price: 693, id: 'small' },
+    { date: '2026-09-18', item: '다음 주', price: 69_600, id: 'next' },
+  ]
+  const nexonOf = (w9: number, w10: number) => {
+    const n = Array(13).fill(0)
+    n[9] = w9; n[10] = w10
+    return n
+  }
+
+  it('모자란 만큼의 행을 다음 주 시작일로 옮긴다', () => {
+    const b = buildBase(rows2, {}, NOW2)
+    expect(b.starts[9]).toBe('2026-09-10')
+    const m = placeMoved(b, nexonOf(94_941, 70_293))
+    expect([...m]).toEqual([['small', '2026-09-17']])
+  })
+
+  it('다음 주 나머지가 100원 단위가 아니면 옮기지 않는다', () => {
+    const b = buildBase(rows2, {}, NOW2)
+    expect(placeMoved(b, nexonOf(94_941, 70_250)).size).toBe(0)
+  })
+
+  it('모르는 주 옆은 건드리지 않는다', () => {
+    const b = buildBase(rows2, {}, NOW2)
+    expect(placeMoved(b, nexonOf(94_941, 70_293), [10]).size).toBe(0)
+  })
+
+  it('id가 없는 행은 옮길 수 없다', () => {
+    const b = buildBase(rows2.map(r => (r.id === 'small' ? { ...r, id: undefined } : r)), {}, NOW2)
+    expect(placeMoved(b, nexonOf(94_941, 70_293)).size).toBe(0)
   })
 })

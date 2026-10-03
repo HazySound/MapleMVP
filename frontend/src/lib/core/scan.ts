@@ -83,16 +83,31 @@ export function acceptReading(v: number[], collected: number[], carry: number[] 
   if (!known[known.length - 1] || known.some((k, i) => i > 0 && known[i - 1] && !k)) return false
   // 가운데 주들은 차분이 곧 그 주의 금액이다
   const mid = middleWeeks(v, carry)
+  // 바로 앞 주에서 빠진 결제. 넥슨이 그 결제를 다음 주로 셌으면 다음 주가 꼭 그만큼 더 잡힌다
+  // (2026-10-03 제보: 9/16 693원이 인게임에서는 9/17 주에 들어가, 두 주가 나란히 693원씩 어긋났다.
+  //  purchaseDate는 한국 시간이라 시간대 탓은 아니다. 왜 넘어가는지는 모른다)
+  let moved = 0
   for (let k = 1; k <= mid.length; k++) {
+    const carried = moved
+    moved = 0
     if (!known[k - 1]) continue
     const week = mid[k - 1]
     const spent = collected[k]
     if (ref.model?.[k] === week) continue   // 지난번에 맞춰 사이트가 이미 그렇게 계산하는 주
     // 블랙은 인게임이 수집보다 적을 수 있다(기준을 넘긴 결제는 이월로만, 9/29 넥슨 차감). 음수만 거른다
     if (black && week < spent) { if (week < 0) return false; continue }
-    // 모자란 만큼이 그 주에 산 물건값과 꼭 맞으면 넥슨이 그 결제를 MVP에 안 넣은 것이다(ref.items: 주마다 산 물건값)
-    if (week < spent) { if (week < 0 || !unpaid(ref.items?.[k] ?? [], spent - week)) return false; continue }
-    if (!loose[k] && (week - spent) % UNIT !== 0) return false
+    // 모자란 만큼이 그 주에 산 물건값과 꼭 맞으면 넥슨이 그 결제를 MVP에 안 넣었거나 다음 주로 셌다(ref.items: 주마다 산 물건값)
+    if (week < spent) {
+      if (week < 0 || !unpaid(ref.items?.[k] ?? [], spent - week)) return false
+      moved = spent - week
+      continue
+    }
+    const extra = week - spent
+    const pc = extra >= carried && (extra - carried) % UNIT === 0 ? extra - carried : extra
+    // 블랙은 1원 단위여도 된다. 기준에 닿는 순간 결제가 쪼개져 1원 단위로 남고, 넥슨이 9/29에 걷어낸 금액도
+    // 1원 단위다. 그 주 PC방 시간은 모르지만 13주 합계는 인게임을 믿는다
+    // (2026-10-03 제보: 블랙 9/10 주가 수집보다 3,420원 많아 '100의 배수가 아니다'로 막혔다)
+    if (!loose[k] && !black && pc % UNIT !== 0) return false
   }
   const last = collected.length - 1
   if (black) return lastWeek(v, BLACK.th, carry) >= 0
@@ -144,7 +159,10 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
   const gap = known.findIndex((k, i) => i > 0 && known[i - 1] && !k)
   if (gap > 0) return `${gap + 1}주 뒤가 0으로 읽혔는데 ${gap}주 뒤는 아니에요. 잘못 읽은 자리가 있어요.`
   const mid = middleWeeks(v, carry)
+  let moved = 0   // acceptReading과 같은 셈. 앞 주에서 빠진 결제가 이 주로 넘어왔으면 그만큼은 PC방이 아니다
   for (let k = 1; k <= mid.length; k++) {
+    const carried = moved
+    moved = 0
     if (!known[k - 1]) continue
     const week = mid[k - 1]
     const spent = collected[k]
@@ -155,9 +173,11 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
     if (week < spent && !black && !unpaid(ref.items?.[k] ?? [], spent - week)) {
       return `${k + 1}번째 주: 표에서는 ${w(week)}원인데 받아 둔 결제는 ${w(spent)}원이에요.`
     }
-    if (week < spent) continue
-    if (!loose[k] && (week - spent) % UNIT !== 0) {
-      return `${k + 1}번째 주: 차이 ${w(week - spent)}원이 100의 배수가 아니에요.`
+    if (week < spent) { if (!black) moved = spent - week; continue }
+    const extra = week - spent
+    const pc = extra >= carried && (extra - carried) % UNIT === 0 ? extra - carried : extra
+    if (!loose[k] && !black && pc % UNIT !== 0) {
+      return `${k + 1}번째 주: 차이 ${w(extra)}원이 100의 배수가 아니에요.`
     }
   }
   if (black) return `이번 주가 ${w(lastWeek(v, BLACK.th, carry))}원으로 읽혔어요. 잘못 읽은 자리가 있어요.`

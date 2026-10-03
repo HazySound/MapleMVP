@@ -212,7 +212,11 @@ export function compare(nexon: number[], collected: number[], starts: string[],
                         unknown: number[] = [], mixed: number[] = [], black = false,
                         known: Known = {}): Gap[] {
   const out: Gap[] = []
+  // 바로 앞 주에서 인게임이 덜 센 결제. 이 주에 꼭 그만큼 더 잡혀 있으면 넥슨이 그 결제를 이 주로 센 것이다
+  let moved = 0
   for (let i = 0; i < Math.min(nexon.length, collected.length, starts.length); i++) {
+    const carried = moved
+    moved = 0
     if (unknown.includes(i)) {
       // 모르는 주를 0원이라고 우기면 안 된다. 비워 두고 사용자가 정하게 남긴다
       out.push({ start: starts[i], nexon: 0, collected: collected[i], amount: 0, minutes: 0,
@@ -235,12 +239,31 @@ export function compare(nexon: number[], collected: number[], starts: string[],
                  ok: true, unknown: false })
       continue
     } else if (gap < 0 && unpaid(known.items?.[i] ?? [], -gap)) {
+      moved = -gap
       out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
                  warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 그 주에 산 것 중 이만큼이 MVP에 들어가지 않았어요.`,
                  ok: true, unknown: false })
       continue
     } else if (gap < 0) {
       note = '수집한 금액이 인게임보다 많아요. 툴팁 숫자를 잘못 읽었을 수 있어요.'
+    } else if (carried > 0 && gap >= carried && (gap - carried) % UNIT === 0) {
+      // 앞 주에서 빠진 만큼이 이 주에 더 있다. 넥슨이 그 결제를 이 주로 셌다. 나머지만 PC방이다
+      // (2026-10-03 제보: 9/16 693원이 인게임 9/17 주에 들어가 두 주가 나란히 693원씩 어긋났다)
+      const pc = gap - carried
+      const w = (n: number) => n.toLocaleString('ko-KR')
+      out[out.length - 1].warn = `인게임이 수집보다 ${w(carried)}원 적어요. 그 결제는 인게임에서 다음 주로 넘어갔어요.`
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: minutesOf(pc), note,
+                 warn: `앞 주 결제 ${w(carried)}원이 이 주로 넘어왔어요.${pc ? ` 나머지 ${w(pc)}원이 PC방이에요.` : ''}`,
+                 ok: true, unknown: false })
+      continue
+    } else if (gap % UNIT && black) {
+      // 블랙은 1원 단위여도 인게임을 믿는다. 기준에 닿는 순간 결제가 쪼개져 1원 단위로 남고,
+      // 9/29에 넥슨이 걷어낸 금액도 1원 단위다. 그 주 PC방 시간은 가릴 수 없다
+      // (2026-10-03 제보: 블랙 9/10 주가 수집보다 3,420원 많아 '100의 배수가 아니다'로 막혔다)
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
+                 warn: `${gap.toLocaleString('ko-KR')}원은 100원 단위가 아니에요. 기준에 닿아 쪼개진 결제거나 넥슨이 걷어낸 금액이라 PC방 시간은 알 수 없어요.`,
+                 ok: true, unknown: false })
+      continue
     } else if (mixed.includes(i)) {
       // 블랙의 이번 주: 목요일 갱신 때 꺼내 쓴 이월이 이 주 사용 금액으로 채워진다.
       // 얼마가 이월이고 얼마가 PC방인지는 툴팁만으로 가를 수 없어 합친 채로 둔다

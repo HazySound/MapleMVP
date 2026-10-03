@@ -12,6 +12,7 @@ import {
 } from './mvp'
 import {
   type Known, MAX_WEEK_MINUTES, META, type Restored, UNIT, type WeekPc, applyCorrections, minutesOf, missing, readWeek,
+  unpaid,
 } from './pcroom'
 
 /** 이월 잔액을 재현할 갱신 횟수. 이 기간 이전의 이월은 0으로 본다. */
@@ -99,6 +100,30 @@ export function weekRows(b: Base): Row[][] {
 export const weekItems = (b: Base): number[][] => weekRows(b).map(rs => rs.map(r => r.price))
 /** 판독을 견줄 때 함께 볼 것: 주마다 산 물건값과 사이트가 지금 계산한 13주 금액 */
 export const knownOf = (b: Base): Known => ({ items: weekItems(b), model: b.last13 })
+
+/**
+ * 넥슨이 다음 주로 센 결제를 그 주로 옮긴다. 행 id → 옮길 주 시작일.
+ *
+ * 인게임이 수집보다 적은 주의 모자란 만큼이 그 주에 산 물건값과 맞고, 바로 다음 주는 꼭 그만큼 더
+ * 잡혀 있으면(나머지는 100원 단위) 그 결제가 다음 주로 넘어간 것이다. 안 옮기면 앞 주는 'MVP에 안 들어간
+ * 결제', 다음 주는 '100의 배수가 아님'으로 갈려 막힌다(2026-10-03 제보: 9/16 693원이 인게임 9/17 주에).
+ * purchaseDate는 한국 시간이라 시간대 탓은 아니다. 왜 넘어가는지는 모른다. 쿠폰을 먼저 옮긴 뒤에 본다
+ */
+export function placeMoved(b: Base, nexon: number[], skip: number[] = []): Map<string, string> {
+  const moves = new Map<string, string>()
+  const rows = weekRows(b)
+  for (let i = 0; i + 1 < b.starts.length; i++) {
+    if (skip.includes(i) || skip.includes(i + 1)) continue
+    const short = b.purchases[i] - nexon[i]
+    if (short <= 0) continue
+    const pick = unpaid(rows[i].map(r => r.price), short)
+    if (!pick || pick.some(k => !rows[i][k].id)) continue
+    const rest = nexon[i + 1] - b.purchases[i + 1] - short
+    if (rest < 0 || rest % UNIT) continue
+    for (const k of pick) moves.set(rows[i][k].id!, b.starts[i + 1])
+  }
+  return moves
+}
 
 /** 한 주에 들어갈 수 있는 가장 큰 PC방 반영액 (일주일 내내 접속) */
 const PC_CAP = Math.floor(MAX_WEEK_MINUTES / 6) * UNIT

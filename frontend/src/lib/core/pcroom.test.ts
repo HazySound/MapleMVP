@@ -182,3 +182,51 @@ describe.skipIf(!real)('블랙 제보자 캡처', () => {
     expect(r.weeks[1]).toBe(spent13[1])
   })
 })
+
+/**
+ * 2026-10-03 제보. 숫자는 캡처 기록 그대로다.
+ */
+describe('넥슨이 결제를 다음 주로 센 경우', () => {
+  const two = ['2026-09-10', '2026-09-17']
+  const items = [[693, 94_941], [69_600]]
+
+  it('앞 주의 빠진 만큼이 다음 주에 더 있으면 두 주 다 받아 준다', () => {
+    const g = compare([94_941, 70_293], [95_634, 69_600], two, [], [], false, { items })
+    expect(g.every(x => x.ok)).toBe(true)
+    expect(g[0].warn).toContain('다음 주로 넘어갔어요')
+    expect(g[1].warn).toContain('넘어왔어요')
+    expect(g[1].amount).toBe(693)          // 저장 금액은 넥슨 − 수집 그대로
+    expect(g[1].minutes).toBe(0)           // 넘어온 결제라 PC방 시간은 없다
+  })
+
+  it('넘어온 몫을 뺀 나머지만 PC방이다', () => {
+    const g = compare([94_941, 72_793], [95_634, 69_600], two, [], [], false, { items })
+    expect(g[1].ok).toBe(true)
+    expect(g[1].minutes).toBe(150)         // 2,500원 = 2시간 30분
+  })
+
+  it('넘어온 몫을 빼도 100원 단위가 아니면 전처럼 막는다', () => {
+    const g = compare([94_941, 70_250], [95_634, 69_600], two, [], [], false, { items })
+    expect(g[1].note).toBeTruthy()
+  })
+
+  it('물건값으로 설명되지 않는 주 다음에는 넘어온 것으로 보지 않는다', () => {
+    const g = compare([94_941, 70_293], [95_634, 69_600], two, [], [], false, { items: [[95_634], [69_600]] })
+    expect(g[0].note).toBeTruthy()
+    expect(g[1].note).toBeTruthy()
+  })
+})
+
+describe('블랙 주 금액이 1원 단위인 경우', () => {
+  const one = ['2026-09-10']
+  it('블랙은 인게임을 믿고 PC방 시간만 모른다고 한다', () => {
+    const g = compare([36_810], [33_390], one, [], [], true)[0]
+    expect(g.ok).toBe(true)
+    expect(g.amount).toBe(3_420)
+    expect(g.minutes).toBe(0)
+    expect(g.warn).toContain('100원 단위가 아니에요')
+  })
+  it('블랙이 아니면 전처럼 막는다', () => {
+    expect(compare([36_810], [33_390], one)[0].note).toBeTruthy()
+  })
+})
