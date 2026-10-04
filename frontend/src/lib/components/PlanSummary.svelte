@@ -31,6 +31,9 @@
   const rank = (key: string | null) => (key ? d.tiers.findIndex(t => t.key === key) : -1)
   const dips = $derived(k && r && !r.error ? r.timeline.filter(w => w.keep && rank(w.thu) < rank(p.target)) : [])
   const keepEnd = $derived(r?.timeline.at(-1))
+  /** 유지 결제가 매번 같은 금액인지. 모자라는 만큼만 낼 때는 주마다 다를 수 있다 */
+  const keepPays = $derived(r && !r.error ? r.timeline.filter(w => w.keepPay && w.amount > 0) : [])
+  const even = $derived(keepPays.length > 0 && keepPays.every(w => w.amount === keepPays[0].amount))
   const block = $derived(k?.blocked[0] ? r!.timeline[k.blocked[0].offset] : null)
 
   const status = $derived.by(() => {
@@ -112,8 +115,9 @@
               <b>추가 결제 없이 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 유지</b>
               지금 결제만으로 {k.weeks}주 동안 지켜져요.
             {:else}
-              <b>모자라는 주에만 · 많을 때 <span class="mono">{won(k.per)}</span>원</b>
-              {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 등급이 목요일에도 끊기지 않아요. 옛 결제가 남아 있는 동안은 안 내고, 모자라는 주부터 필요한 만큼만 내요(합계 <span class="mono">{won(r.planned)}</span>원). 금액은 아래 표에 주마다 적어 뒀어요.
+              <b>{even ? `${k.every === 1 ? '매주' : `${k.every}주마다`} ` : '주마다 달라요 · 많을 때 '}<span class="mono">{won(k.per)}</span>원</b>
+              {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 등급이 목요일에도 끊기지 않아요(합계 <span class="mono">{won(r.planned)}</span>원).
+              {#if !even}앞으로 빠질 결제를 남은 주에 고르게 나눠 내요. 큰 결제가 빠지고 나면 줄고, 한 단계 위 등급에는 닿지 않게 맞춰요. 금액은 아래 표에 주마다 적어 뒀어요.{/if}
               {#if mode === 'hold' && holdStart}그 전까지는 {cur?.name}, {md(holdStart)} 주부터는 {tier.name} 기준으로 셌어요.{/if}
               {#if k.carryUsed}250만을 넘긴 결제는 이월로 쌓였다가 모자라는 목요일에 채워지는 것까지 넣었어요.{/if}
             {/if}

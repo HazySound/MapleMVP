@@ -265,12 +265,24 @@ describe('목표 계획', () => {
       const gold13 = [30_000, 26_420, 0, 2_100, 0, 40_000, 20_000, 0, 29_800, 39_800, 0, 467_850, 223_700]
       const p = plan(gold13, GOLD, 0, {}, true, 50_000, { every: 1, weeks: 26, asNeeded: true })
       expect(p.keep!.asNeeded).toBe(true)
-      expect(p.timeline[1].amount).toBe(0)                       // 다음 주는 옛 결제만으로 골드
+      expect(p.timeline.slice(1, 6).some(w => w.amount === 0)).toBe(true)   // 옛 결제만으로 되는 주는 안 낸다
       for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(GOLD.th)
       // 같은 금액을 매주 내는 것(5만 × 26)보다 적게 든다
       expect(p.planned).toBeLessThan(26 * 50_000)
-      // 결제 주마다 가장 작은 5만 단위라, 한 번 내는 주는 기준에서 5만 미만으로 남는다(다이아 90만에 닿지 않는다)
-      for (const w of p.timeline.slice(1)) if (w.amount) expect(w.sum - w.amount).toBeLessThan(GOLD.th)
+      // 한 단계 위(다이아 90만)에는 닿지 않는다
+      for (const w of p.timeline.slice(1)) expect(w.sum).toBeLessThan(900_000)
+    })
+
+    it('블랙은 위가 없어 매주 같은 금액으로 고르게 낸다 (큰 결제가 빠지는 주에 몰리지 않는다)', () => {
+      // 2026-10-05 사용자: 0, 0, 150만처럼 몰렸다. 넘친 몫은 이월로 쌓였다가 모자라는 목요일에 채워진다
+      const lumpy = [0, 0, 1_500_000, 0, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 200_000, 200_000]
+      const p = plan(lumpy, BLACK, 0, {}, true, 10_000, { every: 1, weeks: 12, asNeeded: true })
+      const pays = p.timeline.slice(1).map(w => w.amount)
+      for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(BLACK.th)
+      expect(Math.max(...pays)).toBeLessThan(1_500_000)
+      // 큰 결제가 빠지기 전 세 주는 같은 금액으로 나눠 메우고(넘친 몫은 이월), 빠진 뒤에는 그때그때 모자라는 만큼으로 준다
+      expect(Math.max(...pays.slice(0, 3)) - Math.min(...pays.slice(0, 3))).toBeLessThanOrEqual(10_000)   // 470k·470k·460k
+      expect(pays[3]).toBeLessThan(pays[0])
     })
 
     it('같은 등급: 날짜와 상관없이 지금부터 유지, 달성 금액은 0', () => {

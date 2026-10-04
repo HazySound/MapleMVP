@@ -386,22 +386,36 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
       return lo * unit
     }
     if (keep.asNeeded) {
-      // 결제 주마다 모자라는 만큼만. 같은 금액을 매주 내면 옛 결제가 아직 남아 있는 앞쪽 주에서 기준을 한참 넘긴다
-      // (골드 유지인데 다이아가 된다). 앞 주 결제는 뒤 주 합계에만 보탬이 되니, 앞에서부터 차례로
-      // '다음 결제 주 전까지 기준을 지키는 가장 작은 금액'을 고르면 총액이 가장 적다. 고정한 주는 그대로 둔다
+      // 결제 주마다 '남은 결제 주에 같은 금액을 낸다면 끝까지 지켜지는 가장 작은 금액'(고른 금액)을 내되,
+      // 그 주 합계가 한 단계 위 등급 기준에 닿지 않는 만큼만 낸다. 그래도 모자라는 주는 모자라는 만큼 낸다.
+      // 같은 금액을 그냥 매주 내면 옛 결제가 남은 앞쪽 주에서 한 단계 위로 올라가고(골드 유지인데 다이아),
+      // 모자라는 만큼만 내면 큰 결제가 빠지는 주에 한꺼번에 몰린다(0, 0, 150만). 둘 다 2026-10-05 사용자가 짚었다.
+      // 블랙은 위가 없어 고른 금액 그대로다. 넘친 몫은 이월로 쌓였다가 모자라는 목요일에 채워진다. 고정한 주는 그대로
+      const nextTh = (th: number) => TIERS.find(x => x.th > th)?.th ?? Infinity
       const slots = [...free, ...freeKeep].sort((x, y) => x - y)
       for (let o = 0; o <= end; o++) amounts[o] = o in fx ? fx[o] : 0
       const hiUnits = Math.ceil(top / unit)
+      const holds = (from: number, to: number) => {
+        const { sums } = simulate(o => amounts[o] ?? 0)
+        for (let o = from; o < to; o++) if (sums[o] < thAt(o)) return false
+        return true
+      }
       for (let i = 0; i < slots.length; i++) {
         const s = slots[i], stop = i + 1 < slots.length ? slots[i + 1] : end + 1
-        const fits = (v: number) => {
-          amounts[s] = v
-          const { sums } = simulate(o => amounts[o] ?? 0)
-          for (let o = s; o < stop; o++) if (sums[o] < thAt(o)) return false
-          return true
-        }
-        // 다 내도 안 지켜지면(고정 때문) 안 낸다. 끊기는 주는 아래 blocked로 알린다
-        amounts[s] = fits(hiUnits * unit) ? least(hiUnits, fits) : 0
+        const rest = slots.slice(i)
+        const setRest = (v: number) => { for (const o of rest) amounts[o] = v }
+        // 1) 고른 금액: 남은 결제 주 모두에 같은 금액을 낼 때 끝까지 지켜지는 가장 작은 금액
+        const levelFits = (v: number) => { setRest(v); return holds(s, end + 1) }
+        const level = levelFits(hiUnits * unit) ? least(hiUnits, levelFits) : hiUnits * unit
+        // 2) 이 주에 꼭 필요한 금액: 다음 결제 주 전까지 지켜지는 가장 작은 금액. 다 내도 안 되면(고정 때문) 0
+        const needFits = (v: number) => { setRest(0); amounts[s] = v; return holds(s, stop) }
+        const need = needFits(hiUnits * unit) ? least(hiUnits, needFits) : 0
+        // 3) 상한: 이 주 합계가 한 단계 위 등급 기준에 닿지 않게. 블랙은 상한이 없다
+        setRest(0)
+        const above = nextTh(thAt(s))
+        const cap = Number.isFinite(above) ? Math.max(0, Math.floor((above - 1 - simulate(o => amounts[o] ?? 0).sums[s]) / unit) * unit) : Infinity
+        setRest(0)
+        amounts[s] = Math.max(need, Math.min(level, cap))
       }
       if (free.includes(0)) auto = amounts[0] ?? 0
       payCount = freeKeep.filter(o => amounts[o] > 0).length
