@@ -30,6 +30,9 @@ frontend/test/captures/
 # wrangler 로그인·캐시 상태
 .wrangler/
 
+# Claude Code 개인 권한 설정
+.claude/settings.local.json
+
 # 제보자·운영자 실제 데이터 (디버깅용, 로컬에만 둔다)
 docs/private/
 frontend/test/private/

@@ -1,5 +1,6 @@
 import type { PyApi } from './api'
 import { makePlan } from './core/engine'
+import { TIERS, tierIndex } from './core/mvp'
 import { getBase } from './store.svelte'
 import { addDays } from './format'
 import type { PlanInput, PlanResult, State, TierKey } from './types'
@@ -39,7 +40,9 @@ export function requestPlan() {
   if (!p || !py) return
   const b = getBase()
   if (!b) return
-  const k = p.keep?.on ? { every: p.keep.every, weeks: p.keep.weeks } : null
+  // 지금 등급 이하를 고르면 달성이 아니라 유지 계획이다. 유지 스위치를 안 켰어도 유지 설정대로 나눈다
+  const keepOn = !!p.keep?.on || TIERS.findIndex(t => t.key === p.target) <= tierIndex(b.current)
+  const k = keepOn ? { every: p.keep?.every ?? KEEP_DEFAULT.every, weeks: p.keep?.weeks ?? KEEP_DEFAULT.weeks } : null
   planner.result = makePlan(b, p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek, k, p.unit ?? 1000) as PlanResult
 }
 

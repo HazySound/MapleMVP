@@ -10,6 +10,8 @@
   // 유지 구간 줄에 '목요일 갱신 직후에도 목표 등급인지'를 보여 준다. 등급 순서로 비교한다
   const goal = $derived(planner.input?.target ?? null)
   const tierRank = (k: string | null) => (k ? d.tiers.findIndex(t => t.key === k) : -1)
+  /** 그 주에 지켜야 할 등급. 더 낮은 등급으로 내려가는 계획이면 그 전 주까지는 지금 등급이다 */
+  const goalAt = (w: { offset: number }) => (r?.hold && w.offset < r.hold.until ? r.curTier : goal)
   const allSelected = $derived(counting.length > 0 && counting.every(w => planner.selected.includes(w.start)))
 
   function selectAll() {
@@ -48,7 +50,10 @@
       </div>
       {#each r.timeline as w (w.start)}
         {#if w.keep && !r.timeline[w.offset - 1]?.keep}
-          <div class="divider">여기부터 {tierName(d.tiers, planner.input?.target ?? null)} 유지 · {r.keep?.every === 1 ? '매주' : `${r.keep?.every}주마다`} 결제</div>
+          <div class="divider">여기부터 {tierName(d.tiers, goalAt(w))} 유지 · {r.keep?.every === 1 ? '매주' : `${r.keep?.every}주마다`} 결제</div>
+        {/if}
+        {#if r.hold && r.hold.until > 1 && w.offset === r.hold.until}
+          <div class="divider">여기부터 {tierName(d.tiers, goal)} · 그 전까지는 {tierName(d.tiers, r.curTier)} 유지</div>
         {/if}
         <div class="row" class:off={!w.counts} class:sel={planner.selected.includes(w.start)} class:reached={r.reached === w.offset}>
           <label class="ck">
@@ -58,9 +63,9 @@
             <b>{w.offset === 0 ? '이번 주' : `${w.offset}주 뒤`}</b>
             <span class="mono">{md(w.start)} – {md(w.end)}</span>
             {#if w.offset === 0 && r.spentThisWeek}<em>이미 {won(r.spentThisWeek)}원 결제</em>{/if}
-            {#if w.skipped}<em>추가 결제 없음으로 설정됨</em>{:else if w.keep}{#if w.keepPay}<em class="kp">유지 결제</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{#if goal}{@const up = tierRank(w.thu) >= tierRank(goal)}<em class="thu" class:down={!up}>{up
-                ? `목요일에도 ${tierName(d.tiers, goal)} 유지${w.keepPay ? ' · 다음 주를 위한 결제' : ''}`
-                : `목요일에 ${tierName(d.tiers, w.thu)}${w.keepPay ? ` · 결제하면 ${tierName(d.tiers, goal)}` : ''}`}</em>{/if}{:else if !w.counts}<em>목표일 전에 빠지는 주</em>{/if}
+            {#if w.skipped}<em>추가 결제 없음으로 설정됨</em>{:else if w.keep}{#if w.keepPay}<em class="kp">유지 결제</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{#if goal}{@const g = goalAt(w)}{@const up = tierRank(w.thu) >= tierRank(g)}<em class="thu" class:down={!up}>{up
+                ? `목요일에도 ${tierName(d.tiers, g)} 유지${w.keepPay ? ' · 다음 주를 위한 결제' : ''}`
+                : `목요일에 ${tierName(d.tiers, w.thu)}${w.keepPay ? ` · 결제하면 ${tierName(d.tiers, g)}` : ''}`}</em>{/if}{:else if !w.counts}<em>목표일 전에 빠지는 주</em>{/if}
           </span>
           <span class="num">
             <input class="amt mono" class:locked={w.fixed} type="text" inputmode="numeric" disabled={!w.counts}

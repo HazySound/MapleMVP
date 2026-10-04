@@ -40,11 +40,16 @@
 
   const question = $derived.by(() => {
     if (!out) return ''
+    const minus = out.use ? ` (구매용 ${won(out.use)}원 제외)` : ''
     if (out.mode === 'plan' && planner.input) {
       const k = planner.result?.keep
-      return `${tierName(planner.input.target)} 달성${k ? ` + ${k.weeks}주 유지` : ''}까지 실제로 나가는 돈`
+      const m = planner.result?.mode ?? 'reach'
+      const head = m === 'keep' ? `${tierName(planner.input.target)} ${k?.weeks ?? ''}주 유지`
+        : m === 'hold' ? `${tierName(planner.input.target)}로 내려가며 ${k?.weeks ?? ''}주 유지`
+        : `${tierName(planner.input.target)} 달성${k ? ` + ${k.weeks}주 유지` : ''}`
+      return `${head}까지 실제로 나가는 돈${minus}`
     }
-    return `${won(out.target)}원 결제하면 실제로 나가는 돈`
+    return `${won(out.target)}원 결제하면 실제로 나가는 돈${minus}`
   })
   const rate = (p: Pick) => p.cost ? p.back / p.cost * 100 : 0
 
@@ -218,6 +223,9 @@
         <span class="dot">·</span> 회수율 <b class="mono">{rate(pick).toFixed(1)}%</b>
         <span class="dot">·</span> 경매장 판매 <b class="mono">{pick.sales}회</b>
       </p>
+      {#if out.use}
+        <p class="usenote">결제 {won(out.target)}원 중 <b>구매용 {won(out.use)}원</b>({eff.buys.map(b => b.name).join(', ')})은 쓰는 돈이라 뺐어요. 위 숫자는 엠작 <b>{won(out.target - out.use)}원</b> 기준이에요.{#if out.useOver} 구매용이 결제액보다 <b class="bad">{won(out.useOver)}원</b> 많아 그만큼은 넣지 못했어요.{/if}</p>
+      {/if}
       {#if split}
         <div class="split">
           {#each [['달성', split.reach], ['유지', split.keep]] as const as [name, s] (name)}
@@ -318,7 +326,7 @@
                 {/if}
                 <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
                   <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}</td>
-                  <td class="mono" data-l="결제">{won(w.route.pay)}</td>
+                  <td class="mono" data-l="결제">{won(w.route.pay + w.w.use)}{#if w.w.use}<small class="use">구매용 {won(w.w.use)}</small>{/if}</td>
                   <td class="pt"><div class="parts">{#each w.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if q.spare}<em class="sp">{won(q.spare)} 남김</em>{/if}</span>{/each}</div></td>
                   {#if SHOP.barcode.on}
                     <td data-l="바코드로 받을 캐시" onclick={e => e.stopPropagation()}>
@@ -345,8 +353,9 @@
       <h4>{out.mode === 'plan' ? `${md(cur.w.start)} 주에 이렇게 하면 돼요` : '이렇게 하면 돼요'}</h4>
       <ol>
         <li>
-          <div class="t">캐시 {won(cur.route.pay)} 충전 → 현금 {won(cur.route.cost)}원</div>
+          <div class="t">캐시 {won(cur.route.pay + cur.w.use)} 충전 → 현금 {won(cur.funding.cost)}원</div>
           <div class="chips">{#each cur.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}</span>{/each}</div>
+          {#if cur.w.use}<div class="dd">이 중 <b>{won(cur.w.use)}캐시는 구매용</b>(실제로 쓸 아이템)이에요. 아래 엠작은 나머지 {won(cur.route.pay)}캐시로만 짰어요.</div>{/if}
           {#if cur.funding.spare}<div class="dd">끝자리 때문에 한 권 더 사서 <b>{won(cur.funding.spare.cash)}캐시가 남아요</b>. 다음 주에 먼저 쓰고, 그 값은 다음 주에 세요.</div>{/if}
         </li>
         {#if cur.route.lines.length}
@@ -537,6 +546,10 @@
   .route .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .route .dd { font-size: 12px; color: var(--color-tx3); }
   .extra { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12px; color: var(--color-tx3); }
+  .usenote { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--color-tx2); }
+  .usenote b { color: var(--color-tx); font-weight: 600; }
+  .usenote .bad { color: var(--color-bad); }
+  td small.use { display: block; font-size: 10.5px; color: var(--color-tx3); font-family: var(--font-sans); }
 
   /*
    * 패드·폰: 주별 표를 주마다 카드로. 아홉 칸을 한 줄에 두면 화면을 넘어 '실제로 나감'이 잘린다.
