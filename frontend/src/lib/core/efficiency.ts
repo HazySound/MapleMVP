@@ -481,6 +481,12 @@ export function solve(o: SolveIn): Solved | null {
   return { best, lossAt, routeAt }
 }
 
+/** MVP작할 몫이 없는 주(구매용이 결제액 전부). 사는 것도 파는 것도 없다 */
+function nothing(fee: number): Solved {
+  const r: Route = { pay: 0, cost: 0, back: 0, loss: 0, sales: 0, lines: [], market: 0, fee, meso: 0, credits: 0, creditEst: 0 }
+  return { best: r, lossAt: [0], routeAt: () => r }
+}
+
 /**
  * 최적화 지점: 판매를 한 번 줄일 때 더 내는 돈이 판매 1회 수고비(perSale) 이하일 때만 줄인다.
  * 곧 '잃는 돈 + 판매 횟수 × 수고비'가 가장 작은 곳이다. 같으면 적게 파는 쪽.
@@ -510,8 +516,12 @@ export interface CardSetting { key: string; name: string; disc: number; on: bool
 /** 직접 추가한 결제수단. rate는 캐시 1원에 드는 현금, monthly는 달마다 한도(null이면 없음) */
 export interface MethodSetting { key: string; name: string; rate: number; monthly: number | null; on: boolean; unit?: number }
 export interface Plan {
-  /** 결제할 주. 계획이 없으면 한 줄 */
-  weeks: { start: string; amount: number; tier: TierKey | null; month: string }[]
+  /**
+   * 결제할 주. 계획이 없으면 한 줄.
+   * use: 그 주 결제 중 MVP작이 아니라 실제로 쓸 아이템(모멘텀패스 등)에 들어갈 캐시. MVP 금액에는 들지만 팔지 않으니
+   * 회수가 없다. MVP작 조합은 amount − use로 짜고, 충전·한도는 amount 전체로 센다(2026-10-04 건의)
+   */
+  weeks: { start: string; amount: number; tier: TierKey | null; month: string; use?: number }[]
   /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
   balance: number
   cards: CardSetting[]
@@ -556,6 +566,8 @@ export interface WeekResult {
   start: string
   month: string
   amount: number
+  /** 결제 중 실제로 쓸 아이템에 들어가는 캐시. MVP작 조합(solved)은 이걸 뺀 금액으로 짰다 */
+  use: number
   tier: TierKey | null
   fee: number
   um: number
@@ -670,10 +682,18 @@ export function planAll(p: Plan): WeekResult[] | null {
     const combo = p.fixedFor?.(wi)
     const items = combo ? p.items.filter(x => x.id in combo) : p.items
     const fixed = combo ? Object.fromEntries(Object.entries(combo).filter(([, n]) => n != null)) as Record<string, number> : undefined
-    const solved = solve({ target: w.amount, costOf: costOfCtx(ctx), fee, um: p.um, mk: p.mk, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
+    // 실제로 쓸 아이템 몫(use)은 MVP작에서 뺀다. 충전은 한 번에 하니 그 현금은 전체 충전비를 금액 비율로 나눠 센다.
+    // MVP작 몫이 없는 주(구매용이 결제액 전부)는 사고팔 것이 없다
+    const use = Math.min(w.use ?? 0, w.amount)
+    const costAll = costOfCtx(ctx)
+    const costOf = use ? (c: number) => (c > 0 ? costAll(c + use) * c / (c + use) : 0) : costAll
+    const goal = w.amount - use
+    const solved = goal > 0
+      ? solve({ target: goal, costOf, fee, um: p.um, mk: p.mk, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
+      : nothing(fee)
     if (!solved) return null
-    spend(st, wi, fund(solved.best.pay, ctx))
-    out.push({ start: w.start, month: w.month, amount: w.amount, tier: w.tier, fee, um: p.um, solved, ctx })
+    spend(st, wi, fund(solved.best.pay + use, ctx))
+    out.push({ start: w.start, month: w.month, amount: w.amount, use, tier: w.tier, fee, um: p.um, solved, ctx })
   }
   return out
 }
@@ -718,7 +738,8 @@ export function pickAt(weeks: WeekResult[], n: number | null | (number | null)[]
       spend = spendCredits(carry, route.credits, i === weeks.length - 1 && !credit.keepRest ? credit.items : top, w.fee, w.um)
       carry = spend.left
     }
-    return { w, route, funding: fund(route.pay, w.ctx), credit: spend, loss: route.cost - route.back - (spend?.back ?? 0) }
+    // 충전 내역은 구매용 몫까지 합친 전체 결제로 만든다. 효율(cost·back·loss)은 MVP작 몫만이다
+    return { w, route, funding: fund(route.pay + w.use, w.ctx), credit: spend, loss: route.cost - route.back - (spend?.back ?? 0) }
   })
   const sum = (f: (p: WeekPick) => number) => ps.reduce((a, p) => a + f(p), 0)
   const creditBack = sum(p => p.credit?.back ?? 0)

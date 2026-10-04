@@ -147,6 +147,47 @@ describe('조합', () => {
   })
 })
 
+/**
+ * 구매용(실제로 쓸 아이템)이 섞인 결제(2026-10-04 건의: 60 충전해 모멘텀패스 사고 나머지로 MVP작).
+ * MVP작 조합은 결제 − 구매용으로, 충전과 한도는 결제 전체로 센다. 효율은 MVP작 몫만이다
+ */
+describe('구매용 아이템이 섞인 결제', () => {
+  const run = (use: number | undefined, amount = 60_000) => planAll({
+    weeks: [{ start: '2026-10-08', amount, tier: 'silver', month: '2026-10', ...(use == null ? {} : { use }) }],
+    balance: 0, cards: [{ key: 'nexon', name: '넥슨카드', disc: 10, on: true }], leftNow: { nexon: 200_000 }, thisMonth: '2026-10',
+    barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+    um: 1500, mk: 0, items: [karma], fee: null, exact: true, nexonLast: false,
+  })!
+
+  it('MVP작 조합은 결제에서 구매용을 뺀 금액으로 짠다', () => {
+    const [w] = run(24_600)                       // 60,000 − 24,600 = 35,400 = 플가 6개
+    expect(w.use).toBe(24_600)
+    expect(w.solved.best.pay).toBe(35_400)
+    expect(w.solved.best.lines).toEqual([{ item: karma, n: 6 }])
+  })
+
+  it('충전은 결제 전체로 하고, MVP작 몫의 현금은 금액 비율로 나눈다', () => {
+    const [w] = run(24_600)
+    const p = pickAt([w], null).weeks[0]
+    expect(p.funding.parts.reduce((a, q) => a + q.cash, 0)).toBe(60_000)
+    const whole = fund(60_000, w.ctx).cost
+    expect(w.solved.best.cost).toBeCloseTo(whole * 35_400 / 60_000, 0)
+  })
+
+  it('구매용이 결제액 전부면 사고팔 것이 없다', () => {
+    const [w] = run(60_000)
+    expect(w.solved.best.pay).toBe(0)
+    expect(w.solved.best.lines).toEqual([])
+    const p = pickAt([w], null)
+    expect(p.loss).toBe(0)
+    expect(p.weeks[0].funding.parts.reduce((a, q) => a + q.cash, 0)).toBe(60_000)
+  })
+
+  it('구매용이 없으면 전과 같다', () => {
+    expect(run(0)[0].solved.best.pay).toBe(run(undefined)[0].solved.best.pay)
+  })
+})
+
 describe('주별 상품권 한도', () => {
   it('달마다 한도가 새로 생기고 같은 달 앞 주가 쓴 만큼 줄어든다(넥슨카드는 그 달 마지막 주에)', () => {
     const res = planAll({

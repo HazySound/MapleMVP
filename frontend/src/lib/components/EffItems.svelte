@@ -14,7 +14,7 @@
    * 빼기는 한 번에 되고 되돌릴 수 있다. 넣어 둔 가격은 남겨 둬서 다시 넣으면 그대로다.
    */
   import NumBox from './NumBox.svelte'
-  import { ageOf, catalog, eff, pickItem, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, unpickItem } from '../eff.svelte'
+  import { type BuyItem, addBuy, ageOf, buyTotal, catalog, eff, pickItem, removeBuy, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, unpickItem, updateBuy } from '../eff.svelte'
   import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
   import { eul, won } from '../format'
   import { tip } from '../tip'
@@ -126,10 +126,41 @@
     eff.pgView !== 'price' ? `플가를 ${fx(pg * e)}억에 판 셈` : '',
     eff.pgView !== 'rate' && pgRate ? `회수율 ${pct(e)}` : '',
   ].filter(Boolean).join(' · ')
+
+  // ---- 탭: MVP작용(사서 팔아 회수) / 구매용(실제로 쓸 것, 회수 없음) ----
+  // 구매용은 이름과 캐시 가격만 적는다. 첫 결제 주부터 차례로 빼고 남은 금액으로 MVP작을 짠다 (2026-10-04 건의)
+  let tab = $state<'mvp' | 'buy'>('mvp')
+  let buyForm = $state({ name: '', cash: 0 })
+  let buyEditing = $state<string | null>(null)
+  let buyNameEl = $state<HTMLInputElement>()
+  const buyQ = $derived(norm(buyForm.name))
+  // 캐시샵 이름 일부를 치면 후보가 떠서 캐시가를 채워 준다. 없는 이름이면 금액을 직접 적는다
+  const buyCands = $derived(buyQ && !buyEditing ? catalog().filter(x => norm(itemLabel(x)).includes(buyQ) && norm(itemLabel(x)) !== buyQ).slice(0, 6) : [])
+  const canBuy = $derived(buyForm.name.trim().length > 0 && buyForm.cash > 0)
+  const chooseBuy = (x: ShopItem) => { buyForm = { name: itemLabel(x), cash: x.cash } }
+  const editBuy = (b: BuyItem) => { buyEditing = b.id; buyForm = { name: b.name, cash: b.cash }; queueMicrotask(() => buyNameEl?.focus()) }
+  const cancelBuy = () => { buyEditing = null; buyForm = { name: '', cash: 0 } }
+  function submitBuy(e: Event) {
+    e.preventDefault()
+    if (!canBuy) return
+    const x = { name: buyForm.name.trim(), cash: Math.round(buyForm.cash) }
+    if (buyEditing) updateBuy(buyEditing, x); else addBuy(x)
+    cancelBuy()
+    buyNameEl?.focus()
+  }
 </script>
 
 <article class="card">
-  <h3 class="card-title"><span class="n">4</span>플가 기준 가격표 <span class="sub">가격은 경매장 한 번 판매 기준(묶음이면 묶음 전체)</span></h3>
+  <div class="tabs-head">
+    <h3 class="card-title"><span class="n">4</span>아이템</h3>
+    <div class="ef-seg tabs" role="tablist" aria-label="아이템 목록">
+      <button role="tab" aria-pressed={tab === 'mvp'} aria-selected={tab === 'mvp'} onclick={() => (tab = 'mvp')}>MVP작용 아이템</button>
+      <button role="tab" aria-pressed={tab === 'buy'} aria-selected={tab === 'buy'} onclick={() => (tab = 'buy')}>구매용 아이템{#if eff.buys.length}<span class="cnt">{eff.buys.length}</span>{/if}</button>
+    </div>
+  </div>
+
+  {#if tab === 'mvp'}
+  <p class="ef-hint tabhint">플가 기준 가격표 · 가격은 경매장 한 번 판매 기준(묶음이면 묶음 전체). 사서 경매장에 팔아 회수하는 아이템이에요.</p>
 
   <div class="wrap">
     <div class="pg">
@@ -307,6 +338,56 @@
     </div>
   </div>
   <p class="ef-hint">흐린 숫자가 기준이에요. 경매장에서 확인한 실제 가격을 넣으면(기준보다 높아도, 낮아도) 그 값으로 계산하고, 칸을 벗어나면 효율 순으로 다시 줄 서요. 비워 둔 아이템은 계산에서 빠져요. 효율 칸에 마우스를 올리면 다른 보기 값도 나와요. 목록에서 뺀 아이템은 계산에서도 빠져요.</p>
+  {:else}
+  <!-- 구매용: 실제로 쓸 아이템. 결제액에는 들지만 팔지 않으니 회수가 없다. 표 규칙(폰에서 카드로 접히는 것)을 안 타게 표 대신 목록으로 -->
+  <div class="buytab">
+    <p class="ef-hint">실제로 쓰려고 사는 아이템(모멘텀 패스 등)이에요. <b>결제액에는 들어가지만 팔지 않으니 회수가 없어요.</b> 첫 결제 주부터 차례로 빼고, 남은 금액으로만 MVP작 조합을 짜요. 효율도 MVP작 몫만 봐요.</p>
+    {#if eff.buys.length}
+      <div class="buylist" role="list">
+        {#each eff.buys as b (b.id)}
+          <div class="buyrow" role="listitem" class:editing={buyEditing === b.id}>
+            <span class="bn">{b.name}</span>
+            <span class="mono bc">{won(b.cash)}<small>캐시</small></span>
+            <span class="acts">
+              <button type="button" onclick={() => editBuy(b)} aria-label="{b.name} 고치기" use:tip={'고치기'}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              </button>
+              <button type="button" class="out" onclick={() => removeBuy(b.id)} aria-label="{b.name} 빼기" use:tip={'빼기'}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            </span>
+          </div>
+        {/each}
+        <div class="buyrow sum"><span class="bn">합계</span><span class="mono bc">{won(buyTotal())}<small>캐시</small></span><span></span></div>
+      </div>
+    {:else}
+      <p class="ef-hint none">아직 없어요. 아래에 이름과 캐시 가격을 넣으면 그만큼을 MVP작에서 빼요.</p>
+    {/if}
+    <form class="add buyadd" onsubmit={submitBuy}>
+      <b class="at">{buyEditing ? '구매용 아이템 고치기' : '구매용 아이템 추가'}</b>
+      <div class="ef-field nm2">
+        <label for="eff-buy-name">이름 <span class="u">캐시샵 이름 일부를 치면 가격을 채워 줘요</span></label>
+        <input id="eff-buy-name" class="txt" type="text" autocomplete="off" placeholder="예: 모멘텀 패스" maxlength="40"
+          bind:this={buyNameEl} bind:value={buyForm.name} onkeydown={e => e.key === 'Escape' && cancelBuy()} />
+        {#if buyCands.length}
+          <ul class="cands" role="listbox">
+            {#each buyCands as x (x.id)}
+              <li role="option" aria-selected="false"><button type="button" class="pick" onclick={() => chooseBuy(x)}><span>{itemLabel(x)}</span><span class="c mono">{won(x.cash)}캐시</span></button></li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      <div class="ef-field">
+        <label for="eff-buy-cash">캐시 가격</label>
+        <NumBox id="eff-buy-cash" label="구매용 캐시 가격" unit="캐시" placeholder="예: 29,800" value={buyForm.cash} set={v => (buyForm.cash = v)} />
+      </div>
+      <div class="btns">
+        {#if buyEditing}<button type="button" class="btn" onclick={cancelBuy}>취소</button>{/if}
+        <button type="submit" class="btn primary" disabled={!canBuy}>{buyEditing ? '고치기' : '추가'}</button>
+      </div>
+    </form>
+  </div>
+  {/if}
 </article>
 
 <style>
@@ -434,6 +515,25 @@
     background: var(--color-panel); border: 1px solid var(--color-line); user-select: text;
   }
   .add input.txt:focus { border-color: var(--color-lav); }
+
+  /* 탭 머리: 제목 왼쪽, 탭 오른쪽. 좁으면 줄바꿈 */
+  .tabs-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tabs .cnt { margin-left: 6px; padding: 0 7px; border-radius: 999px; font-family: var(--font-mono); font-size: 11px; background: var(--color-lav); color: var(--color-on-accent); }
+  .tabhint { margin: -4px 0 0; }
+  /* 구매용 탭. 'buy'는 위의 '구매' 뱃지 스타일과 이름이 겹쳐 탭 전체가 민트색으로 칠해졌다. 다른 이름을 쓴다 */
+  .buytab { display: grid; gap: 12px; }
+  .buytab .none { padding: 10px 2px; }
+  .buylist { display: grid; border-radius: var(--radius-md); border: 1px solid var(--color-line); overflow: hidden; }
+  .buyrow { display: grid; grid-template-columns: minmax(0, 1fr) auto 52px; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; box-shadow: inset 0 1px 0 var(--color-line); }
+  .buyrow:first-child { box-shadow: none; }
+  .buyrow.editing { background: color-mix(in oklab, var(--color-lav) 10%, transparent); }
+  .buyrow.sum { background: var(--color-bg2); font-weight: 600; }
+  .buyrow .bn { min-width: 0; overflow-wrap: anywhere; }
+  .buyrow .bc { text-align: right; }
+  .buyrow .bc small { font-family: var(--font-sans); font-size: 11px; color: var(--color-tx3); margin-left: 3px; }
+  .buyrow .acts { justify-self: end; }
+  .buyadd { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto; }
+  .buyadd .btns { align-self: end; }
 
   /* 패드: 표 그대로 두되 이름·머리글이 줄바꿈되게 해서 가격 칸까지 화면 안에 넣는다 */
   @media (min-width: 673px) and (max-width: 1295px) {

@@ -391,19 +391,36 @@ export function simulate(b: Base, extra: number): Sim {
   }
 }
 
+/**
+ * 계획의 성격. 목표가 지금 등급보다 높으면 '날짜까지 달성', 같으면 '지금부터 유지',
+ * 낮으면 '그 날짜가 든 주부터 그 등급 유지(그 전까지는 지금 등급 유지)'
+ */
+export type PlanMode = 'reach' | 'keep' | 'hold'
+
 export function makePlan(b: Base, target: TierKey, dateIso: string,
                          fixed: Record<string, number>, skipThisWeek: boolean, keep: KeepOpt | null = null, unit = 1000) {
-  const t = Math.round((Date.parse(weekStart(dateIso)) - Date.parse(b.thisWeek)) / (7 * 864e5))
-  if (t < 0) return { error: '목표 날짜는 오늘 이후여야 해요.' }
+  const tAt = Math.round((Date.parse(weekStart(dateIso)) - Date.parse(b.thisWeek)) / (7 * 864e5))
+  if (tAt < 0) return { error: '목표 날짜는 오늘 이후여야 해요.' }
   const tier = TIERS.find(x => x.key === target)!
+  // 지금 등급 이하를 고르면 '달성'할 것이 없다. 전에는 날짜까지 손 놓고 기준에 턱걸이하는 계획이 나왔다.
+  // 지금부터 유지하는 계획으로 본다. 더 낮은 등급이면 그 날짜가 든 주부터 내려가고, 그 전까지는 지금 등급을 지킨다
+  // (2026-10-04 사용자)
+  const ci = tierIndex(b.current), ti = TIERS.indexOf(tier)
+  const mode: PlanMode = ti > ci ? 'reach' : ti === ci ? 'keep' : 'hold'
+  const t = mode === 'reach' ? tAt : 0
+  const hold = mode === 'hold' ? { th: b.current!.th, until: tAt } : null
   const offsets: Record<number, number> = {}
   for (const [k, v] of Object.entries(fixed)) {
     offsets[Math.round((Date.parse(k) - Date.parse(b.thisWeek)) / (7 * 864e5))] = Number(v)
   }
   // 유지를 켜면 지금 이월도 주마다 따라간다. 안 켜도 등급 칸은 이월로 채워 매긴다
-  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek, unit, keep, b.carry)
+  // 유지·내려가기 계획은 결제 주마다 모자라는 만큼만 낸다. 같은 금액을 매주 내면 옛 결제가 남은 앞쪽 주에서 한 단계 위로 올라간다
+  const k = keep && mode !== 'reach' ? { ...keep, asNeeded: true } : keep
+  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek, unit, k, b.carry, hold)
   return {
     ...p,
+    mode,
+    curTier: key(b.current),
     timeline: p.timeline.map(w => {
       const start = addDays(b.thisWeek, w.offset * 7)
       return { ...w, start, end: addDays(start, 6), tier: key(w.tier), thu: w.thu ? key(w.thu) : null }

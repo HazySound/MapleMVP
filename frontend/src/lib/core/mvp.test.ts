@@ -251,6 +251,63 @@ describe('목표 계획', () => {
     })
   })
 
+  /**
+   * 목표가 지금 등급 이하일 때(2026-10-04 사용자). 달성할 것이 없으니 t=0, 유지만 짠다.
+   * hold: 그 주 전까지는 지금 등급(더 높은 기준)을 지키고, 그 주부터 목표 기준으로 내려간다
+   */
+  describe('지금 등급 이하를 목표로', () => {
+    // 지금 블랙: 13주 합계 260만 (이번 주 20만)
+    const last13 = [...Array(11).fill(200_000), 200_000, 200_000]
+
+    it('모자라는 만큼만: 옛 결제가 남은 앞쪽 주는 안 내고, 유지 기준을 넘겨 한 단계 위로 올리지 않는다', () => {
+      // 2026-10-05 사용자: 골드(879,670) 유지인데 매주 5만씩 내라고 해서 다이아가 됐다
+      const GOLD = TIERS.find(t => t.key === 'gold')!
+      const gold13 = [30_000, 26_420, 0, 2_100, 0, 40_000, 20_000, 0, 29_800, 39_800, 0, 467_850, 223_700]
+      const p = plan(gold13, GOLD, 0, {}, true, 50_000, { every: 1, weeks: 26, asNeeded: true })
+      expect(p.keep!.asNeeded).toBe(true)
+      expect(p.timeline[1].amount).toBe(0)                       // 다음 주는 옛 결제만으로 골드
+      for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(GOLD.th)
+      // 같은 금액을 매주 내는 것(5만 × 26)보다 적게 든다
+      expect(p.planned).toBeLessThan(26 * 50_000)
+      // 결제 주마다 가장 작은 5만 단위라, 한 번 내는 주는 기준에서 5만 미만으로 남는다(다이아 90만에 닿지 않는다)
+      for (const w of p.timeline.slice(1)) if (w.amount) expect(w.sum - w.amount).toBeLessThan(GOLD.th)
+    })
+
+    it('같은 등급: 날짜와 상관없이 지금부터 유지, 달성 금액은 0', () => {
+      const p = plan(last13, BLACK, 0, {}, false, 1000, { every: 1, weeks: 12 })
+      expect(p.required).toBe(0)
+      for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(BLACK.th)
+      expect(p.keep!.per).toBeGreaterThan(0)
+      expect(p.hold).toBeNull()
+    })
+
+    it('더 낮은 등급: 내려가는 주 전까지는 블랙, 그 주부터 레드 기준', () => {
+      const RED = TIERS.find(t => t.key === 'red')!
+      const until = 4
+      const p = plan(last13, RED, 0, {}, false, 1000, { every: 1, weeks: 12 }, 0, { th: BLACK.th, until })
+      expect(p.hold).toEqual({ th: BLACK.th, until })
+      for (let o = 0; o < until; o++) expect(p.timeline[o].sum).toBeGreaterThanOrEqual(BLACK.th)
+      for (let o = until; o <= 12; o++) expect(p.timeline[o].sum).toBeGreaterThanOrEqual(RED.th)
+      // 레드로 내려간 뒤에는 블랙을 지킬 때보다 덜 낸다
+      const black = plan(last13, BLACK, 0, {}, false, 1000, { every: 1, weeks: 12 })
+      expect(p.planned).toBeLessThan(black.planned)
+      expect(p.keep!.blocked).toEqual([])
+      // 내려간 뒤 유지 금액은 블랙 때보다 적다
+      expect(p.keep!.perAfter).toBeLessThan(p.keep!.per)
+    })
+
+    it('내려간 뒤 고정 금액으로 레드가 끊기면 그 주를 알려 준다(레드 기준으로)', () => {
+      const RED = TIERS.find(t => t.key === 'red')!
+      const fixed: Record<number, number> = {}
+      for (let o = 1; o <= 12; o++) fixed[o] = 0
+      const p = plan(last13, RED, 0, fixed, true, 1000, { every: 1, weeks: 12 }, 0, { th: BLACK.th, until: 2 })
+      expect(p.keep!.blocked.length).toBeGreaterThan(0)
+      // 첫 끊기는 주는 블랙 기준인 1주 뒤(20만 빠져 240만 < 250만)
+      expect(p.keep!.blocked[0].offset).toBe(1)
+      expect(p.keep!.blocked[0].missing).toBe(BLACK.th - 2_400_000)
+    })
+  })
+
   it('남은 주에 균등하게 나눈다', () => {
     const last13 = [...Array(12).fill(0), 100_000]
     const p = plan(last13, BLACK, 3, {})
