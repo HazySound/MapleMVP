@@ -28,9 +28,6 @@ const CARDS = [
 /** 직접 짜기 조합: 아이템 id → 한 주에 살 개수(null이면 개수는 알아서). 조합에 없는 아이템은 안 쓴다 */
 export type Combo = Record<string, number | null>
 
-/** 실제로 쓰려고 사는 아이템. 이름과 캐시 가격이면 된다 */
-export interface BuyItem { id: string; name: string; cash: number }
-
 /** 계산 결과 재사용(입력 → 결과). 최근 것만 둔다 */
 const runs = new Map<string, WeekResult[] | null>()
 
@@ -80,11 +77,6 @@ interface Saved {
   listNews: boolean
   /** 사용자가 직접 추가한 아이템. 기본 목록에 없는 걸로 작하는 사람을 위해 */
   custom: ShopItem[]
-  /**
-   * 엠작이 아니라 실제로 쓰려고 사는 아이템(모멘텀패스 등). 결제액에는 들지만 팔지 않으니 회수가 없다.
-   * 첫 결제 주부터 차례로 빼고 남은 금액으로만 엠작 조합을 짠다(2026-10-04 건의: 60 충전해 모멘텀패스 사고 나머지로 엠작)
-   */
-  buys: BuyItem[]
   /** 가격표에서 플가보다 손해인 아이템을 접어 둔다 */
   hideLoss: boolean
   /** 메이플 크레딧: 쓸지, 남아 있는 크레딧, 크레딧샵 물건 경매장 가격(억), 직접 추가한 물건 */
@@ -116,7 +108,7 @@ function fresh(): Saved {
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), methods: [], plainOn: true, nexonLast: true,
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
+    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
   }
@@ -274,28 +266,6 @@ export function removeCreditItem(id: string) {
   saveEff()
 }
 
-// ---- 실제로 쓰려고 사는 아이템(구매용) ----
-
-export function addBuy(x: Omit<BuyItem, 'id'>) {
-  eff.buys.push({ ...x, id: `b${Date.now().toString(36)}` })
-  saveEff()
-}
-
-export function updateBuy(id: string, x: Omit<BuyItem, 'id'>) {
-  const b = eff.buys.find(b => b.id === id)
-  if (!b) return
-  Object.assign(b, x)
-  saveEff()
-}
-
-export function removeBuy(id: string) {
-  eff.buys = eff.buys.filter(b => b.id !== id)
-  saveEff()
-}
-
-/** 구매용 아이템 캐시 합계 */
-export const buyTotal = () => eff.buys.reduce((a, b) => a + b.cash, 0)
-
 /** 직접 만든 아이템을 아예 지운다(추가 후보에서도 빠진다). 되돌리기용으로 지운 것을 돌려준다 */
 export function removeCustom(id: string) {
   const item = eff.custom.find(c => c.id === id)
@@ -341,10 +311,6 @@ export interface Summary { loss: number; sales: number; split: { reach: { loss: 
 export interface EffOut {
   mode: 'plan' | 'amount'
   target: number
-  /** 결제 중 구매용(실제로 쓸 아이템)으로 뺀 캐시. 효율은 target − use 기준이다 */
-  use: number
-  /** 구매용이 결제액 전체보다 많아 넣지 못한 금액 */
-  useOver: number
   weeks: WeekResult[]
   /** curve[n] = 주마다 판매 n회까지로 할 때 전체 잃는 돈 (n은 lo..hi) */
   curve: number[]
@@ -381,12 +347,8 @@ export function planWeeks(d: State, plan: PlanResult | null) {
 export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const pw = eff.usePlan ? planWeeks(d, plan) : null
   const mode = pw ? 'plan' : 'amount'
-  const raw = pw ?? (eff.amount > 0 ? [{ start: d.thisWeek, amount: eff.amount, tier: tierAfter(d, eff.amount), month: thisMonth() }] : null)
-  if (!raw || !eff.um) return null
-  // 구매용(실제로 쓸 아이템)은 첫 결제 주부터 차례로 뺀다. 어느 주에 살지는 적지 않는다(이름·금액만, 2026-10-04 건의)
-  let left = buyTotal()
-  const weeks = raw.map(w => { const use = Math.min(left, w.amount); left -= use; return { ...w, use } })
-  const use = weeks.reduce((a, w) => a + w.use, 0)
+  const weeks = pw ?? (eff.amount > 0 ? [{ start: d.thisWeek, amount: eff.amount, tier: tierAfter(d, eff.amount), month: thisMonth() }] : null)
+  if (!weeks || !eff.um) return null
   // 금액 직접일 때는 수수료를 사용자가 정한다. 안 건드렸으면 오를 등급으로 먼저 채워 둔다
   const fee = mode === 'amount' ? (eff.feeOverride ?? (weeks[0].tier && weeks[0].tier !== 'bronze' ? 0.03 : 0.05)) : eff.feeOverride
   const all = sellables()
@@ -463,7 +425,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const priced = all.filter(x => x.price > 0)
   const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
   return {
-    mode, target: weeks.reduce((a, w) => a + w.amount, 0), use, useOver: left, weeks: res, curve, lo, hi, credit,
+    mode, target: weeks.reduce((a, w) => a + w.amount, 0), weeks: res, curve, lo, hi, credit,
     best, knee: kp, count: cp, sel, custom, keepStarts,
     pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID)) : null,
     mkOnly: eff.mk > 0 ? alt([]) : null,

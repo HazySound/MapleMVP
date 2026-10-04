@@ -71,16 +71,11 @@ describe('시뮬레이션과 목표 계획', () => {
     expect(p.base).toBe(909_670)
   })
 
-  it('지금 등급(다이아)을 8주 뒤로 고르면 날짜와 상관없이 지금부터 유지 계획이다', () => {
-    // 전에는 '8주 뒤 주에만 기준을 넘기면 된다'로 봐서 인게임 툴팁 '7주차 뒤 108,850'과 같은 금액이 나왔다.
-    // 그 사이 주에는 떨어져도 되는 계획이라 쓸모가 없었다(2026-10-04 사용자). 이제는 유지로 본다
-    const p = makePlan(base, 'diamond', '2026-11-18', {}, false, { every: 1, weeks: 8 }) as any
-    expect(p.mode).toBe('keep')
-    expect(p.required).toBe(0)
+  it('8주 뒤 다이아 유지는 인게임 표와 같은 금액이 든다', () => {
+    const p = makePlan(base, 'diamond', '2026-11-18', {}, false) as any
+    // 인게임 툴팁 '7주차 뒤 108,850 캐시'와 같은 값
+    expect(p.required).toBe(108_850)
     expect(p.timeline[0].start).toBe('2026-09-24')
-    for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(900_000)
-    // 8주 뒤에도 다이아려면 적어도 인게임 툴팁의 '7주차 뒤 108,850'만큼은 더 내야 한다
-    expect(p.planned).toBeGreaterThanOrEqual(108_850)
   })
 
   it('지난 날짜는 거절한다', () => {
@@ -125,41 +120,5 @@ describe('넥슨이 다음 주로 센 결제 옮기기', () => {
   it('id가 없는 행은 옮길 수 없다', () => {
     const b = buildBase(rows2.map(r => (r.id === 'small' ? { ...r, id: undefined } : r)), {}, NOW2)
     expect(placeMoved(b, nexonOf(94_941, 70_293)).size).toBe(0)
-  })
-})
-
-/** 목표가 지금 등급 이하면 달성이 아니라 유지 계획이다 (2026-10-04 사용자) */
-describe('계획의 성격: 달성 · 유지 · 내려가기', () => {
-  const NOW3 = new Date('2026-10-03T03:00:00Z')   // 이번 주 10/1
-  // 13주 내내 20만씩 → 260만, 지금 블랙
-  const black: Row[] = Array.from({ length: 13 }, (_, i) => ({ date: addDays('2026-07-09', i * 7 + 1), item: '결제', price: 200_000 }))
-  const keep = { every: 1, weeks: 8 }
-  const made = (rows: Row[], target: 'black' | 'red' | 'gold', date: string, k = keep) => {
-    const p = makePlan(buildBase(rows, {}, NOW3), target as never, date, {}, false, k)
-    if (!('mode' in p)) throw new Error(p.error)
-    return p
-  }
-
-  it('지금 블랙에 블랙을 고르면 날짜와 상관없이 지금부터 유지', () => {
-    const p = made(black, 'black', '2026-11-25')
-    expect(p.mode).toBe('keep')
-    expect(p.required).toBe(0)
-    expect(p.hold).toBeNull()
-    expect(p.timeline.length).toBe(keep.weeks + 1)     // 날짜(8주 뒤)는 보지 않는다
-    expect(p.curTier).toBe('black')
-  })
-
-  it('더 낮은 레드를 고르면 그 날짜가 든 주부터 레드, 그 전까지 블랙', () => {
-    const p = made(black, 'red', '2026-10-29')        // 목요일 → 4주 뒤 주
-    expect(p.mode).toBe('hold')
-    expect(p.hold).toEqual({ th: 2_500_000, until: 4 })
-    expect(p.timeline[4].start).toBe('2026-10-29')
-  })
-
-  it('지금보다 높은 등급은 전처럼 날짜까지 달성', () => {
-    const silver: Row[] = [{ date: '2026-09-25', item: '결제', price: 300_000 }]
-    const p = made(silver, 'gold', '2026-10-29', keep)
-    expect(p.mode).toBe('reach')
-    expect(p.hold).toBeNull()
   })
 })

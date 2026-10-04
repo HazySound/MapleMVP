@@ -34,7 +34,7 @@
   {#if usePlan && pw && tier}
     <div class="plan" style="--ink:{TIER_INK_VAR[tier.key]}">
       <span class="from">목표 계획에서 가져옴</span>
-      <span class="goal">{#if planner.result?.mode === 'keep'}<b>{tier.name}</b> 유지{:else if planner.result?.mode === 'hold'}<b>{tier.name}</b> {md(planner.input!.date)}부터 유지{:else}<b>{tier.name}</b> {md(planner.input!.date)}까지{/if}</span>
+      <span class="goal"><b>{tier.name}</b> {md(planner.input!.date)}까지</span>
       <span class="amt">
         {#if same}매주 <b class="mono">{won(pw[0].amount)}원</b> · {pw.length}주{:else}{pw.length}주에 나눠서{/if}
         · 합계 <b class="mono">{won(pw.reduce((a, w) => a + w.amount, 0))}원</b>

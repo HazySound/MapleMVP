@@ -224,12 +224,6 @@ export interface PlanWeek {
 /** 달성 뒤에도 등급을 지킬 때: every주마다 한 번 결제, 목표 주 뒤 weeks주 동안 */
 export interface KeepOpt { every: number; weeks: number }
 
-/**
- * 지금 등급이 목표보다 높을 때: until주 뒤 전까지는 지금 등급(th)을 지키고, 그 주부터 목표 등급을 지킨다.
- * (2026-10-04 사용자: 블랙인데 11/19부터 레드만 지키고 싶다 → 11/18까지 블랙, 11/19 주부터 레드)
- */
-export interface HoldOpt { th: number; until: number }
-
 /** 고정 금액 때문에 유지가 안 되는 주와 그 주에 모자란 금액 */
 export interface KeepBlock { offset: number; missing: number }
 
@@ -252,8 +246,6 @@ export interface PlanResult {
     weeks: number
     /** 자동으로 정한 유지 결제 1회 금액과 그 횟수 */
     per: number
-    /** 더 낮은 등급으로 내려간 주부터의 유지 결제 1회 금액(hold). 내려가지 않으면 per와 같다 */
-    perAfter: number
     count: number
     /** 첫 유지 결제 전까지 버티려고 달성 주에 더 얹은 금액(주당) */
     reachExtra: number
@@ -262,8 +254,6 @@ export interface PlanResult {
     carryStart: number
     carryUsed: number
   } | null
-  /** 목표가 지금 등급보다 낮을 때, 내려가기 전까지 지금 등급을 지키는 구간. 아니면 null */
-  hold: HoldOpt | null
 }
 
 /**
@@ -279,12 +269,7 @@ export interface PlanResult {
  * 이월로만 가고(CARRY_FIX), 목요일 갱신에서 모자라면 꺼내 그 주 금액으로 채운다.
  */
 export function plan(last13: number[], target: Tier, t: number, fixed: Record<number, number>,
-                     skipThisWeek = false, unit = 1000, keep: KeepOpt | null = null, carry = 0,
-                     hold: HoldOpt | null = null): PlanResult {
-  // 주마다 지켜야 할 기준. 지금 등급이 목표보다 높으면 내려가는 주 전까지는 지금 등급 기준이다
-  const thAt = (o: number) => (hold && o < hold.until ? hold.th : target.th)
-  // 내려간 뒤에는 유지 금액을 따로(더 적게) 정한다. 한 금액으로 맞추면 내려간 뒤에도 높은 등급 몫을 낸다
-  const split = hold ? hold.until : Infinity
+                     skipThisWeek = false, unit = 1000, keep: KeepOpt | null = null, carry = 0): PlanResult {
   const first = Math.max(0, t - (WINDOW - 1))      // 목표 주의 13주 안에 드는 첫 계획 주
   const weeks: number[] = []
   for (let o = first; o <= t; o++) if (!(skipThisWeek && o === 0)) weeks.push(o)
@@ -317,7 +302,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
   const amounts: Record<number, number> = {}
   const fill = () => {
     for (const o of weeks) amounts[o] = o in fx ? fx[o] : auto
-    for (let o = t + 1; o <= end; o++) amounts[o] = o in fx ? fx[o] : pays.includes(o) ? (o < split ? keepPer : keepAfter) : 0
+    for (let o = t + 1; o <= end; o++) amounts[o] = o in fx ? fx[o] : pays.includes(o) ? keepPer : 0
   }
   /** o주의 13주 합계. 자동으로 나눌 주(auto)는 빼고 센다 */
   const known = (o: number, skip: (k: number) => boolean) => {
@@ -353,57 +338,52 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     return { vals, sums, used, tiers, thu }
   }
 
-  let keepPer = 0, keepAfter = 0, reachExtra = 0
+  let keepPer = 0, reachExtra = 0
   const blocked: KeepBlock[] = []
   let sim: ReturnType<typeof simulate> | null = null
   if (keep) {
     const freeReach = (k: number) => free.includes(k)
     const freeKeep = pays.filter(o => !(o in fx))
-    // A: 유지 결제 1회 금액. B: 더 낮은 등급으로 내려간 주(split)부터의 유지 금액. 내려가지 않으면 같다
-    const amtOf = (a: number, A: number, B = A) => (o: number) =>
-      o in fx ? fx[o] : o <= t ? (freeReach(o) ? a : 0) : freeKeep.includes(o) ? (o < split ? A : B) : 0
-    const ok = (a: number, A: number, B = A) => {
-      const { sums } = simulate(amtOf(a, A, B))
-      for (let o = t; o <= end; o++) if (sums[o] < thAt(o)) return false
+    const amtOf = (a: number, A: number) => (o: number) =>
+      o in fx ? fx[o] : o <= t ? (freeReach(o) ? a : 0) : freeKeep.includes(o) ? A : 0
+    const ok = (a: number, A: number) => {
+      const { sums } = simulate(amtOf(a, A))
+      for (let o = t; o <= end; o++) if (sums[o] < target.th) return false
       return true
     }
     // 먼저 달성 금액을 버틸 수 있는 한 가장 작게, 그다음 유지 금액을 가장 작게 정한다.
     // 총액만 보면 이월이 넘친 결제를 버리지 않아서, 목표 전에 크게 몰아 넣고 유지를 줄이는 조합도
     // 총액이 비슷해 뽑힌다(2026-09-29 사용자: 11/18 블랙인데 80만씩 몰고 유지 5만). 그러면 안 된다
-    const top = Math.max(target.th, hold?.th ?? 0)
-    const aMax = free.length ? ceilUnit(top, unit) : 0
-    const AMax = freeKeep.length ? ceilUnit(top, unit) : 0
+    const aMax = free.length ? ceilUnit(target.th, unit) : 0
+    const AMax = freeKeep.length ? ceilUnit(target.th, unit) : 0
     const least = (hiUnits: number, fits: (v: number) => boolean) => {
       let lo = 0, hi = hiUnits
       while (lo < hi) { const m = (lo + hi) >> 1; if (fits(m * unit)) hi = m; else lo = m + 1 }
       return lo * unit
     }
-    let best: { a: number; A: number; B: number } | null = null
-    if (ok(aMax, AMax, AMax)) {
-      const a = least(aMax / unit, v => ok(v, AMax, AMax))
-      const A = least(AMax / unit, v => ok(a, v, AMax))
-      // 내려간 뒤 금액은 앞 금액을 정한 뒤에 가장 작게. 앞 주를 더 내면 뒤 주는 그만큼 여유가 생기니 순서가 맞다
-      best = { a, A, B: hold ? least(AMax / unit, v => ok(a, A, v)) : A }
+    let best: { a: number; A: number } | null = null
+    if (ok(aMax, AMax)) {
+      const a = least(aMax / unit, v => ok(v, AMax))
+      best = { a, A: least(AMax / unit, v => ok(a, v)) }
     }
     if (best) {
-      reachExtra = Math.max(0, best.a - auto); auto = best.a; keepPer = best.A; keepAfter = best.B
+      reachExtra = Math.max(0, best.a - auto); auto = best.a; keepPer = best.A
     } else {
       // 어떻게 해도 안 된다(고정 때문). 이월 없이 셈한 금액으로 두고 끊기는 주를 알려 준다
       fill()
       const need: { miss: number; nr: number; nk: number }[] = []
       for (let o = t + 1; o <= end; o++) {
-        const miss = thAt(o) - known(o, k => freeReach(k) || freeKeep.includes(k))
+        const miss = target.th - known(o, k => freeReach(k) || freeKeep.includes(k))
         if (miss > 0) need.push({ miss, nr: free.filter(k => inWin(o, k)).length, nk: freeKeep.filter(k => inWin(o, k)).length })
       }
       let a = auto
       for (const c of need) if (c.nr) a = Math.max(a, ceilUnit(c.miss / c.nr, unit))
       for (const c of need) if (c.nk) keepPer = Math.max(keepPer, ceilUnit(Math.max(0, c.miss - c.nr * a) / c.nk, unit))
-      keepAfter = keepPer
       reachExtra = a - auto; auto = a
     }
     fill()
     sim = simulate(o => amounts[o] ?? 0)
-    for (let o = t + 1; o <= end; o++) if (sim.sums[o] < thAt(o)) blocked.push({ offset: o, missing: thAt(o) - sim.sums[o] })
+    for (let o = t + 1; o <= end; o++) if (sim.sums[o] < target.th) blocked.push({ offset: o, missing: target.th - sim.sums[o] })
   } else fill()
   // 유지를 안 켜도 등급 칸은 이월로 채워 매긴다. 합계·빠지는 금액은 이월 없이 센 그대로 둔다
   // (2026-09-30 제보: 이월로 블랙이 유지되는데 계획표 이번 주 줄은 합계만 보고 레드)
@@ -440,8 +420,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     planned,
     reached: hit ? hit.offset : null,
     timeline,
-    keep: keep ? { every: keep.every, weeks: keep.weeks, per: keepPer, perAfter: keepAfter, count: pays.filter(o => !(o in fx)).length, reachExtra, blocked,
+    keep: keep ? { every: keep.every, weeks: keep.weeks, per: keepPer, count: pays.filter(o => !(o in fx)).length, reachExtra, blocked,
       carryStart: carry, carryUsed: sim ? sim.used.reduce((a, b) => a + b, 0) : 0 } : null,
-    hold,
   }
 }

@@ -7,11 +7,6 @@
   const p = $derived(planner.input!)
   const r = $derived(planner.result)
   const tier = $derived(d.tiers.find(t => t.key === p.target)!)
-  const cur = $derived(d.tiers.find(t => t.key === d.current) ?? null)
-  /** reach: 날짜까지 달성 · keep: 지금 등급 유지 · hold: 날짜가 든 주부터 더 낮은 등급 유지 */
-  const mode = $derived(r && !r.error ? r.mode : 'reach')
-  /** 더 낮은 등급으로 내려가는 주의 시작일(hold) */
-  const holdStart = $derived(r && !r.error && r.hold ? r.timeline[r.hold.until]?.start ?? null : null)
   const last = $derived(r?.timeline.at(-1))
   const reachedWeek = $derived(r?.reached != null ? r.timeline[r.reached] : null)
   const scope = $derived(planner.selected.length ? `선택한 ${planner.selected.length}주` : '모든 주')
@@ -41,12 +36,11 @@
 </script>
 
 <article class="card sum" use:spotlight style="--c:{TIER_VAR[p.target]};--ink:{TIER_INK_VAR[p.target]}">
-  <h3 class="card-title">계획 결과 <span class="sub">{#if mode === 'keep'}{tier.name} 유지 ({won(tier.th)}원){:else if mode === 'hold'}{holdStart ? `${md(holdStart)} 주부터 ` : ''}{tier.name} 유지 · 그 전까지 {cur?.name}{:else}{md(p.date)}까지 {tier.name} ({won(tier.th)}원){/if}</span></h3>
+  <h3 class="card-title">계획 결과 <span class="sub">{md(p.date)}까지 {tier.name} ({won(tier.th)}원)</span></h3>
 
   {#if r?.error}
     <p class="err">{r.error}</p>
   {:else if r}
-    {#if mode === 'reach'}
     <div class="banner {status}">
       <div class="ic">
         {#if status === 'short'}
@@ -74,23 +68,6 @@
         {/if}
       </div>
     </div>
-    {:else}
-    <!-- 지금 등급 이하를 골랐다: 달성할 것이 없고 유지만 짠다 (2026-10-04) -->
-    <div class="banner done">
-      <div class="ic">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-      </div>
-      <div class="t">
-        {#if mode === 'keep'}
-          <b>지금 {cur?.name} 등급 · {tier.name} 유지 계획</b>
-          이미 달성한 등급이라 날짜와 상관없이 지금부터 유지에 필요한 금액만 나눠요.
-        {:else}
-          <b>지금 {cur?.name} 등급 · {holdStart ? `${md(holdStart)} 주부터` : ''} {tier.name}</b>
-          그 전까지는 {cur?.name}을 지키고, 그 주부터는 {tier.name} 기준으로 나눠요.
-        {/if}
-      </div>
-    </div>
-    {/if}
 
     {#if k}
       <div class="banner keep" class:short={!!block}>
@@ -110,7 +87,7 @@
             <b>유지 결제 없이 {keepEnd ? md(keepEnd.end) : ''}까지 {tier.name} 유지</b>
             정해 둔 금액만으로 {k.weeks}주 동안 지켜져요.
           {:else}
-            <b>{mode === 'reach' ? '달성 뒤 ' : ''}{k.every === 1 ? '매주' : `${k.every}주마다`} <span class="mono">{won(k.per)}</span>원</b>
+            <b>달성 뒤 {k.every === 1 ? '매주' : `${k.every}주마다`} <span class="mono">{won(k.per)}</span>원</b>
             {#if dips.length}
               {k.count}번 결제하면 {keepEnd ? md(keepEnd.end) : ''}까지 매주 결제 뒤 {tier.name} 등급이에요{k.every > 1 ? ` (주당 평균 ${won(Math.round(k.per / k.every))}원)` : ''}.
               다만 <b class="inl">목요일 갱신 때 내려갔다가 그 주에 결제하면 다시 오르는 주가 {dips.length}번</b> 있어요({dips.map(w => md(w.start)).slice(0, 3).join(', ')}{dips.length > 3 ? ' 등' : ''}). 표에 주마다 적어 뒀어요.
@@ -119,7 +96,6 @@
             {/if}
             {#if k.reachExtra}첫 유지 결제 전까지 버티도록 달성하는 주에 주당 {won(k.reachExtra)}원을 더 넣었어요.{/if}
             {#if k.carryUsed}250만을 넘긴 결제는 이월로 쌓였다가 모자라는 목요일에 채워지는 것까지 넣었어요.{/if}
-            {#if mode === 'hold' && holdStart}그 전까지는 {cur?.name}, {md(holdStart)} 주부터는 {tier.name} 기준으로 셌어요.{#if k.perAfter !== k.per} 내려간 뒤에는 {k.every === 1 ? '매주' : `${k.every}주마다`} <span class="mono">{won(k.perAfter)}</span>원이에요.{/if}{/if}
           {/if}
         </div>
       </div>
@@ -137,7 +113,7 @@
       {/if}
       <div class="st"><span>균등 분배하면</span><b class="mono">{won(r.equalPer)}<small> × {r.weeksCount}주</small></b></div>
       <div class="st"><span>계획한 결제 합계</span><b class="mono">{won(r.planned)}</b></div>
-      <div class="st"><span>{mode === 'reach' ? '목표 주에 남는 기존 결제' : '지금 13주 합계'}</span><b class="mono">{won(r.base)}</b></div>
+      <div class="st"><span>목표 주에 남는 기존 결제</span><b class="mono">{won(r.base)}</b></div>
     </div>
 
     <div class="actions">

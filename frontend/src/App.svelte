@@ -140,15 +140,7 @@
    */
   @media (min-width: 1360px) {
     .plan-top { grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); }
-    /*
-     * 목표 카드는 따라오되, 화면보다 길면 카드 안에서 따로 스크롤한다. 배율 200%나 작은 노트북에서는
-     * 카드가 화면보다 길어서 아래쪽 설정(유지 등)이 잘린 채 붙어 있었고, 오른쪽 표를 끝까지 내려야만
-     * 보였다(2026-10-04 사용자). vh는 zoom을 모르니 배율로 나눠 맞춘다
-     */
-    .side {
-      align-self: start; position: sticky; top: 16px;
-      max-height: calc(100vh / var(--ui-scale, 1) - 32px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
-    }
+    .side { align-self: start; position: sticky; top: 16px; }
   }
   .boot { height: 100%; display: grid; place-items: center; }
   .boot span { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--color-line2); border-top-color: var(--color-lav); animation: spin .8s linear infinite; }
