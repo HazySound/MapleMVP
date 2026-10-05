@@ -10,7 +10,7 @@
   import EffCombo from './EffCombo.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { SHOP, eff, saveEff, type EffOut, type Pick, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
+  import { SHOP, eff, saveEff, umNet, type EffOut, type Pick, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
   import { PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun } from '../format'
   import { won } from '../format'
@@ -29,12 +29,17 @@
    */
   const fillerOnly = (r: { fee: number; lines: { item: { price: number; cash: number } }[] }) =>
     !!eff.mk && r.lines.every(l => l.item.price * (1 - r.fee) / l.item.cash > 1 / eff.mk)
+  /** 선물식도 같다: 고른 아이템이 모두 캐시 1원당 선물식보다 많이 돌려주면 선물식은 끝자리다 */
+  const giftFiller = (r: { fee: number; lines: { item: { price: number; cash: number } }[] }) =>
+    r.lines.every(l => l.item.price * (1 - r.fee) * umNet() / l.item.cash > eff.gift / 10_000)
+  /** 선물식으로 받은 현금(메소를 거치지 않는다) */
+  const giftWon = (r: { gift: number }) => r.gift * eff.gift / 10_000
 
   const missing = $derived.by(() => {
     const m: string[] = []
     if (!(eff.usePlan && planner.result && !planner.result.error) && !eff.amount) m.push('1번에서 결제할 금액(또는 목표 계획)')
     if (!eff.um) m.push('3번의 엄 시세')
-    if (!eff.prices[PG_ID] && !eff.mk) m.push('4번의 플가 가격이나 3번의 메소마켓')
+    if (!eff.prices[PG_ID] && !eff.mk && !eff.gift) m.push('4번의 플가 가격이나 3번의 메소마켓(또는 4번의 선물식)')
     return m
   })
 
@@ -310,6 +315,7 @@
     <div class="vs">
       {#if out.pgOnly}<div>플가만 ({out.pgOnly.sales}회)<b class="mono">{won(out.pgOnly.loss)}원</b>{@render vsSplit(out.pgOnly)}</div>{/if}
       {#if out.mkOnly}<div>전부 메소마켓 ({out.mkOnly.sales}회)<b class="mono">{won(out.mkOnly.loss)}원</b>{@render vsSplit(out.mkOnly)}</div>{/if}
+      {#if out.giftOnly}<div>전부 선물식 ({out.giftOnly.sales}회)<b class="mono">{won(out.giftOnly.loss)}원</b>{@render vsSplit(out.giftOnly)}</div>{/if}
     </div>
 
     {#if out.mode === 'plan'}
@@ -375,6 +381,12 @@
             <div class="dd">{(cur.route.market / eff.mk).toFixed(2)}억 메소{cur.route.lines.length ? (fillerOnly(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
           </li>
         {/if}
+        {#if cur.route.gift}
+          <li>
+            <div class="t">캐시 {won(cur.route.gift)} → 선물식으로 선물해 주고 {won(giftWon(cur.route))}원 받기 (1회)</div>
+            <div class="dd">1만 캐시당 {won(eff.gift)}원{cur.route.lines.length ? (giftFiller(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
+          </li>
+        {/if}
         {#if cur.credit && (cur.credit.buys.length || cur.credit.earned)}
           <li>
             {#if cur.credit.buys.length}
@@ -387,20 +399,22 @@
             {/if}
           </li>
         {/if}
-        <li>
-          <div class="t">메소 {(cur.route.meso + (cur.route.market && eff.mk ? cur.route.market / eff.mk : 0) + (cur.credit?.meso ?? 0)).toFixed(1)}억 → 엄 시세로 {won(cur.route.back + (cur.credit?.back ?? 0))}원</div>
-        </li>
+        {#if cur.route.back + (cur.credit?.back ?? 0) - giftWon(cur.route) > 0}
+          <li>
+            <div class="t">메소 {(cur.route.meso + (cur.route.market && eff.mk ? cur.route.market / eff.mk : 0) + (cur.credit?.meso ?? 0)).toFixed(1)}억 → 엄 시세로{eff.umFee ? ` (판매 수수료 ${eff.umFee}% 빼고)` : ''} {won(cur.route.back + (cur.credit?.back ?? 0) - giftWon(cur.route))}원</div>
+          </li>
+        {/if}
       </ol>
     </section>
 
     <p class="extra">
       {#if pick.pay > out.target}<span>{out.mode === 'plan' ? `메이플포인트를 1,000원 단위로만 살 수 있어서 계획보다 ${won(pick.pay - out.target)}원 더 결제해요` : `목표보다 ${won(pick.pay - out.target)}원 더 결제하는 게 더 남아서 그렇게 짰어요`}</span>{/if}
-      <span>엄 시세가 100원 내리면 {won(pick.back / eff.um * 100)}원 더 나가요</span>
+      <span>엄 시세가 100원 내리면 {won((pick.back - pick.weeks.reduce((a, w) => a + giftWon(w.route), 0)) / eff.um * 100)}원 더 나가요</span>
     </p>
   {:else}
     <div class="empty">
       <b>이 조건으로는 조합을 만들 수 없어요</b>
-      <span>아이템 가격이나 메소마켓 시세를 확인해 주세요.</span>
+      <span>아이템 가격이나 메소마켓 시세, 선물식 비율을 확인해 주세요.</span>
     </div>
   {/if}
 </article>

@@ -64,7 +64,14 @@ interface Saved {
   barcodeWant: number | null
   weekBarcode: Record<string, number>
   um: number
+  /** 메소를 현금으로 팔 때 붙는 수수료(%). 엄 시세에서 이만큼 빼고 받는다 */
+  umFee: number
   mk: number
+  /**
+   * 선물식: 1만 캐시어치를 선물해 주고 받는 현금(원). 0이면 안 쓴다.
+   * 할인 충전한 캐시로 남에게 캐시템(메이플포인트 상품)을 선물하고 돈을 바로 받는다. 메소를 거치지 않는다(2026-10-05 건의)
+   */
+  gift: number
   /** 값마다 마지막으로 넣은 때(ms). 오래된 시세로 계산하고 있는지 보여 준다 */
   at: Record<string, number>
   prices: Record<string, number>
@@ -116,7 +123,7 @@ function fresh(): Saved {
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), methods: [], plainOn: true, nexonLast: true,
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, mk: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
+    um: 0, umFee: 5, mk: 0, gift: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
   }
@@ -193,6 +200,9 @@ if (typeof document !== 'undefined') {
     if (document.visibilityState === 'hidden' && upTimer !== undefined) void pushNow()
   })
 }
+
+/** 엄 판매 수수료를 뺀, 1억 메소를 팔아 실제로 받는 돈 */
+export const umNet = () => eff.um * (1 - (eff.umFee ?? 0) / 100)
 
 /** 값을 넣은 때를 적는다 */
 export const touch = (k: string) => { eff.at[k] = Date.now() }
@@ -363,6 +373,7 @@ export interface EffOut {
   credit: { balance: number; items: CreditItem[]; keepRest: boolean } | null
   pgOnly: Summary | null
   mkOnly: Summary | null
+  giftOnly: Summary | null
   /** 성향별: 무기한 아이템만, 7일 아이템만, 비싼 아이템만 */
   waitOnly: Summary | null
   fastOnly: Summary | null
@@ -392,12 +403,14 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const all = sellables()
   const credit = eff.creditOn ? { balance: eff.creditBalance, items: creditItems(), keepRest: eff.creditKeep } : null
   // 같은 입력이면 앞서 계산한 것을 다시 쓴다. 루트·횟수·스위치만 바꿀 때는 조합을 다시 찾을 필요가 없다
-  const run = (items: Sellable[], fixedFor?: (i: number) => Combo | undefined, bestOnly = false) => {
+  // sink: 메소마켓·선물식 중 하나만 견줄 때(전부 메소마켓 / 전부 선물식)
+  const run = (items: Sellable[], fixedFor?: (i: number) => Combo | undefined, bestOnly = false,
+               sink: { mk: number; gift: number } = { mk: eff.mk, gift: eff.gift }) => {
     const input = {
       weeks, balance: eff.balance, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on, unit: m.unit })),
       leftNow: $state.snapshot(eff.leftNow), thisMonth: thisMonth(),
       barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: $state.snapshot(eff.weekBarcode),
-      um: eff.um, mk: eff.mk, items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn, nexonLast: eff.nexonLast,
+      um: umNet(), mk: sink.mk, gift: sink.gift / 10_000, items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn, nexonLast: eff.nexonLast,
     }
     const combos = fixedFor ? weeks.map((_, i) => fixedFor(i) ?? null) : null
     const key = JSON.stringify([input, combos])
@@ -448,9 +461,9 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const simple = linked && eff.want !== 'custom'
   const sel = simple ? (eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best) : compose(sets) ?? best
   const custom = hasCombo(eff.combo) ? (linked && eff.want === 'custom' ? sel : compose(weeks.map(() => ({ ...reachSet(), want: 'custom' as const })))) : null
-  const alt = (items: Sellable[]): Summary | null => {
-    if (!items.some(x => x.price > 0) && !eff.mk) return null
-    const r = run(items, undefined, true)
+  const alt = (items: Sellable[], sink = { mk: eff.mk, gift: eff.gift }): Summary | null => {
+    if (!items.some(x => x.price > 0) && !sink.mk && !sink.gift) return null
+    const r = run(items, undefined, true, sink)
     if (!r) return null
     const p = pickAt(r, null, credit)
     const part = (keep: boolean) => {
@@ -461,14 +474,17 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     return { loss: p.loss, sales: p.sales, split }
   }
   const priced = all.filter(x => x.price > 0)
+  const onlyMk = { mk: eff.mk, gift: 0 }
   const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
   return {
     mode, target: weeks.reduce((a, w) => a + w.amount, 0), use, useOver: left, weeks: res, curve, lo, hi, credit,
     best, knee: kp, count: cp, sel, custom, keepStarts,
-    pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID)) : null,
-    mkOnly: eff.mk > 0 ? alt([]) : null,
-    waitOnly: wait.length ? alt(wait) : null,
-    fastOnly: fast.length ? alt(fast) : null,
-    bigOnly: big.length ? alt(big) : null,
+    // 아이템 하나로만 하는 비교는 끝자리만 메소마켓으로 채운다. 선물식까지 넣으면 선물식이 나을 때 아이템을 안 사 '플가만'이 '전부 선물식'이 된다
+    pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID), onlyMk) : null,
+    mkOnly: eff.mk > 0 ? alt([], { mk: eff.mk, gift: 0 }) : null,
+    giftOnly: eff.gift > 0 ? alt([], { mk: 0, gift: eff.gift }) : null,
+    waitOnly: wait.length ? alt(wait, onlyMk) : null,
+    fastOnly: fast.length ? alt(fast, onlyMk) : null,
+    bigOnly: big.length ? alt(big, onlyMk) : null,
   }
 }

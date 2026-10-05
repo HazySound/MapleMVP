@@ -14,7 +14,7 @@
    * 빼기는 한 번에 되고 되돌릴 수 있다. 넣어 둔 가격은 남겨 둬서 다시 넣으면 그대로다.
    */
   import NumBox from './NumBox.svelte'
-  import { type BuyItem, addBuy, ageOf, buyTotal, catalog, eff, pickItem, removeBuy, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, unpickItem, updateBuy } from '../eff.svelte'
+  import { type BuyItem, addBuy, ageOf, buyTotal, catalog, eff, pickItem, removeBuy, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, umNet, unpickItem, updateBuy } from '../eff.svelte'
   import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
   import { eul, won } from '../format'
   import { tip } from '../tip'
@@ -109,12 +109,15 @@
 
   // 메소마켓도 같은 잣대로: 캐시 1원당 메소를 플가와 견준다
   const mkEff = $derived(pg && eff.mk ? (1 / eff.mk) / (pg * (1 - fee) / pgItem.cash) : 0)
+  // 선물식은 캐시 1원어치에 현금을 바로 받는다. 플가가 캐시 1원에 돌려주는 현금(엄 판매 수수료까지 뺀 것)과 견준다
+  const giftEff = $derived(pg && eff.um && eff.gift ? (eff.gift / 10_000) / (pg * (1 - fee) * umNet() / pgItem.cash) : 0)
+  const setGift = (v: number) => { eff.gift = Math.min(v, 10_000); touch('gift'); saveEff() }
   const setPrice = (id: string, v: number) => { if (v) eff.prices[id] = v; else delete eff.prices[id]; touch(`p:${id}`); saveEff() }
   /** 주당 최대 구매(회전율). 0이나 비우면 제한 없음 */
   const setCap = (id: string, v: number) => { if (v > 0) eff.caps[id] = Math.round(v); else delete eff.caps[id]; saveEff() }
   const fx = (v: number) => (Math.round(v * 100) / 100).toFixed(2)
   /** 플가의 회수율. 효율 e인 아이템의 회수율은 그 e배다(캐시 1원어치를 팔아 받는 돈) */
-  const pgRate = $derived(pg && eff.um ? pg * (1 - fee) * eff.um / pgItem.cash : 0)
+  const pgRate = $derived(pg && eff.um ? pg * (1 - fee) * umNet() / pgItem.cash : 0)
   const VIEWS = { ratio: '플가 몇 개', price: '플가 가격으로', rate: '회수율' } as const
   const head = $derived(({ ratio: '플가 대비', price: '플가로 치면', rate: '회수율' } as const)[eff.pgView])
   const pct = (e: number) => pgRate ? `${(e * pgRate * 100).toFixed(1)}%` : '—'
@@ -169,7 +172,7 @@
       <NumBox id="eff-pg" label="플가 경매장 가격(억)" size="lg" decimal unit="억" placeholder="예: 3.0" value={pg}
         set={v => setPrice(PG_ID, v)} />
       <span class="ef-hint">
-        {#if pg && eff.um}수수료 {Math.round(fee * 100)}% 빼고 1개당 <b>{won(pg * (1 - fee) * eff.um)}원</b> 회수 · 이 효율이 <b>1.00플가</b>{:else}플가 가격을 넣으면 다른 아이템의 기준 가격이 나와요{/if}
+        {#if pg && eff.um}수수료 {Math.round(fee * 100)}%{eff.umFee ? `·엄 판매 수수료 ${eff.umFee}%` : ''} 빼고 1개당 <b>{won(pg * (1 - fee) * umNet())}원</b> 회수 · 이 효율이 <b>1.00플가</b>{:else}플가 가격을 넣으면 다른 아이템의 기준 가격이 나와요{/if}
       </span>
       {#if ageOf(`p:${PG_ID}`)}<span class="ef-hint">{ageOf(`p:${PG_ID}`)}</span>{/if}
     </div>
@@ -255,6 +258,16 @@
               <td class="mono c-cash">—</td><td class="mono c-cap">—</td><td class="mono c-min">—</td><td class="ef-hint r c-price">3번 칸의 시세로</td>
               <td class="mono eff c-eff" class:up={mkEff >= 1} class:down={mkEff > 0 && mkEff < 1}>
                 {#if mkEff}<span use:tip={other(mkEff)}>{cell(mkEff)}</span>{:else}—{/if}
+              </td>
+            </tr>
+            <tr class="mk">
+              <td><span class="name mkn">선물식<small>캐시템을 선물해 주고 현금으로 받기 · 1만 캐시당 받는 돈</small></span></td>
+              <td class="mono c-cash">—</td><td class="mono c-cap">—</td><td class="mono c-min">—</td>
+              <td class="in c-price">
+                <NumBox id="eff-gift" label="선물식 1만 캐시당 받는 돈(원)" size="sm" unit="원" placeholder="예: 7,000" value={eff.gift} set={setGift} />
+              </td>
+              <td class="mono eff c-eff" class:up={giftEff >= 1} class:down={giftEff > 0 && giftEff < 1}>
+                {#if giftEff}<span use:tip={other(giftEff)}>{cell(giftEff)}</span>{:else}—{/if}
               </td>
             </tr>
           </tbody>

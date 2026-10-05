@@ -7,7 +7,7 @@
    * 계획을 따르면 주마다 쌓이는 크레딧을 모아 가며 가장 효율적으로 턴다.
    */
   import NumBox from './NumBox.svelte'
-  import { addCreditItem, creditItems, eff, removeCreditItem, saveEff, type EffOut } from '../eff.svelte'
+  import { addCreditItem, creditItems, eff, removeCreditItem, saveEff, umNet, type EffOut } from '../eff.svelte'
   import { CREDIT_RATE, daysLabel } from '../core/efficiency'
   import { won } from '../format'
   import { tip } from '../tip'
@@ -16,7 +16,7 @@
 
   const items = $derived(creditItems())
   /** 크레딧 1만 개당 돌려받는 돈 */
-  const per10k = (x: { price: number; credits: number }) => x.price && eff.um ? x.price * (1 - fee) * eff.um / x.credits * 10_000 : 0
+  const per10k = (x: { price: number; credits: number }) => x.price && eff.um ? x.price * (1 - fee) * umNet() / x.credits * 10_000 : 0
   const bestId = $derived([...items].filter(x => x.price > 0).sort((a, b) => b.price / b.credits - a.price / a.credits)[0]?.id)
 
   // 지금 고른 루트에서 쌓이고 쓰는 크레딧

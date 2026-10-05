@@ -633,3 +633,29 @@ describe('메이플 크레딧', () => {
     near(p.creditLeft, 95)
   })
 })
+
+describe('선물식', () => {
+  // 엄 1,500원, 메소마켓 1억 = 2,250메포 → 캐시 1원에 0.667원. 선물식 1만 캐시당 7,000원 → 0.7원
+  const base = { costOf: (c: number) => c * 0.9, fee: 0.03, um: 1500, mk: 2250, items: [], exact: true, bestOnly: true }
+  it('메소마켓보다 더 받으면 남는 금액을 선물식으로 채우고, 현금을 그대로 받는다', () => {
+    const s = solve({ ...base, target: 100_000, gift: 0.7 })!
+    expect(s.best.gift).toBe(100_000)
+    expect(s.best.market).toBe(0)
+    near(s.best.back, 70_000)
+    expect(s.best.sales).toBe(1)
+  })
+  it('메소마켓이 더 받으면 메소마켓을 쓴다', () => {
+    const s = solve({ ...base, target: 100_000, gift: 0.6 })!
+    expect(s.best.market).toBe(100_000)
+    expect(s.best.gift).toBe(0)
+  })
+  it('플가가 더 남으면 플가를 사고 나머지만 선물식', () => {
+    // 플가 3억 × 0.97 × 1,500원 = 4,365원 / 5,900캐시 = 캐시 1원에 0.74원 > 선물식 0.7원.
+    // 10만 원에 딱 맞추려면(선물식은 1,000원 단위) 플가 10개 + 선물식 41,000이 가장 많이 남는다
+    const s = solve({ ...base, target: 100_000, gift: 0.7, items: [karma] })!
+    expect(s.best.lines[0].item.id).toBe('karma')
+    expect(s.best.gift % 1000).toBe(0)
+    expect(s.best.lines[0].n * 5900 + s.best.gift).toBe(100_000)
+    near(s.best.back, s.best.lines[0].n * 3 * 0.97 * 1500 + s.best.gift * 0.7)
+  })
+})

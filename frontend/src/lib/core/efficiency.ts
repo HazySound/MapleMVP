@@ -236,11 +236,13 @@ export interface Route {
   /** 돌려받는 현금 */
   back: number
   loss: number
-  /** 경매장 판매 횟수 (메소마켓은 1회로 센다) */
+  /** 경매장 판매 횟수 (메소마켓·선물식은 1회로 센다) */
   sales: number
   lines: Line[]
   /** 메이플포인트로 사서 메소마켓에 파는 캐시 */
   market: number
+  /** 선물식: 캐시템(메이플포인트 상품)을 선물해 주고 현금으로 바로 받는 캐시. 메소를 거치지 않는다 */
+  gift: number
   fee: number
   /** 경매장에서 받는 메소(억, 수수료 뺀 것) */
   meso: number
@@ -258,6 +260,8 @@ export interface SolveIn {
   /** 엄 시세(1억 메소당 원), 메소마켓(1억 메소당 메포) */
   um: number
   mk: number
+  /** 선물식: 캐시 1원어치를 선물하고 받는 현금(1만 캐시당 7,000원이면 0.7). 0이면 안 쓴다 */
+  gift?: number
   items: Sellable[]
   /** 계획을 따를 때는 결제액을 목표와 똑같이 맞춘다 */
   exact: boolean
@@ -295,8 +299,12 @@ export function solve(o: SolveIn): Solved | null {
   const capOf = (j: number) => forced(j) ?? usable[j].x.cap
   const freeIdx = usable.flatMap((_, j) => (capOf(j) == null ? [j] : []))
   const capIdx = usable.flatMap((_, j) => (capOf(j) != null ? [j] : []))
-  const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
-  // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다. 조합을 고를 때는 그 값까지 본다
+  // 메소마켓과 선물식은 둘 다 아무 금액이나(1,000원 단위) 채우는 길이다. 캐시당 더 남는 쪽 하나만 쓴다
+  const mkWon = o.mk > 0 ? U / o.mk * o.um : 0
+  const giftWon = (o.gift ?? 0) > 0 ? U * o.gift! : 0
+  const isGift = giftWon > mkWon
+  const mk1 = Math.max(mkWon, giftWon)
+  // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다(선물도 캐시샵 결제). 조합을 고를 때는 그 값까지 본다
   const mkVal = mk1 ? mk1 + U * CREDIT_RATE * cp : 0
   const need = Math.ceil(o.target / U)
   if (need <= 0) return null
@@ -350,7 +358,8 @@ export function solve(o: SolveIn): Solved | null {
     }
     lines.sort((a, b) => b.n * b.item.cash - a.n * a.item.cash)
     const c = cost[pay / U], creditEst = credits * cp
-    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market, fee: o.fee, meso, credits, creditEst }
+    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market: isGift ? 0 : market, gift: isGift ? market : 0,
+             fee: o.fee, meso, credits, creditEst }
   }
   const comboCounts = (c: Combo) => new Map(capIdx.map((j, i) => [j, c.cnt[i]] as [number, number]))
 
@@ -483,7 +492,7 @@ export function solve(o: SolveIn): Solved | null {
 
 /** MVP작할 몫이 없는 주(구매용이 결제액 전부). 사는 것도 파는 것도 없다 */
 function nothing(fee: number): Solved {
-  const r: Route = { pay: 0, cost: 0, back: 0, loss: 0, sales: 0, lines: [], market: 0, fee, meso: 0, credits: 0, creditEst: 0 }
+  const r: Route = { pay: 0, cost: 0, back: 0, loss: 0, sales: 0, lines: [], market: 0, gift: 0, fee, meso: 0, credits: 0, creditEst: 0 }
   return { best: r, lossAt: [0], routeAt: () => r }
 }
 
@@ -537,6 +546,8 @@ export interface Plan {
   weekBarcode: Record<string, number>
   um: number
   mk: number
+  /** 선물식: 캐시 1원어치를 선물하고 받는 현금. 0이면 안 쓴다 */
+  gift?: number
   items: Sellable[]
   /** 수수료를 직접 정했으면 그 값. 아니면 주마다 오를 등급으로 */
   fee: number | null
@@ -689,7 +700,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     const costOf = use ? (c: number) => (c > 0 ? costAll(c + use) * c / (c + use) : 0) : costAll
     const goal = w.amount - use
     const solved = goal > 0
-      ? solve({ target: goal, costOf, fee, um: p.um, mk: p.mk, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
+      ? solve({ target: goal, costOf, fee, um: p.um, mk: p.mk, gift: p.gift, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
       : nothing(fee)
     if (!solved) return null
     spend(st, wi, fund(solved.best.pay + use, ctx))
