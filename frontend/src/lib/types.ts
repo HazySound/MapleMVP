@@ -40,6 +40,8 @@ export interface PcRoomScan {
   /** carries마다 몇 번 그렇게 읽혔는지 */
   carryVotes?: number[]
   amounts: number[]
+  /** amounts 중 왼쪽에 '등급까지'가 보인 것(상단 금액) */
+  panel?: number[]
   scale: number
   /** 블랙 툴팁 맨 아래 이월 잔액. 못 읽으면 null */
   balance?: number | null

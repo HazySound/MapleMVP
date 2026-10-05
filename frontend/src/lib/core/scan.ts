@@ -26,6 +26,8 @@ export interface ScanRaw {
   /** carries마다 몇 번 그렇게 읽혔는지 */
   carryVotes?: number[]
   amounts: number[]       // 화면에서 읽은 숫자 후보
+  /** amounts 중 바로 왼쪽에 '등급까지'가 있는 것(상단 '○○ 등급까지' 금액) */
+  panel?: number[]
   scale: number
   /** 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월'의 지금 잔액. 못 읽으면 null */
   balance?: number | null
@@ -44,6 +46,8 @@ export interface Solved {
   relaxed?: boolean
   /** 상단 '○○ 등급까지'로 볼 수 있는 숫자가 여럿이라 사용자가 골라야 한다. 그동안 total은 null */
   choices?: TotalPick[]
+  /** choices가 하나뿐인데 확인을 받는다: '등급까지' 글자를 못 찾아 아무 숫자일 수 있고, 그 숫자로 앞쪽 묶음 주가 정해진다 */
+  confirm?: boolean
 }
 
 /** '○○ 등급까지' 후보 하나: 지금 등급 기준과 거기서 나오는 13주 합계 */
@@ -184,6 +188,20 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
   return '어느 등급 기준에도 들어맞지 않아요.'
 }
 
+/**
+ * 합계('○○ 등급까지')로 대 볼 숫자. 금액 왼쪽에 '등급까지'가 보였으면 그 숫자만 쓴다.
+ * 화면 아무 데서나 주운 숫자도 툴팁 앞줄이 0이면 우연히 검사를 통과한다(2026-10-05 제보: 41,110 → 네 주에 PC방 470,800원)
+ */
+export const topAmounts = (scan: Pick<ScanRaw, 'amounts' | 'panel'>) => (scan.panel?.length ? scan.panel : scan.amounts)
+
+/**
+ * 답이 하나여도 사용자에게 물어야 하는지. '등급까지' 글자를 못 찾아 화면 아무 숫자였을 수 있고, 툴팁 앞줄이 0이라
+ * 그 숫자가 앞쪽 묶음 주의 합을 정한다(묶음은 검사할 게 거의 없어 틀린 숫자도 통과한다)
+ */
+export function unsureTotal(scan: Pick<ScanRaw, 'panel'>, needs: number[], p: TotalPick, carry: number[] = NO_CARRY): boolean {
+  return !scan.panel?.length && restore(needs, p.tierTh, p.total, null, carry).blocks.length > 0
+}
+
 /** 화면에서 읽은 숫자 하나가 '○○ 등급까지'라고 가정했을 때 앞뒤가 맞는지 본다. */
 export function totalsFor(needs: number[], collected: number[], amounts: number[],
                           carry: number[] = NO_CARRY, loose: boolean[] = [], ref: Known = {}): Set<string> {
@@ -257,10 +275,11 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   if (!count.size) {
     // 툴팁이 없는 장. 먼저 읽어 둔 값으로 합계만 채운다. 블랙은 채울 합계가 화면에 없다
     if (!prev || isTop(prev)) return prev
-    const picks = pickTotal(prev.needs, collected, totalsFor(prev.needs, collected, scan.amounts, prev.carry, loose, ref),
+    const picks = pickTotal(prev.needs, collected, totalsFor(prev.needs, collected, topAmounts(scan), prev.carry, loose, ref),
                             prev.carry)
     if (!picks.length) return { ...prev, scale: prev.scale }
     if (picks.length > 1) return { ...prev, total: null, choices: picks, scale: prev.scale }
+    if (unsureTotal(scan, prev.needs, picks[0], prev.carry)) return { ...prev, total: null, choices: picks, confirm: true, scale: prev.scale }
     return { ...prev, ...picks[0], choices: undefined, scale: prev.scale }
   }
 
@@ -282,10 +301,10 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
   const solved: { s: Solved; n: number }[] = []
   for (const [k, n] of ranked) {
     const [needs, carry] = unkey(k)
-    const picks = pickTotal(needs, collected, totalsFor(needs, collected, scan.amounts, carry, loose, ref), carry)
+    const picks = pickTotal(needs, collected, totalsFor(needs, collected, topAmounts(scan), carry, loose, ref), carry)
     if (!picks.length) continue
-    solved.push({ n, s: picks.length === 1 ? { needs, carry, scale, ...picks[0] }
-      : { needs, carry, scale, tierTh: picks[0].tierTh, total: null, choices: picks } })
+    solved.push({ n, s: picks.length === 1 && !unsureTotal(scan, needs, picks[0], carry) ? { needs, carry, scale, ...picks[0] }
+      : { needs, carry, scale, tierTh: picks[0].tierTh, total: null, choices: picks, ...(picks.length === 1 ? { confirm: true } : {}) } })
   }
   if (solved.length) {
     const sig = (s: Solved) => `${key(s.needs, s.carry)}|${s.total}|${(s.choices ?? []).map(c => c.total)}`
@@ -318,7 +337,7 @@ function relaxedPick(scan: ScanRaw, collected: number[], scale: number, wasBlack
     const th = THS[i]
     const now = th - last
     if (th < last || (now < collected[collected.length - 1] && now !== 0)) continue
-    for (const a of scan.amounts) {
+    for (const a of topAmounts(scan)) {
       const total = THS[i + 1] - a
       // 캐시 금액은 10원 단위다. 1원 단위로 읽힌 건 화면의 다른 글자를 주운 것이다
       if (a > 0 && a % 10 === 0 && total >= th && !picks.some(p => p.tierTh === th && p.total === total)) picks.push({ tierTh: th, total })

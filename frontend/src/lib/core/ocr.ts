@@ -7,6 +7,7 @@
  * 여기서는 판단하지 않고 후보만 내놓는다. 무엇이 맞는지는 core/scan.ts가 고른다.
  */
 import templates from './ocr.templates.json'
+import gradeTpl from './ocr.anchor.json'
 
 export const ROWS = 12          // 툴팁 줄 수
 const SPACING = 54.2            // 기준 배율에서의 줄 간격 (픽셀)
@@ -503,7 +504,7 @@ function readAmounts(g: Gray, t: Table, th: number, blurR: number | null,
 
 /** 화면에서 '숫자 여러 개가 붙어 있는 덩어리'를 모두 찾는다. */
 /** 이미 표에서 읽은 자리. 그 칸만 빼고, 같은 높이의 다른 곳은 건드리지 않는다 */
-interface Skip { x0: number; x1: number; rows: [number, number][] }
+export interface Skip { x0: number; x1: number; rows: [number, number][] }
 
 function digitClusters(g: Gray, scale: number, skip?: Skip,
                        win = 360, step = 60) {
@@ -556,8 +557,11 @@ function digitClusters(g: Gray, scale: number, skip?: Skip,
  * 나온 판독까지 후보로 넘기면 오독이 섞인다(가장 낮은 기준에서 '3'·'6'이 붙어 여섯 자리가 네 자리로
  * 읽혔다). 그래서 자리마다 가장 많이 나온 판독만 남긴다. 표가 같게 갈리면 둘 다 남긴다.
  */
-function findAmounts(g: Gray, scale: number, skip?: Skip): number[] {
-  const vals = new Set<number>()
+/** 화면에서 읽은 숫자 하나와 그 자리 */
+export interface Spot { v: number; x0: number; x1: number; y0: number; y1: number }
+
+export function amountSpots(g: Gray, scale: number, skip?: Skip): Spot[] {
+  const out: Spot[] = []
   for (const c of digitClusters(g, scale, skip)) {
     const tally = new Map<number, number>()
     for (const th of [...THRESHOLDS, 235, 245]) {
@@ -569,9 +573,75 @@ function findAmounts(g: Gray, scale: number, skip?: Skip): number[] {
       }
     }
     const top = Math.max(0, ...tally.values())
-    for (const [v, n] of tally) if (n === top) vals.add(v)
+    for (const [v, n] of tally) if (n === top) out.push({ v, ...c })
   }
-  return [...vals].sort((a, b) => a - b)
+  return out
+}
+
+/**
+ * 툴팁 상단 '○○ 등급까지 N 캐시'의 '등급까지' 네 글자. 숫자만 보면 화면 아무 데서나 주운 숫자(채팅·아이콘의 숫자)도
+ * 합계 후보가 되고, 툴팁 앞줄이 0이면 그중 우연히 검사를 통과하는 것이 있다(2026-10-05 제보: 41,110을 '블랙까지'로 잡아
+ * 네 주 묶음에 PC방 470,800원). 금액 바로 왼쪽에 이 글자가 있는지로 상단 금액을 가린다.
+ * 옆 줄 '○○ 등급 유지까지'는 앞 두 글자가 달라 걸러진다(지금까지 받은 캡처 21장에서 맞는 줄 0.74 이상, 아닌 줄 0.58 이하)
+ */
+const GRADE_MATCH = 0.65
+const GRADE: Float32Array = (() => {
+  const bin = atob(gradeTpl.data)
+  const a = new Float32Array(bin.length)
+  for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i)
+  return a
+})()
+/** 배율마다 줄이거나 늘린 '등급까지'. 평균을 빼 두고 크기도 같이 */
+const gradeAt = new Map<string, { d: Float32Array; w: number; h: number; norm: number }>()
+function gradeFor(k: number) {
+  const w = Math.max(8, Math.round(gradeTpl.width * k)), h = Math.max(4, Math.round(gradeTpl.height * k))
+  const key = `${w}x${h}`
+  let t = gradeAt.get(key)
+  if (!t) {
+    const d = resample(GRADE, gradeTpl.width, gradeTpl.height, w, h)
+    let m = 0
+    for (const v of d) m += v
+    m /= d.length
+    let n = 0
+    for (let i = 0; i < d.length; i++) { d[i] -= m; n += d[i] * d[i] }
+    t = { d, w, h, norm: Math.sqrt(n) }
+    gradeAt.set(key, t)
+  }
+  return t
+}
+
+/** 금액 왼쪽에서 '등급까지'와 가장 닮은 곳의 정규화 상관(1이면 같다) */
+export function gradeScore(g: Gray, s: Spot, scale: number): number {
+  const k = scale / gradeTpl.scale
+  const t = gradeFor(k)
+  if (!t.norm) return 0
+  const { width: W, height: H } = g
+  const yc = (s.y0 + s.y1) / 2
+  const dyMax = Math.round(6 * k) + 1
+  let best = -1
+  for (let dy = -dyMax; dy <= dyMax; dy++) {
+    const y = Math.round(yc - t.h / 2 + dy)
+    if (y < 0 || y + t.h > H) continue
+    for (let xr = s.x0 - Math.round(160 * k); xr < s.x0 - Math.round(30 * k); xr++) {
+      const x = xr - t.w
+      if (x < 0) continue
+      let sum = 0
+      for (let j = 0; j < t.h; j++) { const r = (y + j) * W + x; for (let i = 0; i < t.w; i++) sum += g.data[r + i] }
+      const m = sum / (t.w * t.h)
+      let num = 0, den = 0
+      for (let j = 0; j < t.h; j++) {
+        const r = (y + j) * W + x
+        for (let i = 0; i < t.w; i++) { const v = g.data[r + i] - m; num += v * t.d[j * t.w + i]; den += v * v }
+      }
+      if (den > 0) best = Math.max(best, num / (Math.sqrt(den) * t.norm))
+    }
+  }
+  return best
+}
+
+/** '○○ 등급까지' 줄의 금액. 화면에 그 줄이 없거나(블랙, 툴팁에 가림) 못 찾으면 빈 목록 */
+function panelAmounts(g: Gray, spots: Spot[], scale: number): number[] {
+  return [...new Set(spots.filter(s => gradeScore(g, s, scale) >= GRADE_MATCH).map(s => s.v))]
 }
 
 export interface ScanResult {
@@ -583,6 +653,8 @@ export interface ScanResult {
   /** carries마다 몇 번 그렇게 읽혔는지 */
   carryVotes?: number[]
   amounts: number[]
+  /** amounts 중 바로 왼쪽에 '등급까지'가 있는 것(상단 '○○ 등급까지' 금액). 찾았으면 합계는 이것으로만 따진다 */
+  panel?: number[]
   scale: number
   /** 블랙 툴팁 맨 아래 'MVP 블랙 구매 금액 이월 N / 10,000,000'의 N(지금 이월 잔액). 못 읽으면 null */
   balance?: number | null
@@ -720,9 +792,13 @@ function cashAfter(g: Gray, t: Table): boolean {
 /** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
+  const spotsOf = (scale: number, skip?: Skip) => {
+    const sp = amountSpots(g, scale, skip)
+    return { amounts: [...new Set(sp.map(x => x.v))].sort((a, b) => a - b), panel: panelAmounts(g, sp, scale) }
+  }
   const found = (t: Table, { readings, votes }: { readings: number[][]; votes: number[] }): ScanResult =>
     ({ readings, votes, scale: t.scale, ...rightColumns(g, tables, t),
-       amounts: findAmounts(g, t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }), balance: readBalance(g, tables, t) })
+       ...spotsOf(t.scale, { x0: t.x0, x1: t.x1, rows: t.rows }), balance: readBalance(g, tables, t) })
   // 금액 열은 아래로 갈수록 줄지 않는다. 앞 줄이 '0 캐시'로 짧으면 '1 주차 뒤' 열이 더 표처럼 보여
   // 먼저 잡히는데, 그 한글을 숫자로 잘못 읽은 것은 들쭉날쭉하다. 줄지 않는 판독이 나오는 열을 먼저 쓴다.
   // 다만 12줄이 모두 같은 등급('다이아')이면 그 열이 늘 같은 숫자(601)로 읽혀 줄지 않는 열이 된다.
@@ -742,5 +818,5 @@ export function scan(g: Gray, fallbackScale = 0): ScanResult {
   if (first) return first
   // 툴팁이 없는 장 (마우스를 치우면 표가 사라진다) — 숫자만 뽑아 둔다
   const sc = fallbackScale || 1
-  return { readings: [], carries: [], scale: sc, amounts: findAmounts(g, sc) }
+  return { readings: [], carries: [], scale: sc, ...spotsOf(sc) }
 }

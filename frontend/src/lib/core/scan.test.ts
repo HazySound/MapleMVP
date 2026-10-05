@@ -300,10 +300,18 @@ describe('넥슨이 결제를 다음 주로 센 경우 (실버)', () => {
   })
 
   it("상단 '골드 등급까지 233,271'과 합쳐 한 장으로 풀린다", () => {
-    const s = solveScan({ readings: [TIP], amounts: [1_141, 233_271], scale: 1 }, SPENT, null, [], { items: ITEMS })!
+    // 233,271 왼쪽에 '등급까지'가 보였다(판독기가 panel로 넘긴다)
+    const s = solveScan({ readings: [TIP], amounts: [1_141, 233_271], panel: [233_271], scale: 1 }, SPENT, null, [], { items: ITEMS })!
     expect(s).not.toBeNull()
     expect(s.tierTh).toBe(300_000)
     expect(s.total).toBe(600_000 - 233_271)
+  })
+
+  it("'등급까지'를 못 찾았으면 답이 하나여도 앞쪽 0줄 묶음이 걸리니 확인받는다", () => {
+    const s = solveScan({ readings: [TIP], amounts: [1_141, 233_271], scale: 1 }, SPENT, null, [], { items: ITEMS })!
+    expect(s.total).toBeNull()
+    expect(s.confirm).toBe(true)
+    expect(s.choices).toEqual([{ tierTh: 300_000, total: 600_000 - 233_271 }])
   })
 })
 

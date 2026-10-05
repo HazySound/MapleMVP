@@ -161,8 +161,11 @@
     for (const x of b0.rows) if (x.id && coupons.has(x.id)) movedIn[coupons.get(x.id)!] = (movedIn[coupons.get(x.id)!] ?? 0) + x.price
     // 넥슨이 다음 주로 센 결제도 그 주로 옮긴다. 쿠폰을 옮기고 남은 차이로 본다. 옮기지 않으면 앞 주는
     // '안 들어간 결제', 다음 주는 '100의 배수 아님'으로 갈려 막힌다(2026-10-03 제보: 9/16 693원 → 9/17 주)
+    // 블랙이거나 이월이 쓰인 주는 빼고 본다. 기준을 넘긴 결제가 이월로 가 앞 주가 적고, 다음 주는 갱신 때 쓴 이월로
+    // 크게 잡혀 '넘어간 결제'처럼 보인다. 그렇게 옮기면 그 주가 한 주에 들어갈 수 없는 PC방으로 막혔다(2026-10-05 확인)
     const b1 = coupons.size ? buildBase(withMoves(b0.rows, coupons), b0.saved) : b0
-    moves = new Map([...coupons, ...placeMoved(b1, r.weeks, r.unknown)])
+    const noMove = isTop || prev?.relaxed ? [] : [...r.unknown, ...b1.used13.flatMap((u, i) => (u > 0 ? [i] : []))]
+    moves = new Map([...coupons, ...(isTop || prev?.relaxed ? [] : placeMoved(b1, r.weeks, noMove))])
     const rowsNow = withMoves(b0.rows, moves)
     const b = moves.size ? buildBase(rowsNow, b0.saved) : b0
     couponWeeks = Object.fromEntries(rowsNow.filter(isCoupon).map(x => [weekStart(x.date), true]))
@@ -412,7 +415,9 @@
       nextIndex = choiceOf(s.choices[0]).i
       result = null
       scanPartial = true
-      scanMsg = "상단 '○○ 등급까지' 금액이 여러 숫자로 읽혔어요. 인게임 화면과 같은 숫자를 골라 주세요."
+      scanMsg = s.confirm
+        ? `상단 '○○ 등급까지' 글자를 찾지 못해 화면의 숫자로 짐작했어요. 인게임과 같으면 눌러 주시고, 다르면 직접 입력해 주세요.`
+        : "상단 '○○ 등급까지' 금액이 여러 숫자로 읽혔어요. 인게임 화면과 같은 숫자를 골라 주세요."
       return
     }
     choices = null

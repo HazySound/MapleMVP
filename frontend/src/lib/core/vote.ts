@@ -11,7 +11,7 @@
  * 뒤따르는 프레임의 근거가 되면 틀린 답이 표를 쌓는다.
  */
 import { type Known, NO_CARRY } from './pcroom'
-import { type ScanRaw, type Solved, type TotalPick, isTop, pickTotal, solveScan, totalsFor } from './scan'
+import { type ScanRaw, type Solved, type TotalPick, isTop, pickTotal, solveScan, topAmounts, totalsFor, unsureTotal } from './scan'
 
 export interface VoteState {
   frames: number          // 지금까지 본 프레임 수
@@ -38,7 +38,7 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
   // 한 프레임에서 합계 후보가 여럿 나온 경우. 같은 목록이 이어지면 사용자에게 고르게 넘긴다
   const choiceHits = new Map<string, number>()
   const choiceLists = new Map<string, TotalPick[]>()
-  let waiting: number[][] | null = []      // 툴팁이 정해지기 전에 본 숫자들
+  let waiting: [number[], number[]][] | null = []      // 툴팁이 정해지기 전에 본 숫자들(과 그중 '등급까지' 옆 숫자)
   let frames = 0
   let seen = 0
   let scale = 1
@@ -48,10 +48,11 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
   let partial: Solved | null = null
 
   /** 상단 패널이 찍힌 프레임에서 합계를 찾는다. 답이 갈리는 프레임은 버린다. */
-  function addAmounts(amounts: number[]) {
+  /** panel: 이 숫자들이 '등급까지' 옆에서 읽힌 것인지. 아니면 답이 하나여도 사용자에게 확인받는다 */
+  function addAmounts(amounts: number[], panel: number[] = []) {
     if (!needs || !amounts.length) return
     const picks = pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose, known), carry)
-    if (picks.length > 1) {
+    if (picks.length > 1 || (picks.length === 1 && unsureTotal({ panel }, needs, picks[0], carry))) {
       const key = picks.map(p => `${p.tierTh}:${p.total}`).join('|')
       choiceLists.set(key, picks)
       choiceHits.set(key, (choiceHits.get(key) ?? 0) + 1)
@@ -71,7 +72,7 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
       const c = [...choiceHits.entries()].sort((a, b) => b[1] - a[1])[0]
       if (c && c[1] >= agree) {
         const choices = choiceLists.get(c[0])!
-        solved = { needs, tierTh: choices[0].tierTh, total: null, carry, scale, choices }
+        solved = { needs, tierTh: choices[0].tierTh, total: null, carry, scale, choices, ...(choices.length === 1 ? { confirm: true } : {}) }
       }
       return
     }
@@ -100,14 +101,14 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
           needs = s.needs
           carry = s.carry
           partial = s          // 합계를 못 채우고 끝나도 12줄은 남는다
-          for (const a of waiting!) addAmounts(a)   // 모아 둔 것을 한 번에 훑는다
+          for (const [a, p] of waiting!) addAmounts(a, p)   // 모아 둔 것을 한 번에 훑는다
           waiting = null
         }
       }
     }
 
-    if (needs) addAmounts(raw.amounts)
-    else waiting!.push(raw.amounts)
+    if (needs) addAmounts(topAmounts(raw), raw.panel)
+    else waiting!.push([topAmounts(raw), raw.panel ?? []])
 
     settle()
     return state()
