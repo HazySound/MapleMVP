@@ -241,7 +241,7 @@ export interface Route {
   lines: Line[]
   /** 메이플포인트로 사서 메소마켓에 파는 캐시 */
   market: number
-  /** 선물식: 캐시템(메이플포인트 상품)을 선물해 주고 현금으로 바로 받는 캐시. 메소를 거치지 않는다 */
+  /** 선물식: 캐시템(메이플포인트 상품)을 선물해 주고 현금으로 바로 받는 캐시. 메소를 거치지 않고 크레딧도 안 쌓인다 */
   gift: number
   fee: number
   /** 경매장에서 받는 메소(억, 수수료 뺀 것) */
@@ -310,7 +310,8 @@ export function solve(o: SolveIn): Solved | null {
   const g = o.gift && o.gift.rate > 0 && o.gift.unit > 0 ? o.gift : null
   if (g) {
     const gx: Sellable = { id: GIFT_ID, name: '선물식', set: 1, cash: g.unit, price: 0 }
-    usable.push({ x: gx, u: Math.round(g.unit / U), back: g.unit * g.rate, val: g.unit * g.rate + g.unit * CREDIT_RATE * cp })
+    // 선물은 MVP 실적에는 들어가도 메이플 크레딧은 쌓이지 않는다(2026-10-05 사용자)
+    usable.push({ x: gx, u: Math.round(g.unit / U), back: g.unit * g.rate, val: g.unit * g.rate })
   }
   const isGift = (j: number) => usable[j].x.id === GIFT_ID
   /** 선물식은 한 번에 이 묶음 수 이상 */
@@ -369,7 +370,7 @@ export function solve(o: SolveIn): Solved | null {
     const lines: Line[] = []
     for (const [j, n] of counts) {
       if (!n) continue
-      if (isGift(j)) { gift = n * usable[j].x.cash; back += n * usable[j].back; sales++; credits += gift * CREDIT_RATE; continue }
+      if (isGift(j)) { gift = n * usable[j].x.cash; back += n * usable[j].back; sales++; continue }
       back += n * usable[j].back; sales += n; meso += n * usable[j].x.price * (1 - o.fee)
       credits += n * usable[j].x.cash * CREDIT_RATE
       lines.push({ item: usable[j].x, n })

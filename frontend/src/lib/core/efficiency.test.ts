@@ -702,3 +702,20 @@ describe('직접 짜기의 선물식', () => {
   })
 })
 
+describe('선물식과 크레딧', () => {
+  it('선물식으로 쓴 캐시는 크레딧이 쌓이지 않는다', () => {
+    const base = { costOf: (c: number) => c * 0.9, fee: 0.03, um: 1500, mk: 0, items: [], exact: true, bestOnly: true, creditPer: 1 }
+    const s = solve({ ...base, target: 100_000, gift: { rate: 0.7, unit: 10_000, min: 10_000 } })!
+    expect(s.best.gift).toBe(100_000)
+    expect(s.best.credits).toBe(0)
+    expect(s.best.creditEst).toBe(0)
+  })
+  it('크레딧 값이 있으면 그만큼 다른 길(메소마켓·아이템)이 유리해진다', () => {
+    // 메소마켓 0.667원 + 크레딧 5% × 1원 = 0.717원 > 선물식 0.7원
+    const base = { costOf: (c: number) => c * 0.9, fee: 0.03, um: 1500, mk: 2250, items: [], exact: true, bestOnly: true, creditPer: 1 }
+    const s = solve({ ...base, target: 100_000, gift: { rate: 0.7, unit: 10_000, min: 10_000 } })!
+    expect(s.best.gift).toBe(0)
+    expect(s.best.market).toBe(100_000)
+  })
+})
+

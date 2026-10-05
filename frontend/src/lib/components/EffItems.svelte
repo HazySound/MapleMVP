@@ -262,7 +262,7 @@
             </tr>
             <tr class="mk">
               <td>
-                <span class="name mkn">선물식<small>캐시템을 선물해 주고 현금으로 받기 · 1만 캐시당 받는 돈</small></span>
+                <span class="name mkn">선물식<small>캐시템을 선물해 주고 현금으로 받기 · 크레딧은 안 쌓여요 · 1만 캐시당 받는 돈</small></span>
                 <!-- 사고파는 사람이 있는 단위·최소 금액으로만 거래한다 -->
                 <span class="gopt">
                   <label for="eff-gift-unit">단위</label>
