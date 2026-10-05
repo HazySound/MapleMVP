@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { balancePoint, creditWonPer, fund, minPrice, pickAt, planAll, plainRateOf, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
+import { GIFT_ID, balancePoint, creditWonPer, fund, minPrice, pickAt, planAll, plainRateOf, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
 
 const near = (a: number, b: number, eps = 0.5) => expect(Math.abs(a - b)).toBeLessThanOrEqual(eps)
 
@@ -676,3 +676,29 @@ describe('선물식', () => {
     expect(t.best.gift).toBe(60_000)
   })
 })
+
+describe('직접 짜기의 선물식', () => {
+  // 선물식 0.75원(1만 캐시당 7,500원)이 플가(0.74원)보다 조금 낫다
+  const run = (combo?: Record<string, number | null>) => planAll({
+    weeks: [{ start: '2026-10-08', amount: 100_000, tier: 'silver', month: '2026-10' }],
+    balance: 0, cards: [], leftNow: {}, thisMonth: '2026-10',
+    barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+    um: 1500, mk: 2250, gift: { rate: 0.75, unit: 10_000, min: 10_000 }, items: [karma], fee: 0.03, exact: true, nexonLast: false,
+    bestOnly: true, ...(combo ? { fixedFor: () => combo } : {}),
+  })![0].solved.best
+
+  it('조합에 넣지 않으면 쓰지 않는다', () => {
+    const r = run({ karma: null })
+    expect(r.gift).toBe(0)
+    expect(r.lines[0].item.id).toBe('karma')
+  })
+  it('넣고 비워 두면 알아서 쓴다', () => {
+    expect(run({ karma: null, [GIFT_ID]: null }).gift).toBe(100_000)
+  })
+  it('묶음 수를 적으면 그만큼만 쓰고 나머지는 아이템·메소마켓', () => {
+    const r = run({ karma: null, [GIFT_ID]: 3 })
+    expect(r.gift).toBe(30_000)
+    expect(r.lines.reduce((a, l) => a + l.n * l.item.cash, 0) + r.market + r.gift).toBe(100_000)
+  })
+})
+

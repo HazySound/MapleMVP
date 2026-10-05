@@ -11,7 +11,7 @@
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
   import { SHOP, eff, saveEff, umNet, type EffOut, type Pick, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
-  import { PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
+  import { GIFT_ID, PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun } from '../format'
   import { won } from '../format'
 
@@ -32,6 +32,12 @@
   /** 선물식도 같다: 고른 아이템이 모두 캐시 1원당 선물식보다 많이 돌려주면 선물식은 끝자리다 */
   const giftFiller = (r: { fee: number; lines: { item: { price: number; cash: number } }[] }) =>
     r.lines.every(l => l.item.price * (1 - r.fee) * umNet() / l.item.cash > eff.gift / 10_000)
+  /** 지금 보는 주가 직접 짜기이고 거기서 선물식 금액을 정해 두었는지 */
+  const giftFixed = $derived.by(() => {
+    if (!cur || !out) return false
+    const set = eff.split && out.keepStarts?.has(cur.w.start) ? eff.keep : { want: eff.want, combo: eff.combo }
+    return set.want === 'custom' && set.combo[GIFT_ID] != null
+  })
   /** 선물식으로 받은 현금(메소를 거치지 않는다) */
   const giftWon = (r: { gift: number }) => r.gift * eff.gift / 10_000
 
@@ -384,7 +390,7 @@
         {#if cur.route.gift}
           <li>
             <div class="t">캐시 {won(cur.route.gift)} → 선물식으로 선물해 주고 {won(giftWon(cur.route))}원 받기 (1회)</div>
-            <div class="dd">1만 캐시당 {won(eff.gift)}원{cur.route.lines.length ? (giftFiller(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
+            <div class="dd">1만 캐시당 {won(eff.gift)}원{giftFixed ? ' · 직접 짜기에서 정한 금액' : cur.route.lines.length ? (giftFiller(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
           </li>
         {/if}
         {#if cur.credit && (cur.credit.buys.length || cur.credit.earned)}

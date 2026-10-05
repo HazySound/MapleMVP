@@ -289,8 +289,8 @@ export interface Solved {
   routeAt: (k: number) => Route
 }
 
-/** 계산 안에서 선물식을 아이템처럼 다룰 때의 이름 */
-const GIFT_ID = '__gift'
+/** 계산 안에서 선물식을 아이템처럼 다룰 때의 이름. 직접 짜기 조합에서도 이 이름으로 넣는다(개수 = 단위 묶음 수) */
+export const GIFT_ID = '__gift'
 
 /** 판매 횟수를 이만큼까지만 층으로 쌓는다. 그 위는 최저가 루트와 같다고 본다 */
 const MAX_LAYERS = 600
@@ -315,8 +315,8 @@ export function solve(o: SolveIn): Solved | null {
   const isGift = (j: number) => usable[j].x.id === GIFT_ID
   /** 선물식은 한 번에 이 묶음 수 이상 */
   const giftMin = g ? Math.max(1, Math.ceil(g.min / g.unit)) : 1
-  /** 한 주에 살 수 있는 개수 상한(개수를 정했으면 그 개수). 없으면 제한 없음. 선물식은 결제액이 허락하는 만큼 */
-  const capOf = (j: number) => isGift(j) ? Infinity : forced(j) ?? usable[j].x.cap
+  /** 한 주에 살 수 있는 개수 상한(개수를 정했으면 그 개수). 없으면 제한 없음. 선물식은 정하지 않았으면 결제액이 허락하는 만큼 */
+  const capOf = (j: number) => isGift(j) ? forced(j) ?? Infinity : forced(j) ?? usable[j].x.cap
   const freeIdx = usable.flatMap((_, j) => (capOf(j) == null ? [j] : []))
   const capIdx = usable.flatMap((_, j) => (capOf(j) != null ? [j] : []))
   const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
@@ -709,6 +709,8 @@ export function planAll(p: Plan): WeekResult[] | null {
     const creditPer = p.credit ? creditWonPer(p.credit.items, fee, p.um) : 0
     const combo = p.fixedFor?.(wi)
     const items = combo ? p.items.filter(x => x.id in combo) : p.items
+    // 직접 짜기에서 선물식을 조합에 넣지 않았으면 그 주에는 쓰지 않는다
+    const gift = combo && !(GIFT_ID in combo) ? null : p.gift
     const fixed = combo ? Object.fromEntries(Object.entries(combo).filter(([, n]) => n != null)) as Record<string, number> : undefined
     // 실제로 쓸 아이템 몫(use)은 MVP작에서 뺀다. 충전은 한 번에 하니 그 현금은 전체 충전비를 금액 비율로 나눠 센다.
     // MVP작 몫이 없는 주(구매용이 결제액 전부)는 사고팔 것이 없다
@@ -717,7 +719,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     const costOf = use ? (c: number) => (c > 0 ? costAll(c + use) * c / (c + use) : 0) : costAll
     const goal = w.amount - use
     const solved = goal > 0
-      ? solve({ target: goal, costOf, fee, um: p.um, mk: p.mk, gift: p.gift, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
+      ? solve({ target: goal, costOf, fee, um: p.um, mk: p.mk, gift, items, exact: p.exact, creditPer, fixed, bestOnly: p.bestOnly })
       : nothing(fee)
     if (!solved) return null
     spend(st, wi, fund(solved.best.pay + use, ctx))
