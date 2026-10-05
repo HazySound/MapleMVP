@@ -14,7 +14,7 @@
    * 빼기는 한 번에 되고 되돌릴 수 있다. 넣어 둔 가격은 남겨 둬서 다시 넣으면 그대로다.
    */
   import NumBox from './NumBox.svelte'
-  import { type BuyItem, addBuy, ageOf, buyTotal, catalog, eff, pickItem, removeBuy, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, umNet, unpickItem, updateBuy } from '../eff.svelte'
+  import { GIFT_UNITS, setGiftUnit, type BuyItem, addBuy, ageOf, buyTotal, catalog, eff, pickItem, removeBuy, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, umNet, unpickItem, updateBuy } from '../eff.svelte'
   import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
   import { eul, won } from '../format'
   import { tip } from '../tip'
@@ -261,7 +261,19 @@
               </td>
             </tr>
             <tr class="mk">
-              <td><span class="name mkn">선물식<small>캐시템을 선물해 주고 현금으로 받기 · 1만 캐시당 받는 돈</small></span></td>
+              <td>
+                <span class="name mkn">선물식<small>캐시템을 선물해 주고 현금으로 받기 · 1만 캐시당 받는 돈</small></span>
+                <!-- 사고파는 사람이 있는 단위·최소 금액으로만 거래한다 -->
+                <span class="gopt">
+                  <label for="eff-gift-unit">단위</label>
+                  <select id="eff-gift-unit" value={eff.giftUnit} onchange={e => setGiftUnit(Number(e.currentTarget.value))}>
+                    {#each GIFT_UNITS as u (u)}<option value={u}>{u / 10_000}만</option>{/each}
+                  </select>
+                  <label for="eff-gift-min">최소</label>
+                  <NumBox id="eff-gift-min" label="선물식 한 번에 거래하는 최소 금액(캐시)" size="sm" unit="캐시" placeholder={won(eff.giftUnit)}
+                    value={eff.giftMin} set={v => { eff.giftMin = v; saveEff() }} />
+                </span>
+              </td>
               <td class="mono c-cash">—</td><td class="mono c-cap">—</td><td class="mono c-min">—</td>
               <td class="in c-price">
                 <NumBox id="eff-gift" label="선물식 1만 캐시당 받는 돈(원)" size="sm" unit="원" placeholder="예: 7,000" value={eff.gift} set={setGift} />
@@ -443,6 +455,13 @@
   .name { display: inline-flex; align-items: center; gap: 6px; }
   .name small { display: block; font-size: 11px; color: var(--color-tx3); }
   .mkn { display: grid; gap: 0; }
+  .gopt { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11.5px; color: var(--color-tx3); }
+  .gopt select {
+    font: inherit; font-size: 12px; color: var(--color-tx); padding: 3px 6px; border-radius: 8px; cursor: pointer;
+    background: var(--color-bg2); border: 1px solid var(--color-line);
+  }
+  .gopt select:focus { outline: none; border-color: var(--color-lav); }
+  .gopt :global(.nb) { width: 130px; }
   .tag { font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 6px; background: var(--color-panel3); color: var(--color-tx3); cursor: default; }
   .tag.short { background: color-mix(in oklab, var(--color-sky) 20%, transparent); color: var(--color-sky); }
   .tag.forever { background: color-mix(in oklab, var(--color-mint) 16%, transparent); color: var(--color-mint); }

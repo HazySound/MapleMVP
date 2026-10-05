@@ -32,6 +32,22 @@ export type Combo = Record<string, number | null>
 export interface BuyItem { id: string; name: string; cash: number }
 
 /** 계산 결과 재사용(입력 → 결과). 최근 것만 둔다 */
+/** 선물식 단위 고르기(캐시) */
+export const GIFT_UNITS = [10_000, 30_000, 50_000, 100_000]
+
+/** 계산에 넘길 선물식. 비율이 없으면 안 쓴다 */
+export const giftOf = (rate = eff.gift) => rate > 0 ? { rate: rate / 10_000, unit: eff.giftUnit, min: Math.max(eff.giftMin, eff.giftUnit) } : null
+
+/**
+ * 단위를 바꾼다. 최소 금액은 비었거나 단위 기본값(전에 고른 단위 금액) 그대로일 때만 새 단위로 맞춘다.
+ * 직접 적어 둔 최소 금액은 건드리지 않는다
+ */
+export function setGiftUnit(u: number) {
+  if (!eff.giftMin || eff.giftMin === eff.giftUnit) eff.giftMin = u
+  eff.giftUnit = u
+  saveEff()
+}
+
 const runs = new Map<string, WeekResult[] | null>()
 
 /** 최저가 · 최적화 · 횟수 정하기 · 직접 짜기 */
@@ -72,6 +88,9 @@ interface Saved {
    * 할인 충전한 캐시로 남에게 캐시템(메이플포인트 상품)을 선물하고 돈을 바로 받는다. 메소를 거치지 않는다(2026-10-05 건의)
    */
   gift: number
+  /** 선물식을 사고파는 단위(캐시: 1만·3만·5만·10만)와 한 번에 거래하는 최소 금액(캐시) */
+  giftUnit: number
+  giftMin: number
   /** 값마다 마지막으로 넣은 때(ms). 오래된 시세로 계산하고 있는지 보여 준다 */
   at: Record<string, number>
   prices: Record<string, number>
@@ -123,7 +142,7 @@ function fresh(): Saved {
     cards: CARDS.map(c => ({ ...c, disc: 0, on: true })), methods: [], plainOn: true, nexonLast: true,
     leftNow: Object.fromEntries(CARDS.map(c => [c.key, MONTHLY])), leftMonth: thisMonth(),
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
-    um: 0, umFee: 5, mk: 0, gift: 0, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
+    um: 0, umFee: 5, mk: 0, gift: 0, giftUnit: 10_000, giftMin: 10_000, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
   }
@@ -410,7 +429,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
       weeks, balance: eff.balance, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: m.monthly, on: m.on, unit: m.unit })),
       leftNow: $state.snapshot(eff.leftNow), thisMonth: thisMonth(),
       barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: $state.snapshot(eff.weekBarcode),
-      um: umNet(), mk: sink.mk, gift: sink.gift / 10_000, items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn, nexonLast: eff.nexonLast,
+      um: umNet(), mk: sink.mk, gift: giftOf(sink.gift), items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn, nexonLast: eff.nexonLast,
     }
     const combos = fixedFor ? weeks.map((_, i) => fixedFor(i) ?? null) : null
     const key = JSON.stringify([input, combos])

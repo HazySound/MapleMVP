@@ -252,6 +252,13 @@ export interface Route {
   creditEst: number
 }
 
+/**
+ * 선물식: 할인 충전한 캐시로 남에게 캐시템을 선물해 주고 현금을 바로 받는다.
+ * rate: 캐시 1원어치에 받는 현금(1만 캐시당 7,000원이면 0.7). 사고파는 사람이 있는 단위(unit, 1만·3만·5만·10만 캐시)로만,
+ * 한 번에 min 캐시 이상만 거래한다(2,000원어치를 이 비율로 사는 사람은 없다, 2026-10-05 사용자)
+ */
+export interface Gift { rate: number; unit: number; min: number }
+
 export interface SolveIn {
   /** 채워야 할 결제 */
   target: number
@@ -260,8 +267,8 @@ export interface SolveIn {
   /** 엄 시세(1억 메소당 원), 메소마켓(1억 메소당 메포) */
   um: number
   mk: number
-  /** 선물식: 캐시 1원어치를 선물하고 받는 현금(1만 캐시당 7,000원이면 0.7). 0이면 안 쓴다 */
-  gift?: number
+  /** 선물식. 없으면 안 쓴다 */
+  gift?: Gift | null
   items: Sellable[]
   /** 계획을 따를 때는 결제액을 목표와 똑같이 맞춘다 */
   exact: boolean
@@ -282,6 +289,9 @@ export interface Solved {
   routeAt: (k: number) => Route
 }
 
+/** 계산 안에서 선물식을 아이템처럼 다룰 때의 이름 */
+const GIFT_ID = '__gift'
+
 /** 판매 횟수를 이만큼까지만 층으로 쌓는다. 그 위는 최저가 루트와 같다고 본다 */
 const MAX_LAYERS = 600
 /** 메이플포인트는 1,000원 단위로만 산다(계산 단위 100원의 10배) */
@@ -295,16 +305,22 @@ export function solve(o: SolveIn): Solved | null {
   // 직접 짜기: 개수를 적은 아이템은 그 개수 그대로 산다(0이면 빠진다)
   const forced = (j: number) => o.fixed?.[usable[j].x.id]
   usable = usable.filter(q => o.fixed?.[q.x.id] !== 0)
-  /** 한 주에 살 수 있는 개수 상한(개수를 정했으면 그 개수). 없으면 제한 없음 */
-  const capOf = (j: number) => forced(j) ?? usable[j].x.cap
+  // 선물식은 단위(1만 캐시 등) 묶음을 몇 개든 사는 아이템처럼 넣는다. 다만 몇 묶음이든 거래는 한 번이고,
+  // 최소 금액보다 적게는 안 판다. 그래서 개수를 늘어놓는 쪽(상한 있는 아이템)에서 따로 다룬다
+  const g = o.gift && o.gift.rate > 0 && o.gift.unit > 0 ? o.gift : null
+  if (g) {
+    const gx: Sellable = { id: GIFT_ID, name: '선물식', set: 1, cash: g.unit, price: 0 }
+    usable.push({ x: gx, u: Math.round(g.unit / U), back: g.unit * g.rate, val: g.unit * g.rate + g.unit * CREDIT_RATE * cp })
+  }
+  const isGift = (j: number) => usable[j].x.id === GIFT_ID
+  /** 선물식은 한 번에 이 묶음 수 이상 */
+  const giftMin = g ? Math.max(1, Math.ceil(g.min / g.unit)) : 1
+  /** 한 주에 살 수 있는 개수 상한(개수를 정했으면 그 개수). 없으면 제한 없음. 선물식은 결제액이 허락하는 만큼 */
+  const capOf = (j: number) => isGift(j) ? Infinity : forced(j) ?? usable[j].x.cap
   const freeIdx = usable.flatMap((_, j) => (capOf(j) == null ? [j] : []))
   const capIdx = usable.flatMap((_, j) => (capOf(j) != null ? [j] : []))
-  // 메소마켓과 선물식은 둘 다 아무 금액이나(1,000원 단위) 채우는 길이다. 캐시당 더 남는 쪽 하나만 쓴다
-  const mkWon = o.mk > 0 ? U / o.mk * o.um : 0
-  const giftWon = (o.gift ?? 0) > 0 ? U * o.gift! : 0
-  const isGift = giftWon > mkWon
-  const mk1 = Math.max(mkWon, giftWon)
-  // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다(선물도 캐시샵 결제). 조합을 고를 때는 그 값까지 본다
+  const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
+  // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다. 조합을 고를 때는 그 값까지 본다
   const mkVal = mk1 ? mk1 + U * CREDIT_RATE * cp : 0
   const need = Math.ceil(o.target / U)
   if (need <= 0) return null
@@ -335,8 +351,9 @@ export function solve(o: SolveIn): Solved | null {
       const q = usable[j], cap = capOf(j)!
       const next = new Map<number, Combo>()
       for (const b of cur.values()) {
-        for (let c = forced(j) ?? 0; c <= cap && b.C + c * q.u <= lim; c++) {
-          const x = { cnt: [...b.cnt, c], C: b.C + c * q.u, V: b.V + c * q.val, n: b.n + c }
+        // 선물식: 0이거나 최소 묶음 수부터, 몇 묶음이든 거래 1회
+        for (let c = forced(j) ?? 0; c <= cap && b.C + c * q.u <= lim; c = isGift(j) && c === 0 ? giftMin : c + 1) {
+          const x = { cnt: [...b.cnt, c], C: b.C + c * q.u, V: b.V + c * q.val, n: b.n + (isGift(j) ? Math.min(c, 1) : c) }
           const key = x.n * (lim + 1) + x.C, had = next.get(key)
           if (!had || x.V > had.V) next.set(key, x)
         }
@@ -348,18 +365,18 @@ export function solve(o: SolveIn): Solved | null {
   let combos = combosOf(A)
 
   const finish = (counts: Map<number, number>, market: number, pay: number): Route => {
-    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = market * CREDIT_RATE
+    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = market * CREDIT_RATE, gift = 0
     const lines: Line[] = []
     for (const [j, n] of counts) {
       if (!n) continue
+      if (isGift(j)) { gift = n * usable[j].x.cash; back += n * usable[j].back; sales++; credits += gift * CREDIT_RATE; continue }
       back += n * usable[j].back; sales += n; meso += n * usable[j].x.price * (1 - o.fee)
       credits += n * usable[j].x.cash * CREDIT_RATE
       lines.push({ item: usable[j].x, n })
     }
     lines.sort((a, b) => b.n * b.item.cash - a.n * a.item.cash)
     const c = cost[pay / U], creditEst = credits * cp
-    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market: isGift ? 0 : market, gift: isGift ? market : 0,
-             fee: o.fee, meso, credits, creditEst }
+    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market, gift, fee: o.fee, meso, credits, creditEst }
   }
   const comboCounts = (c: Combo) => new Map(capIdx.map((j, i) => [j, c.cnt[i]] as [number, number]))
 
@@ -546,8 +563,8 @@ export interface Plan {
   weekBarcode: Record<string, number>
   um: number
   mk: number
-  /** 선물식: 캐시 1원어치를 선물하고 받는 현금. 0이면 안 쓴다 */
-  gift?: number
+  /** 선물식. 없으면 안 쓴다 */
+  gift?: Gift | null
   items: Sellable[]
   /** 수수료를 직접 정했으면 그 값. 아니면 주마다 오를 등급으로 */
   fee: number | null
