@@ -38,12 +38,17 @@ const MIN_PITCH = 16
  */
 const UNIT_DIM = 0.87
 
-/** 앞에서부터 밝은 조각(숫자)만 남긴다. 처음 나오는 어두운 조각('캐시')에서 끊는다 */
+/**
+ * 앞에서부터 밝은 조각(숫자)만 남긴다. 처음 나오는 어두운 조각('캐시')에서 끊는다.
+ * 바로 뒤가 밝은 숫자인 어두운 조각은 숫자 사이의 쉼표라 넘어간다. 얇은 쉼표는 흐린 캡처에서 숫자보다 어둡게 잡힌다
+ * (2026-10-06 제보: '159,800'의 쉼표가 220(숫자 255의 0.86배)이라 '159'에서 끊겼다. '캐시'는 0.7배쯤이고 뒤도 어둡다)
+ */
 function numberPart(segs: [number, number][], peak: (a: number, c: number) => number): [number, number][] {
   // 작은 화면을 키우면 보간이 밝은 곳에서 255를 넘게 튄다. 눌러 두지 않으면 쉼표가 어둡게 보여 잘린다
   const ps = segs.map(([a, c]) => Math.min(255, peak(a, c)))
   const mx = Math.max(0, ...ps)
-  const i = ps.findIndex(p => p < mx * UNIT_DIM)
+  const dim = (k: number) => ps[k] < mx * UNIT_DIM
+  const i = ps.findIndex((_, k) => dim(k) && (k + 1 >= ps.length || dim(k + 1)))
   return i < 0 ? segs : segs.slice(0, i)
 }
 
