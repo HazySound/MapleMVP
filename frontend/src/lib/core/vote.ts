@@ -11,7 +11,9 @@
  * 뒤따르는 프레임의 근거가 되면 틀린 답이 표를 쌓는다.
  */
 import { type Known, NO_CARRY } from './pcroom'
-import { type ScanRaw, type Solved, type TotalPick, isTop, pickTotal, solveScan, topAmounts, totalsFor, unsureTotal } from './scan'
+import {
+  type ScanRaw, type Solved, type TotalPick, isTop, pickTotal, relaxedTotals, solveScan, topAmounts, totalsFor, unsureTotal,
+} from './scan'
 
 export interface VoteState {
   frames: number          // 지금까지 본 프레임 수
@@ -51,7 +53,10 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
   /** panel: 이 숫자들이 '등급까지' 옆에서 읽힌 것인지. 아니면 답이 하나여도 사용자에게 확인받는다 */
   function addAmounts(amounts: number[], panel: number[] = []) {
     if (!needs || !amounts.length) return
-    const picks = pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose, known), carry)
+    // 표를 인게임 기준으로 읽었으면(구매내역과 다른 계정) 합계도 구매내역과 견주지 않는다. '등급까지' 옆 숫자만 쓴다
+    const picks = partial?.relaxed
+      ? (panel.length ? relaxedTotals(needs, collected, panel) : [])
+      : pickTotal(needs, collected, totalsFor(needs, collected, amounts, carry, loose, known), carry)
     if (picks.length > 1 || (picks.length === 1 && unsureTotal({ panel }, needs, picks[0], carry))) {
       const key = picks.map(p => `${p.tierTh}:${p.total}`).join('|')
       choiceLists.set(key, picks)
@@ -72,15 +77,17 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
       const c = [...choiceHits.entries()].sort((a, b) => b[1] - a[1])[0]
       if (c && c[1] >= agree) {
         const choices = choiceLists.get(c[0])!
-        solved = { needs, tierTh: choices[0].tierTh, total: null, carry, scale, choices, ...(choices.length === 1 ? { confirm: true } : {}) }
+        solved = { needs, tierTh: choices[0].tierTh, total: null, carry, scale, choices, ...(choices.length === 1 ? { confirm: true } : {}),
+                   ...relaxed() }
       }
       return
     }
     // 서로 다른 합계가 같은 표를 받으면 아직 모르는 것이다
     if (best.length > 1 && best[0][1] === best[1][1]) return
     const [tierTh, total] = best[0][0].split(':').map(Number)
-    solved = { needs, tierTh, total, carry, scale }
+    solved = { needs, tierTh, total, carry, scale, ...relaxed() }
   }
+  const relaxed = () => (partial?.relaxed ? { relaxed: true } : {})
 
   function state(): VoteState {
     return { frames, seen, needs, solved, partial }

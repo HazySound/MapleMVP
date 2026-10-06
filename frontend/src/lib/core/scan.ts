@@ -264,15 +264,18 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
     return [n.split(',').map(Number), c.split(',').map(Number)]
   }
 
-  // 같은 값이 여러 번 나올수록 믿을 만하다
+  // 같은 값이 여러 번 나올수록 믿을 만하다. 한 판독이 압도적으로 많이 나왔으면 그 판독만 본다(인게임이 기준).
+  // 구매내역 검사를 통과하는 다른 판독이 몇 표 있어도 그쪽으로 가지 않는다
+  const sure = hasCarryColumn(scan) ? null : relaxedShape(scan)
   const count = new Map<string, number>()
   scan.readings.forEach((v, i) => {
+    if (sure && v.join(',') !== sure.join(',')) return
     const carry = carryFor(v, collected, scan.carries ?? [], scan.amounts, loose, ref, scan.carryVotes)
     if (carry == null) return
     const k = key(v, carry)
     count.set(k, (count.get(k) ?? 0) + (scan.votes?.[i] ?? 1))
   })
-  const relaxed = !count.size && !hasCarryColumn(scan) ? relaxedPick(scan, collected, scale, loose.some(Boolean)) : null
+  const relaxed = !count.size && !hasCarryColumn(scan) ? relaxedPick(scan, collected, scale) : null
   if (relaxed) return relaxed
 
   if (!count.size) {
@@ -314,6 +317,11 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
     const top = solved.filter(x => x.n === solved[0].n)
     return new Set(top.map(x => sig(x.s))).size === 1 ? solved[0].s : null
   }
+  // 표는 검사를 통과했는데 '등급까지' 금액으로 합계를 맞춰 보면 구매내역과 어긋난다: 인게임을 믿는다
+  if (scan.panel?.length) {
+    const r = relaxedPick(scan, collected, scale)
+    if (r) return r
+  }
 
   // 상단이 가려진 경우
   if (tied) return null
@@ -324,40 +332,62 @@ export function solveScan(scan: ScanRaw, collected: number[], prev: Solved | nul
 }
 
 /**
- * 수집한 결제와 맞춰 보는 검사를 통과한 판독이 하나도 없을 때(블랙 아님).
- * 최근까지 블랙이었던 계정은 갱신 때 꺼내 쓴 이월이 그 주 금액으로 잡혀 인게임 주별 금액이 구매내역과 크게
- * 다르다(100원 단위도 아니고 더 적은 주도 있다). 사이트는 그 이월을 모르니 맞춰 볼 수 없다.
- * 그래서 표 모양만 본다: '유지까지'가 아래로 갈수록 줄지 않고, 0은 앞쪽에만 있는 판독. 그중 하나로 떨어질 때만 쓰고,
- * 합계는 상단 '○○ 등급까지'로 등급마다 후보를 낸다(여럿이면 사용자가 고른다). 주별 차이는 인게임을 믿는다
- * (2026-10-01 제보: 블랙에서 레드로 내려온 계정, 캡처를 계속 못 읽었다)
+ * 인게임을 기준으로 맞춘다(블랙 아님). 수집한 결제와 맞춰 보는 검사를 통과한 판독이 없어도 표를 확실히 읽었으면
+ * 그 12줄과 상단 '○○ 등급까지'를 그대로 믿는다. 구매내역과 다른 주는 창에서 인게임 금액대로 저장한다.
+ * 수집과 인게임이 다른 까닭은 여럿이다: 블랙에서 내려온 계정의 이월(2026-10-01 제보), 선물한 넥슨쇼핑 쿠폰(2026-10-06),
+ * 넥슨이 MVP에 넣지 않은 결제. 사이트가 다 알 수 없으니 인게임이 맞다(사용자 방침 2026-10-06).
+ * 합계는 상단 '○○ 등급까지'로 등급마다 후보를 낸다(여럿이면 사용자가 고른다)
  */
-function relaxedPick(scan: ScanRaw, collected: number[], scale: number, wasBlack: boolean): Solved | null {
-  const needs = relaxedShape(scan, collected, wasBlack)
+function relaxedPick(scan: ScanRaw, collected: number[], scale: number): Solved | null {
+  const needs = relaxedShape(scan)
   if (!needs) return null
-  const last = needs[needs.length - 1]
-  const picks: TotalPick[] = []
-  for (let i = 0; i + 1 < THS.length; i++) {
-    const th = THS[i]
-    const now = th - last
-    if (th < last || (now < collected[collected.length - 1] && now !== 0)) continue
-    for (const a of topAmounts(scan)) {
-      const total = THS[i + 1] - a
-      // 캐시 금액은 10원 단위다. 1원 단위로 읽힌 건 화면의 다른 글자를 주운 것이다
-      if (a > 0 && a % 10 === 0 && total >= th && !picks.some(p => p.tierTh === th && p.total === total)) picks.push({ tierTh: th, total })
-    }
-  }
+  // '등급까지' 글자 옆에서 찾은 금액은 1원 단위여도 쓴다(118,434). 아무 데서 주운 숫자는 10원 단위만
+  const picks = relaxedTotals(needs, collected, scan.panel?.length ? scan.panel : scan.amounts.filter(a => a % 10 === 0))
   if (!picks.length) return null
   const carry = NO_CARRY
   if (picks.length === 1) return { needs, carry, scale, ...picks[0], relaxed: true }
   return { needs, carry, scale, tierTh: picks[0].tierTh, total: null, choices: picks, relaxed: true }
 }
 
+/** 구매내역과 견주지 않고 '○○ 등급까지' 후보 금액만으로 낸 (등급 기준, 합계) 후보. 화면 공유도 쓴다 */
+export function relaxedTotals(needs: number[], collected: number[], amounts: number[]): TotalPick[] {
+  const last = needs[needs.length - 1]
+  const pick = (strict: boolean) => {
+    const picks: TotalPick[] = []
+    for (let i = 0; i + 1 < THS.length; i++) {
+      const th = THS[i]
+      const now = th - last
+      // 이번 주가 수집보다 적은 등급은 뒤로 미룬다. 그런 등급밖에 없으면 그래도 쓴다
+      if (th < last || (strict && now < collected[collected.length - 1] && now !== 0)) continue
+      for (const a of amounts) {
+        const total = THS[i + 1] - a
+        if (a > 0 && total >= th && !picks.some(p => p.tierTh === th && p.total === total)) picks.push({ tierTh: th, total })
+      }
+    }
+    return picks
+  }
+  const picks = (pick(true).length ? pick(true) : pick(false)).filter(p => restore(needs, p.tierTh, p.total).ok)
+  if (picks.length < 2) return picks
+  // 같은 금액이 두 등급의 '○○ 등급까지'로 다 말이 되면, 되짚은 주별 금액이 구매내역에 훨씬 가까운 쪽이 맞다.
+  // 차이가 갈리지 않으면 사용자가 고른다
+  const off = (p: TotalPick) => {
+    const r = restore(needs, p.tierTh, p.total)
+    return r.weeks.reduce((s, w, i) => s + (r.unknown.includes(i) ? 0 : Math.abs(w - collected[i])), 0)
+  }
+  const ranked = picks.map(p => ({ p, d: off(p) })).sort((a, b) => a.d - b.d)
+  return ranked[0].d < ranked[1].d ? [ranked[0].p] : ranked.map(x => x.p)
+}
+
+/** 이 정도로 많이 나와야 확실히 읽은 판독이다. 받은 캡처 21장은 1등이 2등의 3.5배 이상, 12표 이상이었다(득표가 없는 입력은 표 수를 안 따진다) */
+const SURE_RATIO = 3
+const SURE_VOTES = 8
+
 /**
- * relaxedPick의 앞부분: 표 모양으로 고른 12줄. 합계(상단 '○○ 등급까지')는 따지지 않는다.
+ * 표 모양으로 고른 12줄: '유지까지'가 아래로 갈수록 줄지 않고 마지막 줄이 0보다 큰 판독 중 압도적으로 많이 나온 것.
+ * 득표가 엇비슷하면 null(판독이 흔들린다 → 다시 찍어 달라고 한다). 합계(상단 '○○ 등급까지')는 따지지 않는다.
  * 표는 읽었는데 상단이 안 찍혀 못 맞춘 경우를 사용자에게 알려 줄 때도 쓴다
  */
-export function relaxedShape(scan: ScanRaw, collected: number[], wasBlack: boolean): number[] | null {
-  // 줄지 않는 판독 중 가장 많이 나온 것. 동점이면 못 고른다
+export function relaxedShape(scan: ScanRaw): number[] | null {
   const tally = new Map<string, number>()
   scan.readings.forEach((v, i) => {
     if (v.length !== TOOLTIP_ROWS || v[v.length - 1] <= 0 || v.some((n, j) => j > 0 && n < v[j - 1])) return
@@ -365,18 +395,8 @@ export function relaxedShape(scan: ScanRaw, collected: number[], wasBlack: boole
     tally.set(k, (tally.get(k) ?? 0) + (scan.votes?.[i] ?? 1))
   })
   const ranked = [...tally].sort((a, b) => b[1] - a[1])
-  if (!ranked.length || (ranked.length > 1 && ranked[0][1] === ranked[1][1])) return null
-  const needs = ranked[0][0].split(',').map(Number)
-  // 이월 때문에 인게임이 수집보다 적은 주가 생긴다. 결제가 통째로 이월로 가면 0원이다. 조금만 모자라면
-  // (19,900 vs 20,000) 숫자를 잘못 읽은 것이다. 다만 사이트 기록으로도 13주 안에 이월을 쓴 계정(wasBlack)은
-  // 기준을 넘긴 주가 일부만 남고, 넥슨이 9/29에 걷어낸 주는 아무 금액이나 된다(2026-10-01 제보: 300,000 → 277,810).
-  // 기준에 닿는 순간 결제가 쪼개져 1원 단위로도 남는다(2026-10-02 제보: 275,100 → 251,234). 그때는 금액을 따지지 않는다
-  const known = knownRows(needs)
-  const mid = middleWeeks(needs)
-  for (let k = 1; k <= mid.length; k++) {
-    if (known[k - 1] && mid[k - 1] < collected[k] && !wasBlack && mid[k - 1] !== 0) return null
-  }
-  return needs
+  if (!ranked.length || (scan.votes && ranked[0][1] < SURE_VOTES) || (ranked.length > 1 && ranked[0][1] < ranked[1][1] * SURE_RATIO)) return null
+  return ranked[0][0].split(',').map(Number)
 }
 
 /**

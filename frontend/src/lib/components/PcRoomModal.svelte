@@ -47,7 +47,6 @@
   let moves = new Map<string, string>()
   /** 주마다 옮겨 들어온 쿠폰 금액과, 쿠폰이 들어 있는 주 */
   let movedIn = $state<Record<string, number>>({})
-  let couponWeeks = $state<Record<string, boolean>>({})
   let busy = $state(false)
   let error = $state('')
 
@@ -124,12 +123,9 @@
     }),
   }))
   const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined && !missed[r.start]))
-  /**
-   * 수집 못 한 결제로 볼 수 있는 빨간 줄. 인게임보다 수집이 많으면 보통은 잘못 읽은 것이라 안 되지만,
-   * 그 주에 넥슨쇼핑 쿠폰이 있으면 쿠폰을 다른 주에 등록한 것일 수 있어 인게임 금액에 맞춰 뺀다
-   */
+  /** 인게임 금액 그대로 저장할 수 있는 줄: PC방으로 설명되지 않는 주. 금액을 모르는 주는 안 된다 */
   const canMiss = (r: { start: string; note: string; nexon: number; spent: number; unknown?: boolean }) =>
-    !!r.note && !r.unknown && (r.nexon >= r.spent || !!couponWeeks[r.start])
+    !!r.note && !r.unknown
 
   function markMissed(start: string, on: boolean) {
     const keep = edited
@@ -168,13 +164,13 @@
     moves = new Map([...coupons, ...(isTop || prev?.relaxed ? [] : placeMoved(b1, r.weeks, noMove))])
     const rowsNow = withMoves(b0.rows, moves)
     const b = moves.size ? buildBase(rowsNow, b0.saved) : b0
-    couponWeeks = Object.fromEntries(rowsNow.filter(isCoupon).map(x => [weekStart(x.date), true]))
     // 목요일 갱신에서 이월이 쓰인 주는 그 금액이 사용 금액으로 채워져 100원 단위가 아니다.
     // 블랙의 이번 주는 앱이 모르는 사이에 그랬을 수 있어 늘 그렇게 본다
     const last = r.weeks.length - 1
-    // 구매내역과 맞춰 보지 못하고 표 모양으로만 읽은 경우(최근까지 블랙): 이월이 섞인 주를 사이트가 모르니
-    // 모든 주를 이월이 섞일 수 있는 주로 보고, 인게임이 수집보다 적은 주도 블랙처럼 받아들인다
-    const lenient = !!prev?.relaxed
+    // 구매내역과 맞춰 보지 못하고 표 모양으로만 읽은 경우, 13주 안에 이월을 쓴 계정(최근까지 블랙)이면 이월이 섞인 주를
+    // 사이트가 모르니 모든 주를 이월이 섞일 수 있는 주로 보고, 인게임이 수집보다 적은 주도 블랙처럼 받아들인다.
+    // 아니면 그냥 견주고, 어긋난 주는 아래에서 인게임 금액대로 저장한다
+    const lenient = !!prev?.relaxed && looseOf(b0).some(Boolean)
     // 지난번 툴팁으로 확인해 저장한 금액과 똑같이 나온 주도 그렇다. 저장한 값이 들어가면 그 주에 쓰인 이월을
     // 되짚지 못해, 다시 읽을 때마다 같은 주가 '한 주에 들어갈 수 없는 접속 시간'으로 막혔다(2026-10-01 제보)
     const same = (i: number) => {
@@ -202,10 +198,11 @@
       })
     }
     const bS = dropped.size ? buildBase(rowsNow.filter(x => !dropped.has(x)), b0.saved) : b
-    // 지난번에 '수집 못 한 결제'로 저장한 주는 이번에도 그렇게 본다. 다시 누르게 하지 않는다
+    // 인게임이 기준이다(2026-10-06 사용자 방침). 구매내역과 어긋난 주는 PC방으로 설명되지 않아도 인게임 금액대로 저장한다.
+    // 선물한 넥슨쇼핑 쿠폰, 넥슨이 MVP에 넣지 않은 결제, 수집 못 한 결제처럼 사이트가 다 알 수 없는 까닭이 있다
     if (!keepMissed) {
-      missed = Object.fromEntries(gaps.filter(g => g.note && readWeek(b.saved, g.start)?.miss
-        && canMiss({ start: g.start, note: g.note, nexon: g.nexon, spent: g.collected, unknown: g.unknown }))
+      missed = Object.fromEntries(gaps.filter(g => canMiss({ start: g.start, note: g.note, nexon: g.nexon, spent: g.collected,
+                                                             unknown: g.unknown }))
         .map(g => [g.start, true]))
     }
     // 블랙이면 툴팁에서 지금 이월 잔액을 읽는다. '유지까지'가 처음으로 남는 줄에서 이월이 바닥난다
@@ -338,11 +335,12 @@
           : ok
             ? `표는 읽었는데 어느 값이 맞는지 가릴 수 없었어요. `
               + `(후보 ${raw.readings.length}개 중 ${ok}개 통과, 숫자 ${raw.amounts.length}개)`
-            // 최근까지 블랙이던 계정은 구매내역 대신 상단 '○○ 등급까지'로 맞춘다. 그게 안 찍혔으면 그렇다고 말한다
-            : !black && relaxedShape(raw, b.purchases, looseOf(b).some(Boolean))
-              ? "표는 읽었어요. 이월이 섞여 구매내역으로는 맞출 수 없는 계정이라 상단 '○○ 등급까지' 금액이 같이 있어야 해요. "
+            // 구매내역과 다른 계정은 상단 '○○ 등급까지'로 인게임에 맞춘다. 그게 안 찍혔으면 그렇다고 말한다
+            : !black && relaxedShape(raw)
+              ? "표는 읽었어요. 구매내역과 다른 주가 있어 인게임 기준으로 맞추려면 상단 '○○ 등급까지' 금액이 같이 있어야 해요. "
                 + '툴팁과 상단 패널이 한 화면에 같이 보이게 찍거나, 화면 공유로 읽어 주세요.'
-              : `표는 찾았는데 구매내역과 맞지 않아요. ${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b), known)}`
+              // 판독이 흔들리면 인게임 값이라고 믿을 수 없다. 다시 찍게 한다
+              : `표 숫자를 확실하게 읽지 못했어요. 다시 찍어 주세요. (${whyReject(raw.readings[0], b.purchases, col, black, looseOf(b), known)})`
         return
       }
       apply(s)
@@ -823,7 +821,9 @@
                   섞여 있어, PC방은 {won(r.pcMin ?? 0)}~{won(r.pcMax ?? 0)}원 사이까지만 알 수 있어요.</p>
               {:else if missed[r.start] && edited[r.start] === undefined}
                 <p class="msg ok">
-                  이 주 {v < 0 ? `${won(-v)}원을 빼서` : `${won(v)}원을 수집하지 못한 결제(넥슨쇼핑 쿠폰 등)로 넣어`} 인게임과 같은 금액으로 저장해요.
+                  수집한 결제와 달라 인게임 기준으로 맞췄어요.
+                  {(r.gapMin ?? r.amount) < 0 ? `수집보다 ${won(-(r.gapMin ?? r.amount))}원 적어요(선물한 쿠폰, MVP에 안 들어간 결제 등).`
+                    : `수집보다 ${won(r.gapMin ?? r.amount)}원 많아요(수집하지 못한 결제 등).`}
                   <button class="link" onclick={() => markMissed(r.start, false)}>되돌리기</button>
                 </p>
               {:else if !r.group && (r.note || r.warn)}

@@ -59,10 +59,12 @@ describe('오답은 통과하지 못한다', () => {
     expect(solveScan({ readings: [], amounts: [], scale: 1 }, COLLECTED)).toBeNull()
   })
 
-  it('숫자가 하나 틀린 후보는 걸러진다', () => {
+  it('숫자가 하나 틀린 후보끼리 표가 갈리면 못 읽은 것으로 본다', () => {
     const wrong = [...TRUTH]
     wrong[5] = 88_950                       // 88,850 → 88,950
-    const s = solveScan({ readings: [wrong], amounts: [590_330], scale: 1 }, COLLECTED)
+    const wrong2 = [...TRUTH]
+    wrong2[7] = 108_950
+    const s = solveScan({ readings: [wrong, wrong2], votes: [6, 5], amounts: [590_330], scale: 1 }, COLLECTED)
     expect(s).toBeNull()
   })
 
@@ -260,6 +262,31 @@ describe('구매내역과 맞춰 볼 수 없는 표', () => {
     expect(s?.relaxed).toBe(true)
     expect(s?.tierTh).toBe(1_500_000)
     expect(s?.total).toBe(2_500_000 - 200_470)
+  })
+  it('확실히 읽은 표는 구매내역과 달라도 인게임대로 받는다(선물한 쿠폰 등)', () => {
+    const collected = [...COLLECTED]
+    collected[6] += 900_000                 // 인게임에 안 들어간 결제 90만 원
+    const wrong = [...TRUTH]
+    wrong[5] = 88_950
+    const s = solveScan({ readings: [TRUTH, wrong], votes: [30, 2], amounts: [590_330, 41_110], panel: [590_330], scale: 1 },
+                        collected)
+    expect(s?.needs).toEqual(TRUTH)
+    expect(s?.relaxed).toBe(true)
+    expect([s?.tierTh, s?.total]).toEqual([DIAMOND, TOTAL])
+  })
+  it('압도적인 판독이 있으면 검사를 통과하는 소수 판독으로 가지 않는다', () => {
+    const wrong = [...TRUTH]
+    wrong[5] = 88_950
+    const s = solveScan({ readings: [wrong, TRUTH], votes: [30, 2], amounts: [590_330], panel: [590_330], scale: 1 }, COLLECTED)
+    expect(s?.needs).toEqual(wrong)
+  })
+  it('표가 엇비슷하게 갈리고 구매내역과도 안 맞으면 못 읽은 것으로 본다', () => {
+    const collected = [...COLLECTED]
+    collected[6] += 900_000
+    const wrong = [...TRUTH]
+    wrong[5] = 88_950
+    expect(solveScan({ readings: [TRUTH, wrong], votes: [12, 10], amounts: [590_330], panel: [590_330], scale: 1 }, collected))
+      .toBeNull()
   })
   it('블랙인데 12줄 모두 0이고 이월도 안 쓴다: 이번 주가 딱 기준, 옛 주는 0', () => {
     const zeros = Array(12).fill(0)
