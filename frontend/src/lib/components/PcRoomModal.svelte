@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app, getBase, pcroomClear, pcroomSave, pcroomScan } from '../store.svelte'
-  import { META, NO_CARRY, anchor, compare, readWeek, restore, unpaid, writeWeeks } from '../core/pcroom'
+  import { META, NO_CARRY, anchor, compare, notCounted, readWeek, restore, writeWeeks } from '../core/pcroom'
   import { buildBase, knownOf, looseWeeks, placeMoved, settleScan, weekRows } from '../core/engine'
   import { isCoupon, placeCoupons } from '../core/coupons'
   import { forecast, weekStart } from '../core/mvp'
@@ -186,15 +186,19 @@
     // 인게임이 적은 만큼이 그 주에 산 물건값과 꼭 맞는 주(블랙 아님): 넥슨이 그 결제를 MVP에 안 넣었다.
     // 그 물건을 빼고 계산하고, 저장할 때는 그만큼 빼서 인게임 금액 그대로 남긴다
     const dropped = new Set<Row>()
-    const dropAt: Record<string, { amount: number; names: string[] }> = {}
+    const dropAt: Record<string, { amount: number; names: string[]; pc: number }> = {}
+    // 같은 물건 여러 장은 '이름 ×9'로 줄인다
+    const nameList = (names: string[]) => [...new Set(names)]
+      .map(n => { const c = names.filter(x => x === n).length; return c > 1 ? `${n} ×${c}` : n }).join(', ')
     if (!isTop && !lenient) {
       const wr = weekRows(b)
       gaps.forEach((g, i) => {
         if (g.unknown || g.amount >= 0 || g.note) return
-        const pick = unpaid(wr[i].map(x => x.price), -g.amount)
-        if (!pick) return
-        for (const k of pick) dropped.add(wr[i][k])
-        dropAt[g.start] = { amount: -g.amount, names: pick.map(k => wr[i][k].item) }
+        // 넥슨쇼핑 쿠폰은 PC방이 섞여 있어도 빠진 것으로 본다(선물한 쿠폰). 그 PC방은 남긴다
+        const nc = notCounted(wr[i].map(x => x.price), wr[i].map(isCoupon), -g.amount)
+        if (!nc) return
+        for (const k of nc.pick) dropped.add(wr[i][k])
+        dropAt[g.start] = { amount: nc.pc - g.amount, names: nc.pick.map(k => wr[i][k].item), pc: nc.pc }
       })
     }
     const bS = dropped.size ? buildBase(rowsNow.filter(x => !dropped.has(x)), b0.saved) : b
@@ -224,16 +228,16 @@
         const dr = dropAt[g.start]
         const cut = dr?.amount ?? 0
         return { start: g.start, end: addDays(g.start, 6),
-                 spent: g.collected, amount: w ? w.pcMin : dr ? 0 : g.amount, minutes: g.minutes,
+                 spent: g.collected, amount: w ? w.pcMin : dr ? dr.pc : g.amount, minutes: g.minutes,
                  note: g.note,
-                 warn: dr ? `${dr.names.join(', ')} ${won(cut)}원이 인게임 MVP에 들어가지 않았어요. 인게임 금액대로 저장해요.`
+                 warn: dr ? `${nameList(dr.names)} ${won(cut)}원이 인게임 MVP에 들어가지 않았어요.${dr.pc ? ` 선물했거나 다른 계정에 등록한 쿠폰이에요. 나머지 ${won(dr.pc)}원이 PC방이에요.` : ''} 인게임 금액대로 저장해요.`
                    : w && w.pcMax > w.pcMin ? '' : g.warn,
                  unknown: w ? w.unknown : g.unknown,
                  pcMin: w?.pcMin, pcMax: w?.pcMax,
                  gapMin: w ? w.gapMin - cut : undefined, gapMax: w ? w.gapMax - cut : undefined, group: w?.group,
                  nexon: w && !w.unknown && !w.group ? g.collected + w.gapMin - cut : g.nexon }
       }),
-      total, tierTh, pcTotal: gaps.reduce((s, g) => s + (dropAt[g.start] ? 0 : g.amount), 0),
+      total, tierTh, pcTotal: gaps.reduce((s, g) => s + (dropAt[g.start]?.pc ?? g.amount), 0),
       conflict: st?.conflict, carry: st?.carry,
     }
   }

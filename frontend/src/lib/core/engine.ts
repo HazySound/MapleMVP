@@ -6,6 +6,7 @@
  * 같은 규칙이 두 언어에 흩어져 있으면 반드시 어긋나기 때문이다.
  */
 import type { PcFuzzy } from '../format'
+import { isCoupon } from './coupons'
 import {
   BLACK, CARRY_START, type KeepOpt, type Refresh, type Row, type Tier, type TierKey, TIERS, WINDOW, addDays, forecast, grade,
   needFor, needNow, plan as planCalc, replay, tierIndex, tierNow, todayKst, weekStart, weeklyAmounts,
@@ -99,7 +100,7 @@ export function weekRows(b: Base): Row[][] {
 }
 export const weekItems = (b: Base): number[][] => weekRows(b).map(rs => rs.map(r => r.price))
 /** 판독을 견줄 때 함께 볼 것: 주마다 산 물건값과 사이트가 지금 계산한 13주 금액 */
-export const knownOf = (b: Base): Known => ({ items: weekItems(b), model: b.last13 })
+export const knownOf = (b: Base): Known => ({ items: weekItems(b), shop: weekRows(b).map(rs => rs.map(isCoupon)), model: b.last13 })
 
 /**
  * 넥슨이 다음 주로 센 결제를 그 주로 옮긴다. 행 id → 옮길 주 시작일.

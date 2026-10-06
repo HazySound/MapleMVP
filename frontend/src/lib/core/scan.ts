@@ -12,7 +12,7 @@
 import { BLACK, TIERS } from './mvp'
 import {
   type Known, MAX_WEEK_MINUTES, NO_CARRY, TOOLTIP_ROWS, UNIT, compare, knownRows, lastWeek, middleWeeks, minutesOf, restore,
-  unpaid,
+  notCounted,
 } from './pcroom'
 
 export interface ScanRaw {
@@ -101,9 +101,11 @@ export function acceptReading(v: number[], collected: number[], carry: number[] 
     // 블랙은 인게임이 수집보다 적을 수 있다(기준을 넘긴 결제는 이월로만, 9/29 넥슨 차감). 음수만 거른다
     if (black && week < spent) { if (week < 0) return false; continue }
     // 모자란 만큼이 그 주에 산 물건값과 꼭 맞으면 넥슨이 그 결제를 MVP에 안 넣었거나 다음 주로 셌다(ref.items: 주마다 산 물건값)
+    // 넥슨쇼핑 쿠폰은 PC방이 섞여 있어도 본다(선물한 쿠폰). 그때는 다음 주로 넘어간 게 아니다
     if (week < spent) {
-      if (week < 0 || !unpaid(ref.items?.[k] ?? [], spent - week)) return false
-      moved = spent - week
+      const nc = week < 0 ? null : notCounted(ref.items?.[k] ?? [], ref.shop?.[k] ?? [], spent - week)
+      if (!nc) return false
+      if (!nc.pc) moved = spent - week
       continue
     }
     const extra = week - spent
@@ -174,10 +176,11 @@ export function whyReject(v: number[], collected: number[], carry: number[] = NO
     if (week < 0) {
       return `${k}주 뒤(${w(v[k - 1])})가 ${k + 1}주 뒤(${w(v[k])})보다 커요. 잘못 읽은 자리가 있어요.`
     }
-    if (week < spent && !black && !unpaid(ref.items?.[k] ?? [], spent - week)) {
+    const nc = week < spent && !black ? notCounted(ref.items?.[k] ?? [], ref.shop?.[k] ?? [], spent - week) : null
+    if (week < spent && !black && !nc) {
       return `${k + 1}번째 주: 표에서는 ${w(week)}원인데 받아 둔 결제는 ${w(spent)}원이에요.`
     }
-    if (week < spent) { if (!black) moved = spent - week; continue }
+    if (week < spent) { if (nc && !nc.pc) moved = spent - week; continue }
     const extra = week - spent
     const pc = extra >= carried && (extra - carried) % UNIT === 0 ? extra - carried : extra
     if (!loose[k] && !black && pc % UNIT !== 0) {

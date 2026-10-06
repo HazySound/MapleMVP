@@ -26,6 +26,8 @@ const BLACK_TH = 2_500_000                     // 블랙 기준(이월이 있는
 export interface Known {
   /** 13주 주마다 산 물건값. 인게임이 적은 주를 그 물건이 MVP에 안 들어간 것으로 설명할 때 쓴다 */
   items?: number[][]
+  /** items 자리마다 넥슨쇼핑 쿠폰인지 */
+  shop?: boolean[][]
   /**
    * 사이트가 지금 계산한 13주 금액(지난번 맞춘 보정값·이월까지 들어간 것). 툴팁의 주 금액이 이것과 같으면
    * 이미 확인한 값이다. 이월로 옮겨진 금액은 구매내역과 달라 다시 맞출 때마다 막혔다(2026-10-02 제보)
@@ -53,6 +55,30 @@ export function unpaid(prices: number[], gap: number): number[] | null {
   const out: number[] = []
   for (let s = gap; s > 0;) { const [p, i] = from.get(s)!; out.push(i); s = p }
   return out.reverse()
+}
+
+/**
+ * unpaid에 PC방이 섞인 경우까지 본다. 넥슨쇼핑 쿠폰은 선물하면 받은 사람이 등록해 그 사람 MVP에 들어간다
+ * (2026-10-06 제보: 9/3 쿠폰 9장 90만 원을 선물, 그 주 인게임은 PC방 22,700원뿐). 그런 주는 빠진 쿠폰 합이
+ * 모자란 금액보다 크고 남는 것이 PC방이다. 쿠폰(shop[k])만 이렇게 본다. 아무 결제나 허락하면 100원 단위 물건값
+ * 아무거나로 잘못 읽은 주가 설명돼 버린다. 쿠폰 합이 가장 작은 조합을 쓴다. pick: 빠진 물건 자리, pc: 그 주 PC방
+ */
+export function notCounted(prices: number[], shop: boolean[], gap: number): { pick: number[]; pc: number } | null {
+  const exact = unpaid(prices, gap)
+  if (exact) return { pick: exact, pc: 0 }
+  const idx = prices.flatMap((_, i) => (shop[i] ? [i] : []))
+  if (gap <= 0 || !idx.length) return null
+  const from = new Map<number, [number, number]>([[0, [-1, -1]]])
+  for (const i of idx) {
+    for (const s of [...from.keys()]) if (!from.has(s + prices[i])) from.set(s + prices[i], [s, i])
+    if (from.size > 100_000) return null
+  }
+  const fit = [...from.keys()].filter(s => s > gap && (s - gap) % UNIT === 0 && minutesOf(s - gap) <= MAX_WEEK_MINUTES)
+  if (!fit.length) return null
+  const sum = Math.min(...fit)
+  const pick: number[] = []
+  for (let s = sum; s > 0;) { const [p, i] = from.get(s)!; pick.push(i); s = p }
+  return { pick: pick.reverse(), pc: sum - gap }
 }
 
 /** PC방 반영액을 접속 시간(분)으로 환산한다. */
@@ -224,6 +250,7 @@ export function compare(nexon: number[], collected: number[], starts: string[],
       continue
     }
     const gap = nexon[i] - collected[i]
+    let nc: ReturnType<typeof notCounted> = null
     let note = ''
     let warn = ''
     if (!black && known.model?.[i] === nexon[i] && (gap < 0 || gap % UNIT)) {
@@ -238,10 +265,13 @@ export function compare(nexon: number[], collected: number[], starts: string[],
                  warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 블랙 기준을 넘겨 이월로 간 결제이거나 넥슨이 걷어낸 금액이에요.`,
                  ok: true, unknown: false })
       continue
-    } else if (gap < 0 && unpaid(known.items?.[i] ?? [], -gap)) {
-      moved = -gap
-      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
-                 warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 그 주에 산 것 중 이만큼이 MVP에 들어가지 않았어요.`,
+    } else if (gap < 0 && (nc = notCounted(known.items?.[i] ?? [], known.shop?.[i] ?? [], -gap))) {
+      const w = (n: number) => n.toLocaleString('ko-KR')
+      if (!nc.pc) moved = -gap
+      out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: minutesOf(nc.pc), note,
+                 warn: nc.pc
+                   ? `인게임이 수집보다 ${w(-gap)}원 적어요. 넥슨쇼핑 쿠폰 ${w(nc.pc - gap)}원이 MVP에 들어가지 않았고(선물 등) 나머지 ${w(nc.pc)}원이 PC방이에요.`
+                   : `인게임이 수집보다 ${w(-gap)}원 적어요. 그 주에 산 것 중 이만큼이 MVP에 들어가지 않았어요.`,
                  ok: true, unknown: false })
       continue
     } else if (gap < 0) {

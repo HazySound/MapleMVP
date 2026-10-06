@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anchor, applyCorrections, compare, mergeSaved, minutesOf, missing, prune, restore,
+  anchor, applyCorrections, compare, mergeSaved, minutesOf, missing, notCounted, prune, restore,
 } from './pcroom'
 import { forecast } from './mvp'
 import { real } from '../../../test/private'
@@ -228,5 +228,27 @@ describe('블랙 주 금액이 1원 단위인 경우', () => {
   })
   it('블랙이 아니면 전처럼 막는다', () => {
     expect(compare([36_810], [33_390], one)[0].note).toBeTruthy()
+  })
+})
+
+describe('선물한 넥슨쇼핑 쿠폰(PC방이 섞인 주)', () => {
+  // 2026-10-06 제보 모양: 쿠폰 10만 원 9장을 선물, 그 주 인게임은 PC방 22,700원뿐
+  const nine = Array(9).fill(100_000)
+  const shop = nine.map(() => true)
+  it('쿠폰을 빼고 남는 것을 PC방으로 본다', () => {
+    expect(notCounted(nine, shop, 877_300)).toEqual({ pick: [0, 1, 2, 3, 4, 5, 6, 7, 8], pc: 22_700 })
+    const g = compare([22_700], [900_000], ['2026-09-03'], [], [], false, { items: [nine], shop: [shop] })[0]
+    expect(g.note).toBe('')
+    expect(g.minutes).toBe(minutesOf(22_700))
+  })
+  it('쿠폰 일부만 빠진 주도 가장 적게 빼는 조합을 쓴다', () => {
+    expect(notCounted(nine, shop, 150_000)).toEqual({ pick: [0, 1], pc: 50_000 })
+  })
+  it('쿠폰이 아닌 결제는 PC방이 섞이면 전처럼 막는다', () => {
+    expect(notCounted(nine, nine.map(() => false), 877_300)).toBeNull()
+    expect(compare([22_700], [900_000], ['2026-09-03'], [], [], false, { items: [nine] })[0].note).toBeTruthy()
+  })
+  it('남는 것이 100원 단위가 아니면 막는다', () => {
+    expect(notCounted(nine, shop, 877_350)).toBeNull()
   })
 })
