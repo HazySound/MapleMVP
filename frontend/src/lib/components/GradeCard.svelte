@@ -144,7 +144,9 @@
   // PC방 접속분은 구매내역에 안 잡혀서, 맞추기 전까지는 인게임 숫자와 다르다.
   // 한 번 맞춰 놔도 주가 지나면 새 주가 비므로 다시 어긋난다.
   // 그래서 '아직 모르는 주'가 하나라도 있으면 계속 알린다 — 오랜만에 들어와도 눈에 띈다.
-  const needPc = $derived(app.web && !!d.syncedAt && d.pcroom.missing.length > 0)
+  // 맞춰 둔 뒤 등급이 바뀌는 등으로, 지난번에 합만 알아 둔 주들의 금액이 중요해져도 다시 맞추라고 한다
+  const recheck = $derived(app.web && !!d.syncedAt && !d.pcroom.missing.length && d.pcroom.recheck)
+  const needPc = $derived(app.web && !!d.syncedAt && (d.pcroom.missing.length > 0 || d.pcroom.recheck))
 
   /*
    * 보정은 PC에서만 된다.
@@ -195,6 +197,9 @@
         onclick={() => (noRows ? want() : (app.showPcRoom = true))}
         use:tip={noRows
           ? '구매내역을 먼저 동기화해 주세요. 수집한 결제가 있어야 그 차이를 PC방으로 볼 수 있어요'
+          : recheck
+            ? '지난번 맞출 때 인게임 표에 0으로 나와 합계만 알던 주가 있어요. 그 뒤 등급이 올라 이제 그 주들이 '
+              + '얼마였는지에 따라 앞으로의 등급이 달라져요. 인게임 금액 맞추기를 한 번 더 해 주세요'
           : needPc
             ? `인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요`
             : [pcCaveat(d.pcroom) || '인게임 금액과 다른 몫(프리미엄 PC방 접속분, 이월로 옮겨진 금액 등)은 구매내역에 안 잡혀요. 인게임 캡처로 맞출 수 있어요',

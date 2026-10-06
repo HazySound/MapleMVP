@@ -54,7 +54,7 @@ export const getBase = () => base
 function compute(raw: Raw): State {
   base = buildBase(raw.rows, raw.pcroom)
   const { rows, pcroom, ...rest } = raw
-  return { ...rest, ...buildState(base) }
+  return { ...rest, ...buildState(base, raw.fixedAt ?? 0) }
 }
 
 function apply(raw: Raw, initial: boolean) {

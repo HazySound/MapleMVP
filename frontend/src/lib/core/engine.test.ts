@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildBase, buildState, makePlan, placeMoved, simulate } from './engine'
+import { buildBase, buildState, makePlan, needRecheck, placeMoved, simulate } from './engine'
 import { addDays, type Row } from './mvp'
+import { writeWeeks } from './pcroom'
 
 /**
  * 실제로 확인된 한 주(2026-09-24 주, 다이아)를 그대로 재현한다.
@@ -161,5 +162,36 @@ describe('계획의 성격: 달성 · 유지 · 내려가기', () => {
     const p = made(silver, 'gold', '2026-10-29', keep)
     expect(p.mode).toBe('reach')
     expect(p.hold).toBeNull()
+  })
+})
+
+describe('다시 맞추라는 안내(합만 아는 묶음)', () => {
+  // 2026-10-06 제보 모양: 10/5 실버로 맞출 때 툴팁 앞 9줄이 0이라 7/9~9/10 PC방 139,100원을 합으로만 알았다(9/10 주에 몰아 둠)
+  const starts = Array.from({ length: 13 }, (_, i) => addDays('2026-07-09', i * 7))
+  const paid: Row[] = [
+    { date: '2026-07-10', item: '결제', price: 30_000, id: '00202607101200000000000001' },
+    { date: '2026-07-24', item: '결제', price: 49_800, id: '00202607241200000000000002' },
+    { date: '2026-09-19', item: '결제', price: 69_600, id: '00202609191200000000000003' },
+    { date: '2026-09-26', item: '결제', price: 220_000, id: '00202609261200000000000004' },
+  ]
+  const group = starts.slice(0, 10).map(start => ({ start, gapMin: start === '2026-09-10' ? 139_100 : 0, gapMax: 0,
+    pcMin: 0, pcMax: 139_100, unknown: false, group: '2026-07-09' }))
+  const rest = starts.slice(10).map(start => { const pc = start === '2026-10-01' ? 8_200 : 0
+    return { start, gapMin: pc, gapMax: pc, pcMin: pc, pcMax: pc, unknown: false } })
+  const saved = writeWeeks([...group, ...rest].map(w => ({ ...w, gapMax: w.gapMin })))
+  const fixedAt = Date.parse('2026-10-05T17:58:00+09:00')
+  it('맞춘 때와 같은 등급이면 안내하지 않는다', () => {
+    const b = buildBase(paid, saved, new Date('2026-10-05T18:00:00+09:00'))
+    expect(b.last13.reduce((a, x) => a + x, 0)).toBe(516_700)
+    expect(b.current?.key).toBe('silver')
+    expect(needRecheck(b, fixedAt)).toBe(false)
+  })
+  it('그 뒤 결제로 등급이 올라 묶음이 12줄을 가르면 다시 맞추라고 한다', () => {
+    const more = [...paid, { date: '2026-10-06', item: '결제', price: 119_000, id: '00202610062200000000000006' }]
+    const b = buildBase(more, saved, new Date('2026-10-06T23:00:00+09:00'))
+    expect(b.current?.key).toBe('gold')
+    expect(needRecheck(b, fixedAt)).toBe(true)
+    expect(buildState(b, fixedAt).pcroom.recheck).toBe(true)
+    expect(needRecheck(b, 0)).toBe(false)   // 맞춘 적이 없으면 이 안내가 아니다
   })
 })

@@ -430,8 +430,44 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
   }
 }
 
+/**
+ * 인게임 금액을 다시 맞춰야 하는지. 툴팁 앞줄이 0이라 합만 아는 묶음은 그 합을 묶음의 가장 최근 주에 몰아 둔다.
+ * 맞출 때 등급에서는 그 줄들이 0이었으니(모자람 없음) 어떻게 나뉘든 그 등급 이하의 12줄은 늘 같다. 뒤에 들어오는 결제·PC방은
+ * 더하기만 하니까 그대로다. 그런데 결제로 등급이 오르면 더 높은 기준으로 따지게 되어, 묶음의 주마다 얼마였는지에 따라
+ * '유지까지'가 달라진다. 그때 합을 묶음의 첫 주에 둘 때와 마지막 주에 둘 때 지금 등급의 12줄이 다르면 사이트가 맞힐 수 없다.
+ * 다시 맞추면 새 툴팁에 그 주들이 숫자로 나온다
+ * (2026-10-06 제보: 10/5 실버로 맞춘 뒤 골드가 되자, 묶음에 있던 7/9 주 PC방 8,100원을 몰라 '골드 유지'로 봤다)
+ * fixedAt: 마지막으로 맞춘 시각. 그때의 등급은 그때까지의 결제로 다시 셈한다
+ */
+export function needRecheck(b: Base, fixedAt: number): boolean {
+  if (!b.current || !fixedAt) return false
+  const saved = b.starts.map(s => readWeek(b.saved, s))
+  const groups = [...new Set(saved.flatMap(w => (w?.group ? [w.group] : [])))]
+  if (!groups.length) return false
+  // 결제 번호 앞에 결제 시각(한국 시간 yyyymmddhhmmss)이 있다. 없으면(넥슨쇼핑 쿠폰) 날짜로만 본다
+  const at = new Date(fixedAt + 9 * 3600e3).toISOString().replace(/\D/g, '').slice(0, 14)
+  const before = b.rows.filter(r => {
+    const m = /^\d{2}(\d{14})/.exec(r.id ?? '')
+    return m ? m[1] <= at : r.date <= `${at.slice(0, 4)}-${at.slice(4, 6)}-${at.slice(6, 8)}`
+  })
+  const then = buildBase(before, b.saved, new Date(fixedAt)).current
+  if (then && then.th >= b.current.th) return false
+  const rows = (w: number[]) => forecast(w, b.carry).slice(0, WINDOW - 1).map(r => Math.max(0, b.current!.th - r.sum - r.carryUsed))
+  const now = rows(b.last13).join(',')
+  for (const g of groups) {
+    const idx = saved.flatMap((w, i) => (w?.group === g ? [i] : []))
+    if (idx.length < 2) continue
+    const sum = idx.reduce((a, i) => a + saved[i]!.gapMin, 0)
+    const alt = [...b.last13]
+    for (const i of idx) alt[i] -= saved[i]!.gapMin
+    alt[idx[0]] += sum
+    if (rows(alt).join(',') !== now) return true
+  }
+  return false
+}
+
 /** 화면이 쓰는 상태 한 덩어리. 예전에 파이썬이 내려 주던 것과 같은 모양이다. */
-export function buildState(b: Base) {
+export function buildState(b: Base, fixedAt = 0) {
   const saved = b.starts.map(s => readWeek(b.saved, s))
   // 넥슨 − 수집 = PC방 + 갱신 때 쓴 이월. PC방을 범위로만 아는 주는 최솟값을 PC방으로 둔다
   const weeks = b.starts.map((start, i) => {
@@ -482,6 +518,8 @@ export function buildState(b: Base) {
         }
         return w.pcMax > w.pcMin ? [{ start: w.start, kind: 'range', min: w.pcMin, max: w.pcMax }] : []
       }),
+      /** 합만 아는 묶음 때문에 지금 등급의 12줄을 맞힐 수 없다. 인게임 금액을 다시 맞춰야 한다 */
+      recheck: needRecheck(b, fixedAt),
       /** PC방이 아니라 수집 못 한 결제(넥슨쇼핑 쿠폰 등)로 넣어 둔 금액. PC방 합계와 따로 센다 */
       missTotal: saved.reduce((a, w) => a + (w?.miss ? w.gapMin : 0), 0),
       // 묶음은 주별로는 모르지만 합은 정확하다. 합을 한 주에 몰아 두었으니 그 금액을 그대로 센다

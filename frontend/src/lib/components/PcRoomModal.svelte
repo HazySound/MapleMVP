@@ -392,13 +392,16 @@
     savedBalance = black ? b.carry : null
     const at = d.fixedAt ?? 0
     const kst = (t: number) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10)
-    if (at && weekStart(kst(at)) === b.thisWeek) {
+    if (at && weekStart(kst(at)) === b.thisWeek && !d.pcroom.recheck) {
       calc()
       scanMsg = `마지막 맞춤(${dayTime(at)})에 읽은 값이에요. 인게임과 같으면 그대로 두셔도 돼요.`
     } else {
       openInput = true
       scanPartial = true
-      scanMsg = `${at ? `마지막 맞춤(${dayTime(at)}) 뒤 목요일이 지나 ` : ''}인게임 숫자가 바뀌었어요. `
+      scanMsg = d.pcroom.recheck && at && weekStart(kst(at)) === b.thisWeek
+        ? `마지막 맞춤(${dayTime(at)}) 때 합계만 알던 주들이 이제 등급에 영향을 줘요. `
+          + '아래는 저장된 값으로 짐작한 숫자라 인게임과 다를 수 있어요. 다시 읽어 주세요.'
+        : `${at ? `마지막 맞춤(${dayTime(at)}) 뒤 목요일이 지나 ` : ''}인게임 숫자가 바뀌었어요. `
         + '아래는 저장된 값으로 계산한 이번 주 예상값이에요. 다시 읽어 주세요.'
     }
   }
