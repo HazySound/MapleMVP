@@ -123,6 +123,9 @@
     }),
   }))
   const blocked = $derived(rows.some(r => r.note && edited[r.start] === undefined && !missed[r.start]))
+  /** 마지막 동기화 뒤에도 이어지는 주인데 인게임이 수집보다 많다: 동기화 안 된 결제일 수 있다 */
+  const unsynced = (g: { start: string; nexon: number; collected: number }) =>
+    g.nexon > g.collected && !!d.syncedAt && Date.parse(addDays(g.start, 7) + 'T00:00:00+09:00') > Date.parse(d.syncedAt)
   /** 인게임 금액 그대로 저장할 수 있는 줄: PC방으로 설명되지 않는 주. 금액을 모르는 주는 안 된다 */
   const canMiss = (r: { start: string; note: string; nexon: number; spent: number; unknown?: boolean }) =>
     !!r.note && !r.unknown
@@ -200,9 +203,12 @@
     const bS = dropped.size ? buildBase(rowsNow.filter(x => !dropped.has(x)), b0.saved) : b
     // 인게임이 기준이다(2026-10-06 사용자 방침). 구매내역과 어긋난 주는 PC방으로 설명되지 않아도 인게임 금액대로 저장한다.
     // 선물한 넥슨쇼핑 쿠폰, 넥슨이 MVP에 넣지 않은 결제, 수집 못 한 결제처럼 사이트가 다 알 수 없는 까닭이 있다
+    // 다만 마지막 동기화 뒤에 끝나는 주에서 인게임이 더 많으면 아직 안 받아 온 결제일 수 있다. 그대로 넣으면 나중에 동기화할 때
+    // 같은 금액이 두 번 들어간다(2026-10-07 제보: 9/30 뒤로 동기화를 안 해 이번 주 850,000원을 '수집 못 한 결제'로 넣었다).
+    // 그 주는 먼저 동기화하라고 하고, 동기화한 뒤에도 같으면 사용자가 '인게임 금액 그대로 저장하기'를 누른다
     if (!keepMissed) {
       missed = Object.fromEntries(gaps.filter(g => canMiss({ start: g.start, note: g.note, nexon: g.nexon, spent: g.collected,
-                                                             unknown: g.unknown }))
+                                                             unknown: g.unknown }) && !unsynced(g))
         .map(g => [g.start, true]))
     }
     // 블랙이면 툴팁에서 지금 이월 잔액을 읽는다. '유지까지'가 처음으로 남는 줄에서 이월이 바닥난다
@@ -832,7 +838,11 @@
               {:else if !r.group && (r.note || r.warn)}
                 <p class="msg" class:bad={!!r.note}>
                   {r.note || r.warn}
-                  {#if canMiss(r) && edited[r.start] === undefined}
+                  {#if canMiss(r) && edited[r.start] === undefined && unsynced({ start: r.start, nexon: r.nexon, collected: r.spent })}
+                    <br>마지막 동기화({dayTime(Date.parse(d.syncedAt!))}) 뒤에 산 결제가 아직 안 받아졌을 수 있어요.
+                    구매내역을 먼저 동기화한 뒤 다시 맞춰 주세요. 동기화해도 같으면 눌러 주세요.
+                    <button class="link" onclick={() => markMissed(r.start, true)}>인게임 금액 그대로 저장하기</button>
+                  {:else if canMiss(r) && edited[r.start] === undefined}
                     <br>숫자를 잘못 읽었을 수도 있어요. 위 '읽어온 값 확인·수정'의 12줄이 게임 화면과 같은지 확인한 뒤 눌러 주세요.
                     <button class="link" onclick={() => markMissed(r.start, true)}>인게임 금액 그대로 저장하기</button>
                   {/if}

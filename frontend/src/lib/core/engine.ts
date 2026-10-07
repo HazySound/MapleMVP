@@ -186,7 +186,7 @@ function settleOpen(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blocks'>,
 
   // 합만 아는 묶음을 지난 스캔 값으로 채운다
   const hole = new Set(r.unknown)
-  const groups: { first: number; weeks: number[]; rem: number }[] = []
+  const groups: { first: number; weeks: number[]; rem: number; dist: number[] }[] = []
   for (const blk of r.blocks) {
     const idx = Array.from({ length: blk.to - blk.from + 1 }, (_, t) => blk.from + t)
     let rem = blk.sum - idx.reduce((a, i) => a + b.purchases[i], 0)
@@ -199,10 +199,12 @@ function settleOpen(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blocks'>,
     }
     for (const i of idx) { hole.delete(i); if (open.includes(i)) gaps[i] = 0 }
     if (open.length === 1) gaps[open[0]] = rem
-    // 여럿이 남으면 합을 가장 최근 주에 몰아 둔다. 묶음 사이 줄은 툴팁에 0(기준 이상)으로 나왔으니
-    // 그 갱신들에서 합계가 기준 밑으로 내려가면 안 된다. 오래된 주에 두면 먼저 빠져서 인게임은 유지인데
-    // 사이트는 떨어진다고 보인다(2026-09-29 제보: 네 주 묶음을 첫 주에 두니 다음 주 한 단계 아래, 인게임은 유지)
-    else if (open.length > 1) { gaps[open[open.length - 1]] = rem; groups.push({ first: open[0], weeks: open, rem }) }
+    // 여럿이 남으면 묶음 사이 줄(툴팁에 0 = 기준 이상)과 어긋나지 않게 나눈다(spreadGroup)
+    else if (open.length > 1) {
+      const dist = spreadGroup(rem, open.map(i => b.purchases[i]), true)
+      open.forEach((i, k) => (gaps[i] = dist[k]))
+      groups.push({ first: open[0], weeks: open, rem, dist })
+    }
   }
   // 합도 모르는 앞쪽 주. 지난 스캔 값이 있으면 그것을 쓴다
   for (const i of [...hole]) {
@@ -311,8 +313,8 @@ function settleOpen(b: Base, r: Pick<Restored, 'weeks' | 'unknown' | 'blocks'>,
   const holes = () => {
     for (const i of hole) if (i !== 0 || !w0Open) weeks[i] = unknown(i)
     for (const g of groups) {
-      for (const i of g.weeks) {
-        const v = i === g.weeks[g.weeks.length - 1] ? g.rem : 0
+      for (const [k, i] of g.weeks.entries()) {
+        const v = g.dist[k]
         weeks[i] = { start: b.starts[i], gapMin: v, gapMax: v, pcMin: 0,
                      pcMax: Math.max(0, g.rem - g.rem % UNIT), unknown: false, group: b.starts[g.first] }
       }
@@ -431,6 +433,32 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
 }
 
 /**
+ * 합만 아는 묶음(툴팁에 0으로 나온 줄 사이 주들)의 '넥슨 − 수집' 합 rem을 주마다 나눈다. paid: 그 주들의 수집 결제.
+ * 0인 줄은 그 갱신 때 합계가 기준 이상이었다는 뜻이라, 묶음 금액이 13주에 오래 남게 나눠야 인게임과 어긋나지 않는다.
+ *   - 더할 금액(PC방)은 가장 최근 주에 몰아 둔다. 오래된 주에 두면 먼저 빠져서 인게임은 유지인데 사이트는 떨어진다
+ *     (2026-09-29 제보: 네 주 묶음을 첫 주에 두니 다음 주 한 단계 아래, 인게임은 유지)
+ *   - 뺄 금액(인게임이 수집보다 적다: MVP에 안 들어간 결제 등)은 오래된 주부터 그 주 결제만큼까지 뺀다. 최근 주에서 빼면
+ *     앞 주들이 크게 남았다가 먼저 빠져, 인게임은 0인 줄이 사이트에서는 모자라게 나온다
+ *     (2026-10-07 제보: 7/9~8/20 묶음이 수집보다 180,000원 적은데 8/20 주에서 빼니 3~6주 뒤 줄이 31,200~111,200, 인게임은 0)
+ * keep=false면 반대쪽 끝(13주에서 가장 빨리 빠지게)으로 나눈다. 다시 맞춰야 하는지 볼 때 쓴다
+ */
+export function spreadGroup(rem: number, paid: number[], keep = true): number[] {
+  const out = paid.map(() => 0)
+  if (rem >= 0) { out[keep ? out.length - 1 : 0] = rem; return out }
+  let left = -rem
+  const order = paid.map((_, i) => i)
+  if (!keep) order.reverse()
+  for (const i of order) {
+    const take = Math.min(left, paid[i])
+    out[i] = -take
+    left -= take
+  }
+  // 결제보다 많이 빠질 수는 없지만, 그래도 남으면 마지막 자리에 둔다(합은 지킨다)
+  if (left) out[order[order.length - 1]] -= left
+  return out
+}
+
+/**
  * 인게임 금액을 다시 맞춰야 하는지. 툴팁 앞줄이 0이라 합만 아는 묶음은 그 합을 묶음의 가장 최근 주에 몰아 둔다.
  * 맞출 때 등급에서는 그 줄들이 0이었으니(모자람 없음) 어떻게 나뉘든 그 등급 이하의 12줄은 늘 같다. 뒤에 들어오는 결제·PC방은
  * 더하기만 하니까 그대로다. 그런데 결제로 등급이 오르면 더 높은 기준으로 따지게 되어, 묶음의 주마다 얼마였는지에 따라
@@ -458,9 +486,10 @@ export function needRecheck(b: Base, fixedAt: number): boolean {
     const idx = saved.flatMap((w, i) => (w?.group === g ? [i] : []))
     if (idx.length < 2) continue
     const sum = idx.reduce((a, i) => a + saved[i]!.gapMin, 0)
+    // 저장해 둔 나눔과 반대쪽 끝으로 나눴을 때 12줄이 갈리면 사이트가 맞힐 수 없다
+    const flip = spreadGroup(sum, idx.map(i => b.purchases[i]), false)
     const alt = [...b.last13]
-    for (const i of idx) alt[i] -= saved[i]!.gapMin
-    alt[idx[0]] += sum
+    idx.forEach((i, k) => (alt[i] += flip[k] - saved[i]!.gapMin))
     if (rows(alt).join(',') !== now) return true
   }
   return false
