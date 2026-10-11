@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import AccountMenu from './AccountMenu.svelte'
   import NoteBell from './NoteBell.svelte'
-  import { go, leaveBoard } from '../qna.svelte'
+  import { forgetBack, go, leaveBoard } from '../qna.svelte'
   import { app, refresh, showLogin, toggleTheme, win } from '../store.svelte'
   import { TOUCH } from '../format'
   import { tip } from '../tip'
@@ -42,18 +42,6 @@
     leaveBoard()
     app.view = v
   }
-
-  /**
-   * 로고를 누르면 첫 화면(현황)으로. 주소로 다시 들어가면 페이지를 통째로 새로 받느라
-   * 한동안 멈춘 것처럼 보이고, 이미 '/'에 있으면 아무 일도 없는 것처럼 보였다.
-   * 새 탭으로 열기(ctrl·가운데 단추)는 그대로 둔다
-   */
-  function home(e: MouseEvent) {
-    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
-    e.preventDefault()
-    tab('dash')
-    document.querySelector('main')?.scrollTo(0, 0)
-  }
 </script>
 
 <header class="bar">
@@ -64,10 +52,12 @@
     <span class="ttl">MapleMVP</span>
   {/snippet}
 
-  <!-- 웹에서는 여느 사이트처럼 첫 화면으로 돌아가는 길이다.
+  <!-- 웹에서는 여느 사이트처럼 첫 화면으로 돌아가는 길이다. 누르면 첫 화면(/)을 새로 받아 새 빌드도 반영된다
+       (사용자 지정 2026-10-11. 예전엔 멈춘 것처럼 보여 탭만 바꿨는데 지금은 다시 뜨기까지 0.25초 남짓이고,
+       쓰던 문의 글은 브라우저에 적혀 있어 안 사라진다). 로그인하려다 그만둔 자리가 남아 있으면 게시판으로 끌려가니 지운다.
        exe에는 돌아갈 '홈'이 따로 없어서 그냥 이름표로 둔다 -->
   {#if app.web}
-    <a class="brand" href="/" onclick={home} aria-label="MapleMVP 첫 화면">{@render brand()}</a>
+    <a class="brand" href="/" onclick={forgetBack} aria-label="MapleMVP 첫 화면">{@render brand()}</a>
   {:else}
     <div class="brand">{@render brand()}</div>
   {/if}

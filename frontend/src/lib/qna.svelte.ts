@@ -54,6 +54,11 @@ export function loginHere(to = location.hash) {
   app.showSignIn = true
 }
 
+/** 적어 둔 자리를 버린다. 로그인하려다 그만두고 첫 화면을 새로 받으면 게시판으로 끌려가지 않게 */
+export function forgetBack() {
+  try { sessionStorage.removeItem(BACK) } catch { /* 없으면 그만 */ }
+}
+
 let timer = 0
 
 /**
