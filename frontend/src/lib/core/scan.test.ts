@@ -248,6 +248,19 @@ describe('12줄 모두 0인 표(블랙 아님)', () => {
     expect(r.ok, r.issues.join(' ')).toBe(true)
     expect(r.blocks).toEqual([{ from: 0, to: 12, sum: 1_630_000 }])
   })
+  it('등급 없음: 12줄이 모두 없음 · 0이면 상단 브론즈 등급까지로 13주 합만 안다', () => {
+    const collected = [...Array(12).fill(0), 10_000]
+    const zeros = Array(12).fill(0)
+    const s = solveScan({ readings: [zeros], votes: [30], carries: [], amounts: [137_100], panel: [137_100], scale: 1 }, collected)
+    // 브론즈까지 137,100 → 12,900(등급 없음)이 먼저. 실버까지로 보면 이번 주에 PC방 14만 원이라 뒤에 둔다
+    expect(s?.choices?.[0]).toEqual({ tierTh: 0, total: 12_900 })
+    // 골드·다이아처럼 이번 주 PC방으로 설명 안 되는 등급은 후보가 아니다
+    expect(s?.choices?.every(c => c.tierTh <= 150_000)).toBe(true)
+    const r = restore(zeros, 0, 12_900)
+    expect(r.ok, r.issues.join(' ')).toBe(true)
+    expect(r.blocks).toEqual([{ from: 0, to: 12, sum: 12_900 }])
+    expect(restore(zeros, 0, null).ok).toBe(false)
+  })
 })
 
 describe('구매내역과 맞춰 볼 수 없는 표', () => {

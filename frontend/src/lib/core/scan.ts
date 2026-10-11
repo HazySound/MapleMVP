@@ -210,11 +210,21 @@ export function totalsFor(needs: number[], collected: number[], amounts: number[
                           carry: number[] = NO_CARRY, loose: boolean[] = [], ref: Known = {}): Set<string> {
   const mixed = loose.flatMap((l, i) => (l ? [i] : []))
   const found = new Set<string>()
-  for (let i = 1; i < THS.length; i++) {
+  // 12줄이 모두 0이면 '브론즈 등급까지'(등급 없음)도 말이 된다. 등급이 있는데 모두 0이면 12주 뒤에 남는 이번 주만으로
+  // 그 등급이 지켜진다는 뜻이라, 이번 주가 수집보다 많은 만큼은 한 주 PC방으로 설명돼야 한다
+  // (2026-10-10 제보: 등급 없음 · 1만 원 결제 계정에 '실버까지'로 본 합계 162,900원 같은 후보만 나왔다)
+  const zero = needs.every(n => n === 0) && carry.every(c => c === 0)
+  const last = collected.length - 1
+  for (let i = zero ? 0 : 1; i < THS.length; i++) {
+    const lower = i > 0 ? THS[i - 1] : 0
+    if (zero && lower > 0 && !loose[last]) {
+      const pc = lower - collected[last]
+      if (pc > 0 && (pc % UNIT !== 0 || minutesOf(pc) > MAX_WEEK_MINUTES)) continue
+    }
     for (const v of amounts) {
       const total = THS[i] - v
       if (total <= 0) continue
-      const r = restore(needs, THS[i - 1], total, null, carry)
+      const r = restore(needs, lower, total, null, carry)
       if (!r.ok) continue
       // 0으로 적힌 줄 사이의 주는 하나하나는 모르니 건너뛰고, 묶음의 합으로 따진다
       if (!compare(r.weeks, collected, collected.map(() => ''), r.unknown, mixed, false, ref).every(g => g.ok)) continue
@@ -224,7 +234,7 @@ export function totalsFor(needs: number[], collected: number[], amounts: number[
         return { gap, mix: loose.slice(k.from, k.to + 1).some(Boolean) }
       })
       if (!gaps.every(g => g.gap >= 0 && (g.mix || g.gap % UNIT === 0))) continue
-      found.add(`${THS[i - 1]}:${total}`)
+      found.add(`${lower}:${total}`)
     }
   }
   return found

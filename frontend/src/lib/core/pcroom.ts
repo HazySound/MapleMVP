@@ -168,7 +168,9 @@ export function restore(needs: number[], tierTh: number, total: number | null,
   const issues: string[] = []
   const fail = (msg: string): Restored => ({ weeks: [], unknown: [], blocks: [], issues: [msg], ok: false })
   if (needs.length !== TOOLTIP_ROWS) return fail(`툴팁 값이 ${TOOLTIP_ROWS}개여야 하는데 ${needs.length}개예요.`)
-  if (tierTh <= 0) return fail('지금 등급을 알 수 없어요.')
+  // 등급이 없으면(13주 합계가 브론즈 아래) 12줄이 모두 '없음 · 0'이라 상단 '브론즈 등급까지'로 13주 합만 안다
+  // (2026-10-10 제보: 등급 없는 계정이 '지금 등급을 알 수 없어요'로 막혔다)
+  if (tierTh <= 0 && (total == null || needs.some(n => n !== 0))) return fail('지금 등급을 알 수 없어요.')
 
   const won = (n: number) => n.toLocaleString('ko-KR')
   const known = knownRows(needs, carry, tierTh >= BLACK_TH)

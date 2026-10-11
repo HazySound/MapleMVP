@@ -736,12 +736,17 @@ function readBalance(g: Gray, tables: Table[], t: Table): number | null {
   const x0 = Math.max(0, t.x0 - s(260)), x1 = Math.min(W, right + s(120))
   const last = t.rows[t.rows.length - 1]
   const pitch = t.rows[1][0] - t.rows[0][0]
-  /** 한 줄의 숫자 덩어리(가로 위치, 읽은 글자). 글자 사이 틈보다 넓게 떨어진 곳에서 끊는다 */
-  const chunksAt = (y0: number, y1: number, th: number) => {
+  /**
+   * 한 줄의 숫자 덩어리(가로 위치, 읽은 글자). 글자 사이 틈보다 넓게 떨어진 곳에서 끊는다.
+   * '1'은 폭이 좁아 양옆 틈이 다른 숫자 사이의 두 배쯤 된다. 그 틈에서 끊으면 '9,211,100'이 '100'만 남는다
+   * (2026-10-10 제보: 작은 캡처에서 이월 잔액을 100원으로 읽었다). 잔액과 '/' 사이는 그보다 훨씬 넓다.
+   * 회색 '10,000,000 캐시'까지 보는 어두운 기준에서는 '캐시'가 붙지 않게 좁게 끊는다
+   */
+  const chunksAt = (y0: number, y1: number, th: number, gap = s(12)) => {
     const out: { p: number; q: number; text: string }[] = []
     for (const [p, q] of digitSegs(g, y0, y1, x0, x1, t.scale, th)) {
       const c = out[out.length - 1]
-      if (c && p - c.q <= s(7)) c.q = q; else out.push({ p, q, text: '' })
+      if (c && p - c.q <= gap) c.q = q; else out.push({ p, q, text: '' })
     }
     for (const c of out) c.text = lineGlyphs(g, y0, y1, x0 + c.p - s(2), x0 + c.q + s(2), t.scale, th).map(match).join('').replace(/,/g, '')
     return out
@@ -765,7 +770,7 @@ function readBalance(g: Gray, tables: Table[], t: Table): number | null {
       // 잔액으로 쓰면 '12,530'이 '12'가 된다(2026-10-01 제보)
       const n = chunksAt(y0, y1, th).at(-1)
       if (!n || !/^\d+$/.test(n.text)) continue
-      const cap = chunksAt(y0, y1, 130).some(c => c.p > n.q && /0{6}$/.test(c.text))
+      const cap = chunksAt(y0, y1, 130, s(7)).some(c => c.p > n.q && /0{6}$/.test(c.text))
       if (cap) votes.set(Number(n.text), (votes.get(Number(n.text)) ?? 0) + 1)
     }
     const best = [...votes].sort((p, q) => q[1] - p[1])[0]
