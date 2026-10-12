@@ -85,12 +85,15 @@ describe('조합', () => {
     expect(minPrice(3, 99_000)).toBeCloseTo(50.339, 2)
   })
 
-  it('계획: 계획 금액에 딱 맞는 조합 중에서 고른다(메포는 1,000원 단위)', () => {
-    // 99,000원에 딱 맞는 건 전승 1장, 플가 10개 + 메포 4만, 메포 9.9만뿐. 플가 16개 + 메포 4,600원은 메포 단위가 안 맞는다
+  it('계획: 계획 금액에서 1,000원 안쪽으로 넘기는 것까지 보고 가장 싼 조합을 고른다(메포는 1,000원 단위)', () => {
+    // 99,000원에 딱 맞는 건 전승 1장, 플가 10개 + 메포 4만, 메포 9.9만뿐. 플가 16개 + 메포 5천(99,400원)처럼 조금 넘기는 게 더 싸면 그쪽
+    // (2026-10-12 사용자: 딱 맞추기만 먼저 봐서 200원 더 내면 3,550원 덜 드는 플가를 놓쳤다)
     const r = solve({ ...base, target: 99_000, items: [karma, potential] })!
-    expect(r.best.pay).toBe(99_000)
-    expect(r.best.lines).toEqual([{ item: potential, n: 1 }])
+    expect(r.best.pay).toBeGreaterThanOrEqual(99_000)
+    expect(r.best.pay).toBeLessThan(100_000)
     expect(r.best.market % 1000).toBe(0)
+    const tight = solve({ ...base, target: 99_000, items: [potential] })!
+    expect(r.best.loss).toBeLessThanOrEqual(tight.best.loss)
   })
 
   it('금액 직접: 조금 넘겨 사는 게 더 남으면 그렇게 한다', () => {
@@ -204,10 +207,12 @@ describe('주별 상품권 한도', () => {
       um: 1500, mk: 2300, items: [karma], fee: null, exact: true,
     })!
     const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
-    expect(cash(0)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000]])
-    expect(cash(1)).toEqual([['컬쳐랜드', 200_000], ['일반 충전', 50_000]])
-    expect(cash(2)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000]])
-    for (const w of res) expect(w.solved.best.pay).toBe(250_000)
+    // 계획보다 1,000원 안쪽으로 넘긴 끝자리는 일반 충전에 붙는다
+    const over = (i: number) => res[i].solved.best.pay - 250_000
+    expect(cash(0)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000 + over(0)]])
+    expect(cash(1)).toEqual([['컬쳐랜드', 200_000], ['일반 충전', 50_000 + over(1)]])
+    expect(cash(2)).toEqual([['넥슨카드', 200_000], ['일반 충전', 50_000 + over(2)]])
+    for (let i = 0; i < res.length; i++) expect(over(i)).toBeGreaterThanOrEqual(0), expect(over(i)).toBeLessThan(1000)
   })
   it('넥슨카드를 마지막에만 쓰기를 끄면 할인이 큰 순서대로 먼저 쓴다', () => {
     const res = planAll({
@@ -222,8 +227,10 @@ describe('주별 상품권 한도', () => {
       um: 1500, mk: 2300, items: [karma], fee: null, exact: true, nexonLast: false,
     })!
     const cash = (i: number) => fund(res[i].solved.best.pay, res[i].ctx).parts.map(p => [p.name, p.cash])
-    expect(cash(0)).toEqual([['넥슨카드', 200_000]])
-    expect(cash(1)).toEqual([['컬쳐랜드', 200_000]])
+    // 계획보다 1,000원 안쪽으로 넘긴 끝자리는 일반 충전으로 따로 붙는다
+    const over = (i: number) => res[i].solved.best.pay - 200_000
+    expect(cash(0)).toEqual([['넥슨카드', 200_000], ...(over(0) ? [['일반 충전', over(0)]] : [])])
+    expect(cash(1)).toEqual([['컬쳐랜드', 200_000], ...(over(1) ? [['일반 충전', over(1)]] : [])])
   })
   it('한 권 더 사도 뒤 주 한도를 앞당겨 쓸 뿐이면(일반 충전이 안 줄면) 끝자리는 일반 충전으로 딱 맞춘다', () => {
     const res = planAll({
@@ -349,8 +356,8 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       const top = T100 + Math.max(900, ...items.map(x => x.cash))
       let bySales = new Map<number, number>()
       let bestLoss = Infinity
-      // 앱과 같은 순서: 계획이면 딱 맞게 → 1,000원 안쪽 → 자유롭게
-      let tier = exact ? 0 : 2
+      // 앱과 같은 순서: 계획이면 1,000원 안쪽(딱 맞는 것도 포함)에서 가장 싼 것 → 안 되면 자유롭게
+      let tier = exact ? 1 : 2
       const walk = (j: number, cash: number, back: number, sales: number) => {
         if (j === items.length) {
           const cands: [number, number, number][] = []
@@ -411,8 +418,8 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       const top = T100 + Math.max(900, ...items.map(x => x.cash))
       let bySales = new Map<number, number>()
       let bestLoss = Infinity
-      // 앱과 같은 순서: 계획이면 딱 맞게 → 1,000원 안쪽 → 자유롭게
-      let tier = exact ? 0 : 2
+      // 앱과 같은 순서: 계획이면 1,000원 안쪽(딱 맞는 것도 포함)에서 가장 싼 것 → 안 되면 자유롭게
+      let tier = exact ? 1 : 2
       const walk = (j: number, cash: number, back: number, sales: number) => {
         if (j === items.length) {
           const cands: [number, number, number][] = []
@@ -470,7 +477,7 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       const T100 = Math.ceil(target / 100) * 100
       const top = T100 + Math.max(900, ...items.map(x => x.cash))
       let bySales = new Map<number, number>(), bestLoss = Infinity
-      let tier = exact ? 0 : 2
+      let tier = exact ? 1 : 2
       const walk = (j: number, cash: number, back: number, sales: number) => {
         if (j === items.length) {
           const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
@@ -615,7 +622,7 @@ describe('메이플 크레딧', () => {
     // 한 주에 25만 원어치(플가 + 메포) = 12,500크레딧: 첫 주에는 에디(2만)를 못 사서 모아 두고, 둘째 주에 에디 1개
     expect(p.weeks[0].credit!.buys).toEqual([])
     expect(p.weeks[1].credit!.buys.map(b => [b.item.id, b.n])).toEqual([['primeadd', 1]])
-    expect(p.creditLeft).toBe(2 * 250_000 * 0.05 - 20_000)
+    expect(p.creditLeft).toBe(p.pay * 0.05 - 20_000)
     near(p.creditBack, 16 * 0.97 * 1500)
     near(p.loss, p.cost - p.back)
   })
@@ -656,7 +663,11 @@ describe('선물식', () => {
     const s = solve({ ...base, target: 100_000, gift: g(0.7, 1_000, 1_000), items: [karma] })!
     expect(s.best.lines[0].item.id).toBe('karma')
     expect(s.best.gift % 1000).toBe(0)
-    expect(s.best.lines[0].n * 5900 + s.best.gift).toBe(100_000)
+    // 1,000원 안쪽으로 넘기는 게 더 싸면 그렇게 산다(메포·선물식 끝자리)
+    const paid = s.best.lines[0].n * 5900 + s.best.gift + s.best.market
+    expect(paid).toBe(s.best.pay)
+    expect(s.best.pay).toBeGreaterThanOrEqual(100_000)
+    expect(s.best.pay).toBeLessThan(101_000)
     near(s.best.back, s.best.lines[0].n * 3 * 0.97 * 1500 + s.best.gift * 0.7)
   })
   it('단위로만 사고, 남는 끝자리는 메소마켓으로', () => {
@@ -698,7 +709,10 @@ describe('직접 짜기의 선물식', () => {
   it('묶음 수를 적으면 그만큼만 쓰고 나머지는 아이템·메소마켓', () => {
     const r = run({ karma: null, [GIFT_ID]: 3 })
     expect(r.gift).toBe(30_000)
-    expect(r.lines.reduce((a, l) => a + l.n * l.item.cash, 0) + r.market + r.gift).toBe(100_000)
+    const paid = r.lines.reduce((a, l) => a + l.n * l.item.cash, 0) + r.market + r.gift
+    expect(paid).toBe(r.pay)
+    expect(r.pay).toBeGreaterThanOrEqual(100_000)
+    expect(r.pay).toBeLessThan(101_000)
   })
 })
 

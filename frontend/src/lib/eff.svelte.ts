@@ -411,6 +411,8 @@ export interface EffOut {
   bigOnly: Summary | null
   /** 그 주(순서)에 바꿔 끼울 만한 루트 후보. 화면에서 보고 있는 주만 그때 센다 */
   alts: (i: number) => RouteAlt[]
+  /** 그 주 지금 루트가 최저가 조합과 같은지(그러면 최저가는 후보에 따로 안 나온다) */
+  isBest: (i: number) => boolean
   /** 주마다 실제로 쓴 루트 종류(바꿔 끼운 것). 안 바꾼 주는 null */
   kinds: (RouteKind | null)[]
   labelOf: (k: RouteKind) => string
@@ -524,7 +526,13 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     k === 'best' || k.startsWith('sales:') ? res
     : k === 'gift' ? (eff.gift > 0 ? run([], undefined, true, { mk: 0, gift: eff.gift }) : null)
     : k === 'mk' ? (eff.mk > 0 ? run([], undefined, true, onlyMk0) : null)
-    : run(priced0.filter(x => x.id === k.slice(5)), undefined, true, onlyMk0)
+    : itemRes(k.slice(5))
+  /** 그 아이템을 그 주 금액으로 살 수 있는 만큼 꼭 사고 끝자리만 메소마켓. 쓸 수 있게만 두면 손해인 주에서는 하나도 안 사 지금 루트와 같아졌다 */
+  function itemRes(id: string) {
+    const x = priced0.find(y => y.id === id)
+    if (!x) return null
+    return run(priced0.filter(y => y.id === id), i => ({ [id]: Math.max(0, Math.floor((weeks[i].amount - weeks[i].use) / x.cash)) }), true, onlyMk0)
+  }
   /** i번째 주를 그 종류로 했을 때의 루트. 안 되면 null */
   const routeOf = (k: RouteKind, i: number): Route | null => {
     const r = kindRes(k)?.[i]
@@ -543,8 +551,8 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const est = (r: Route) => r.cost - r.back - r.creditEst
   const rateOf = (r: Route) => (r.cost ? (r.back + r.creditEst) / r.cost : 0)
   const itemName = (id: string) => all.find(x => x.id === id)?.name ?? id
-  const labelOf = (k: RouteKind) => k === 'best' ? '최저가 조합' : k === 'gift' ? '선물식' : k === 'mk' ? '메소마켓'
-    : k.startsWith('item:') ? `${itemName(k.slice(5))} 위주` : `판매 ${k.slice(6)}회로 줄이기`
+  const labelOf = (k: RouteKind) => k === 'best' ? '최저가' : k === 'gift' ? '선물식' : k === 'mk' ? '메소마켓'
+    : k === `item:${PG_ID}` ? '전부 플가' : k.startsWith('item:') ? `${itemName(k.slice(5))} 위주` : `판매 ${k.slice(6)}회로 줄이기`
   const whatOf = (r: Route) => [
     ...r.lines.map(l => `${l.item.set > 1 || l.item.bundle ? `${l.item.name}(${l.item.set}개)` : l.item.name} ${l.n}${l.item.set > 1 ? '세트' : '개'}`),
     ...(r.gift ? [`선물식 ${(r.gift / 10_000).toLocaleString('ko-KR')}만`] : []),
@@ -552,7 +560,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   ].join(' · ')
   const same = (a: Route, b: Route) => a.market === b.market && a.gift === b.gift && a.lines.length === b.lines.length
     && a.lines.every(l => b.lines.some(m => m.item.id === l.item.id && m.n === l.n))
-  /** 비슷하다고 볼 회수율 차이(크레딧 포함). 없으면 가장 가까운 둘 */
+  /** 비슷하다고 볼 회수율 차이(크레딧 포함). 없으면 가장 가까운 둘. 아이템은 살 수 있는 만큼 꼭 사는 루트라 이름도 '위주'다 */
   const NEAR = 0.02
   const alts = (i: number): RouteAlt[] => {
     const now = sel.weeks[i]?.route
@@ -571,9 +579,13 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
         diff: est(r) - est(now), sales: r.sales, current: same(r, now),
         all: allOk ? { diff: allOk.reduce((a, x) => a + est(x), 0) - nowAll, sales: allOk.reduce((a, x) => a + x.sales, 0), salesNow: sel.sales } : null })
     }
+    // 최저가 조합과 전부 플가는 회수율과 상관없이 늘 보인다(기준이 되는 두 루트, 2026-10-12 사용자). 나머지는 회수율이 비슷한 것만
+    const fixedKinds: RouteKind[] = ['best', `item:${PG_ID}`]
     const others = out.filter(a => !a.current).sort((a, b) => a.diff - b.diff)
-    const near = others.filter(a => Math.abs(a.rate - rateOf(now)) <= NEAR)
-    return (near.length ? near : others.slice(0, 2)).slice(0, 4)
+    const always = fixedKinds.flatMap(k => others.filter(a => a.kind === k))
+    const rest = others.filter(a => !fixedKinds.includes(a.kind))
+    const near = rest.filter(a => Math.abs(a.rate - rateOf(now)) <= NEAR)
+    return [...always, ...(near.length ? near : rest.slice(0, 2)).slice(0, 4)]
   }
   const custom = hasCombo(eff.combo) ? (linked && eff.want === 'custom' ? base : compose(weeks.map(() => ({ ...reachSet(), want: 'custom' as const })))) : null
   const alt = (items: Sellable[], sink = { mk: eff.mk, gift: eff.gift }): Summary | null => {
@@ -594,6 +606,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   return {
     mode, target: weeks.reduce((a, w) => a + w.amount, 0), use, useOver: left, weeks: res, curve, lo, hi, credit,
     best, knee: kp, count: cp, sel, custom, keepStarts, alts, kinds, labelOf,
+    isBest: (i: number) => { const b = routeOf('best', i), n = sel.weeks[i]?.route; return !!b && !!n && same(b, n) },
     // 아이템 하나로만 하는 비교는 끝자리만 메소마켓으로 채운다. 선물식까지 넣으면 선물식이 나을 때 아이템을 안 사 '플가만'이 '전부 선물식'이 된다
     pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID), onlyMk) : null,
     mkOnly: eff.mk > 0 ? alt([], { mk: eff.mk, gift: 0 }) : null,

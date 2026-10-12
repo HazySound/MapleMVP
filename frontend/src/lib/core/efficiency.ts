@@ -327,7 +327,7 @@ export function solve(o: SolveIn): Solved | null {
   if (need <= 0) return null
   if (!usable.length && !mk1) return null
   const fixedUnits = capIdx.reduce((a, j) => a + (forced(j) ?? 0) * usable[j].u, 0)
-  // 계획을 따를 때는 먼저 계획 금액에 딱 맞춰 본다. 메포가 1,000원 단위라 안 맞으면 1,000원 안쪽으로 넘기고,
+  // 계획을 따를 때는 계획 금액에서 1,000원 안쪽까지(메포가 1,000원 단위) 넘기는 것 중 가장 싼 조합을 고르고,
   // 그래도 안 되면(메소마켓 시세가 없을 때 등) 필요한 만큼 넘겨 산다
   const run = (mode: 'tight' | 'near' | 'free') => {
     const room = Math.max(MU - 1, ...usable.map(v => v.u))
@@ -338,7 +338,10 @@ export function solve(o: SolveIn): Solved | null {
     for (let a = 0; a <= A; a++) cost[a] = o.costOf(a * U)
     return { A, cost }
   }
-  let { A, cost } = run(fixedUnits > need ? 'free' : o.exact ? 'tight' : 'free')
+  // 계획을 따를 때도 딱 맞는 조합만 먼저 고르지 않는다. 1,000원 안쪽으로 넘기는 조합까지 같이 보고 싼 쪽을 고른다(딱 맞는 것도 이 안에 있다).
+  // 딱 맞추기만 먼저 보면 플가(5,900)를 섞은 조합은 메포 1,000원 단위 때문에 늘 빠져, 200원 더 내면 3,550원 덜 드는 주에도
+  // 메소마켓만 골랐다(2026-10-12 사용자)
+  let { A, cost } = run(fixedUnits > need ? 'free' : o.exact ? 'near' : 'free')
 
   /**
    * 상한이 있는 아이템은 살 개수 조합을 늘어놓는다(C: 캐시 단위 합, V: 값, n: 개수 합).
@@ -413,7 +416,6 @@ export function solve(o: SolveIn): Solved | null {
     return finish(counts, m, (pick + combos[pc].C) * U)
   }
   let best = best1()
-  if (!best && o.exact) { ({ A, cost } = run('near')); combos = combosOf(A); best = best1() }
   if (!best && o.exact) { ({ A, cost } = run('free')); combos = combosOf(A); best = best1() }
   if (!best) return null
   if (o.bestOnly) { const b = best; return { best: b, lossAt: [b.loss], routeAt: () => b } }

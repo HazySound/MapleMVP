@@ -388,7 +388,7 @@
         <div class="alts">
           <p class="alt-h">회수율이 비슷한 다른 루트예요. 금액은 이 주만 본 어림값이고, 회수율은 크레딧 값을 친 것(괄호는 돈만)이에요.</p>
           <div class="alt-main now">
-            <span class="alt-name"><b>지금</b><small>{[...cur.route.lines.map(l => `${itemLabel(l.item)} ${countLabel(l.item, l.n)}`), ...(cur.route.gift ? [`선물식 ${won(cur.route.gift)}`] : []), ...(cur.route.market ? [`메소마켓 ${won(cur.route.market)}`] : [])].join(' · ')}</small></span>
+            <span class="alt-name"><b>지금{out.isBest(curIdx) && !alts.some(a => a.diff < 0) ? ' · 최저가' : ''}</b><small>{[...cur.route.lines.map(l => `${itemLabel(l.item)} ${countLabel(l.item, l.n)}`), ...(cur.route.gift ? [`선물식 ${won(cur.route.gift)}`] : []), ...(cur.route.market ? [`메소마켓 ${won(cur.route.market)}`] : [])].join(' · ')}</small></span>
             <span class="alt-num mono">{pct(cur.route.cost ? (cur.route.back + cur.route.creditEst) / cur.route.cost : 0)} <small>({pct(cur.route.cost ? cur.route.back / cur.route.cost : 0)})</small></span>
             <span class="alt-num mono">기준</span>
             <span class="alt-num mono">판매 {cur.route.sales}회</span>

@@ -121,6 +121,16 @@ function run(c: Case) {
   return { p, res: res!, r }
 }
 const fundOf = (x: ReturnType<typeof run>, i = 0) => x.r.best.weeks[i].funding.parts.map(q => [q.name, q.cash])
+/**
+ * 계획 금액보다 더 낸 끝자리. 계획을 따를 때도 1,000원 안쪽으로 넘기는 게 더 싸면 그렇게 산다(메포가 1,000원 단위, 2026-10-12).
+ * 그만큼은 마지막 줄(일반 충전, 잔액만 쓴 주는 가진 캐시)에 붙거나 일반 충전으로 따로 붙는다
+ */
+const extraOf = (x: ReturnType<typeof run>, i = 0) => x.r.best.weeks[i].route.pay - x.r.best.weeks[i].w.amount
+const plus = (parts: [string, number][], e: number): [string, number][] => {
+  if (!e) return parts
+  const [name, cash] = parts.at(-1)!
+  return name === '일반 충전' || (name === '가진 캐시' && parts.length === 1) ? [...parts.slice(0, -1), [name, cash + e]] : [...parts, ['일반 충전', e]]
+}
 
 describe('금액 직접: 자주 쓸 금액들', () => {
   it('다이아까지 12,400원: 5만 원이 안 돼 상품권 없이 일반 충전', () => {
@@ -130,13 +140,14 @@ describe('금액 직접: 자주 쓸 금액들', () => {
 
   it('25만 원: 할인 큰 컬쳐랜드 20만 + 도서문화 5만', () => {
     const x = run({ weeks: once(250_000), exact: true })
-    expect(fundOf(x)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000]])
-    near(x.r.best.cost, 250_000 * 0.94)
+    expect(extraOf(x)).toBeLessThan(1000)
+    expect(fundOf(x)).toEqual(plus([['컬쳐랜드', 200_000], ['도서문화상품권', 50_000]], extraOf(x)))
+    near(x.r.best.cost, 250_000 * 0.94 + extraOf(x))
   })
 
   it('레드까지 612,400원: 상품권 셋 다 쓰고 나머지 일반 충전', () => {
     const x = run({ weeks: once(612_400, 'red'), exact: true })
-    expect(fundOf(x)).toEqual([['컬쳐랜드', 200_000], ['도서문화상품권', 200_000], ['넥슨카드', 200_000], ['일반 충전', 12_400]])
+    expect(fundOf(x)).toEqual(plus([['컬쳐랜드', 200_000], ['도서문화상품권', 200_000], ['넥슨카드', 200_000], ['일반 충전', 12_400]], extraOf(x)))
   })
 
   it('블랙까지 1,612,400원: 한도가 모자라 대부분 일반 충전', () => {
@@ -163,7 +174,7 @@ describe('계획: 여러 주, 달이 바뀔 때', () => {
 
   it('이번 달 한도를 이미 다 썼으면 이번 주는 일반 충전만', () => {
     const x = run({ weeks: weekly(250_000), exact: true, leftNow: { nexon: 0, culture: 0, book: 0 } })
-    expect(fundOf(x, 0)).toEqual([['일반 충전', 250_000]])
+    expect(fundOf(x, 0)).toEqual(plus([['일반 충전', 250_000]], extraOf(x, 0)))
     expect(fundOf(x, 1)[0]).toEqual(['컬쳐랜드', 200_000])
   })
 
@@ -190,19 +201,19 @@ describe('계획: 여러 주, 달이 바뀔 때', () => {
 describe('캐시 잔액·결제수단', () => {
   it('잔액을 먼저 1:1로 쓰고 모자라는 만큼 상품권', () => {
     const x = run({ weeks: once(250_000), exact: true, balance: 100_000 })
-    expect(fundOf(x)).toEqual([['가진 캐시', 100_000], ['컬쳐랜드', 150_000]])
+    expect(fundOf(x)).toEqual(plus([['가진 캐시', 100_000], ['컬쳐랜드', 150_000]], extraOf(x)))
   })
 
   it('잔액이 결제보다 많으면 잔액만, 계획이면 다음 주로 남은 잔액을 넘긴다', () => {
     const x = run({ weeks: weekly(250_000).slice(0, 3), exact: true, balance: 300_000 })
-    expect(fundOf(x, 0)).toEqual([['가진 캐시', 250_000]])
-    expect(fundOf(x, 1)[0]).toEqual(['가진 캐시', 50_000])
+    expect(fundOf(x, 0)).toEqual(plus([['가진 캐시', 250_000]], extraOf(x, 0)))
+    expect(fundOf(x, 1)[0]).toEqual(['가진 캐시', 50_000 - extraOf(x, 0)])
   })
 
   it('상품권을 모두 끄면 일반 충전만, 넣은 현금 = 결제액', () => {
     const x = run({ weeks: once(250_000), exact: true, cards: CARDS.map(c => ({ ...c, on: false })) })
-    expect(fundOf(x)).toEqual([['일반 충전', 250_000]])
-    near(x.r.best.cost, 250_000)
+    expect(fundOf(x)).toEqual(plus([['일반 충전', 250_000]], extraOf(x)))
+    near(x.r.best.cost, 250_000 + extraOf(x))
   })
 
   it('할인 칸에 5만원권 가격(47,200)을 넣으면 5.6% 할인과 같다', () => {
@@ -219,8 +230,10 @@ describe('캐시 잔액·결제수단', () => {
   it('바코드 이벤트: 추가분 한도에 닿으면 그 뒤는 1:1', () => {
     const x = run({ weeks: weekly(250_000).slice(0, 2), exact: true, cards: [], barcode: { on: true, bonus: 0.05, cap: 15_000 } })
     const bc = x.r.best.weeks.map(w => w.funding.parts.find(q => q.name === '바코드')!)
-    near(bc[0].bonus!, 250_000 * 0.05 / 1.05)
-    near(bc[1].bonus!, 15_000 - 250_000 * 0.05 / 1.05)
+    // 바코드 추가분은 그 주 실제 결제액(계획보다 1,000원 안쪽으로 넘길 수 있다)의 5%
+    const pay0 = x.r.best.weeks[0].route.pay
+    near(bc[0].bonus!, pay0 * 0.05 / 1.05)
+    near(bc[1].bonus!, 15_000 - pay0 * 0.05 / 1.05)
   })
 })
 
