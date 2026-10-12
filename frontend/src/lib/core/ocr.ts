@@ -944,8 +944,12 @@ function addVote(list: number[][], votes: number[], v: number[], n: number) {
 export function scan(g: Gray, fallbackScale = 0, net: 'always' | 'fallback' | 'off' = 'always'): ScanResult {
   const r = scanGlyphs(g, fallbackScale)
   if (net === 'off') return r
+  // 글자 판독이 확실하고(8표 이상, 2등의 3배) 말이 되는 값(아래로 갈수록 줄지 않고 한 줄이 250만 이하)이면 모델을 건너뛴다.
+  // 표만 보면 확실한데 값이 말이 안 되는 경우가 있었다: 이월 열을 금액 열로, 흐린 캡처의 '0 캐시'를 '20000'으로(2026-10-12 비교)
   const top = r.votes?.[0] ?? 0, second = r.votes?.[1] ?? 0
-  if (net === 'fallback' && r.readings.length && top >= 8 && top >= second * 3) return r
+  const v = r.readings[0]
+  const sane = !!v && v.every((n, i) => n <= 2_500_000 && (i === 0 || n >= v[i - 1]))
+  if (net === 'fallback' && sane && top >= 8 && top >= second * 3) return r
   const n = netColumns(g)
   if (!n) return r
   if (!r.readings.length) {
