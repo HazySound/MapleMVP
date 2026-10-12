@@ -10,9 +10,9 @@
   import EffCombo from './EffCombo.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { SHOP, eff, saveEff, umNet, type EffOut, type Pick, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
+  import { SHOP, eff, saveEff, setAllRoute, setWeekRoute, umNet, type EffOut, type Pick, type RouteAlt, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
   import { GIFT_ID, PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
-  import { eul, eun } from '../format'
+  import { eul, eun, ro } from '../format'
   import { won } from '../format'
 
   let { out, sel = $bindable(0) }: { out: EffOut | null; sel?: number } = $props()
@@ -21,7 +21,19 @@
   const tierName = (k: string | null) => d.tiers.find(t => t.key === k)?.name ?? '등급 없음'
   const md = (iso: string) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`
   const pick = $derived(out?.sel ?? null)
-  const cur = $derived(pick ? pick.weeks[Math.min(sel, pick.weeks.length - 1)] : null)
+  const curIdx = $derived(pick ? Math.min(sel, pick.weeks.length - 1) : 0)
+  const cur = $derived(pick ? pick.weeks[curIdx] : null)
+
+  /**
+   * 회수율이 비슷한 다른 루트(2026-10-12 사용자). 보고 있는 주에만 바꿔 끼우는 게 기본이고,
+   * 모든 주를 그 방식으로 했을 때를 한 줄로 보여 주고 거기서도 고를 수 있게 한다
+   */
+  let altOpen = $state(false)
+  let altMore = $state<string | null>(null)
+  const alts = $derived(altOpen && out && pick ? out.alts(curIdx) : [] as RouteAlt[])
+  const curKind = $derived(out?.kinds[curIdx] ?? null)
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`
+  const signed = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${won(Math.abs(Math.round(x)))}원`
   const per = $derived(out?.mode === 'plan' ? '주마다 ' : '')
   /**
    * 메소마켓이 고른 아이템 모두보다 덜 남으면, 그 금액은 메소마켓이 나아서가 아니라 결제액을 맞추려고 남은 끝자리다.
@@ -337,7 +349,7 @@
                   <tr class="month"><td colspan={7 + (SHOP.barcode.on ? 1 : 0) + (out.credit ? 1 : 0)}><b>{Number(w.w.month.slice(5))}월 결제수단 한도</b> ({i === 0 ? '2번에 넣은 남은 한도' : '달마다 새로'}) — {monthLine(w.w.month)}</td></tr>
                 {/if}
                 <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
-                  <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}</td>
+                  <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}{#if out.kinds[i]}<small class="swp">{out.labelOf(out.kinds[i]!)}</small>{/if}</td>
                   <td class="mono" data-l="결제">{won(w.route.pay + w.w.use)}{#if w.w.use}<small class="use">구매용 {won(w.w.use)}</small>{/if}</td>
                   <td class="pt"><div class="parts">{#each w.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if q.spare}<em class="sp">{won(q.spare)} 남김</em>{/if}</span>{/each}</div></td>
                   {#if SHOP.barcode.on}
@@ -362,7 +374,51 @@
     {/if}
 
     <section class="route">
-      <h4>{out.mode === 'plan' ? `${md(cur.w.start)} 주에 이렇게 하면 돼요` : '이렇게 하면 돼요'}</h4>
+      <div class="rhead">
+        <h4>{out.mode === 'plan' ? `${md(cur.w.start)} 주에 이렇게 하면 돼요` : '이렇게 하면 돼요'}</h4>
+        <button class="altbtn" aria-expanded={altOpen} onclick={() => { altOpen = !altOpen; altMore = null }}>다른 루트 보기 {altOpen ? '▴' : '▾'}</button>
+      </div>
+      {#if curKind || eff.allRoute}
+        <p class="swapnote">
+          {#if eff.weekRoute[cur.w.start]}이 주는 <b>{out.labelOf(eff.weekRoute[cur.w.start])}</b>{ro(out.labelOf(eff.weekRoute[cur.w.start]))} 바꿔 계산했어요. <button class="link" onclick={() => setWeekRoute(cur.w.start, null)}>이 주 되돌리기</button>
+          {:else if eff.allRoute}모든 주를 <b>{out.labelOf(eff.allRoute)}</b>{ro(out.labelOf(eff.allRoute))} 바꿔 계산했어요. <button class="link" onclick={() => setAllRoute(null)}>모든 주 되돌리기</button>{/if}
+        </p>
+      {/if}
+      {#if altOpen}
+        <div class="alts">
+          <p class="alt-h">회수율이 비슷한 다른 루트예요. 금액은 이 주만 본 어림값이고, 회수율은 크레딧 값을 친 것(괄호는 돈만)이에요.</p>
+          <div class="alt-main now">
+            <span class="alt-name"><b>지금</b><small>{[...cur.route.lines.map(l => `${itemLabel(l.item)} ${countLabel(l.item, l.n)}`), ...(cur.route.gift ? [`선물식 ${won(cur.route.gift)}`] : []), ...(cur.route.market ? [`메소마켓 ${won(cur.route.market)}`] : [])].join(' · ')}</small></span>
+            <span class="alt-num mono">{pct(cur.route.cost ? (cur.route.back + cur.route.creditEst) / cur.route.cost : 0)} <small>({pct(cur.route.cost ? cur.route.back / cur.route.cost : 0)})</small></span>
+            <span class="alt-num mono">기준</span>
+            <span class="alt-num mono">판매 {cur.route.sales}회</span>
+            <span class="alt-num"></span>
+          </div>
+          {#if !alts.length}
+            <p class="alt-none">바꿔 볼 만한 다른 루트가 없어요.</p>
+          {/if}
+          {#each alts as a (a.kind)}
+            <div class="alt">
+              <div class="alt-main">
+                <span class="alt-name"><b>{a.label}</b><small>{a.what}</small></span>
+                <span class="alt-num mono">{pct(a.rate)} <small>({pct(a.money)})</small></span>
+                <span class="alt-num mono" class:bad={a.diff > 0} class:good={a.diff < 0}>{signed(a.diff)}</span>
+                <span class="alt-num mono">판매 {a.sales}회</span>
+                <button class="btn sm" onclick={() => { setWeekRoute(cur.w.start, a.kind); altOpen = false }}>{out.weeks.length > 1 ? '이 주에 적용' : '적용'}</button>
+              </div>
+              {#if a.all}
+                <button class="link more" onclick={() => (altMore = altMore === a.kind ? null : a.kind)}>모든 주를 이렇게 하면 {altMore === a.kind ? '▴' : '▾'}</button>
+                {#if altMore === a.kind}
+                  <div class="alt-all">
+                    <span>{out.weeks.length}주 합계 <b class="mono" class:bad={a.all.diff > 0} class:good={a.all.diff < 0}>{signed(a.all.diff)}</b> · 판매 {a.all.salesNow}회 → <b class="mono">{a.all.sales}회</b></span>
+                    <button class="btn sm" onclick={() => { setAllRoute(a.kind); altOpen = false }}>모든 주에 적용</button>
+                  </div>
+                {/if}
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
       <ol>
         <li>
           <div class="t">캐시 {won(cur.route.pay + cur.w.use)} 충전 → 현금 {won(cur.funding.cost)}원</div>
@@ -603,5 +659,32 @@
     .wk { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .wk td.d { grid-column: span 2; }
     .wk td.lo { grid-column: span 1; }
+  }
+  /* 다른 루트 보기 */
+  .link { appearance: none; border: 0; background: none; padding: 0; font: inherit; color: var(--color-lav); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .rhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .rhead h4 { margin: 0; }
+  .altbtn { appearance: none; cursor: pointer; font: inherit; font-size: 12.5px; padding: 6px 11px; border-radius: 9px; border: 1px solid color-mix(in oklab, var(--color-lav) 45%, var(--color-line)); background: var(--color-bg2); color: var(--color-lav); }
+  .altbtn:hover { background: color-mix(in oklab, var(--color-lav) 10%, var(--color-bg2)); }
+  .swapnote { margin: 8px 0 0; font-size: 12.5px; color: var(--color-tx2); }
+  .alts { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-line); background: var(--color-bg2); display: grid; gap: 8px; }
+  .alt-h, .alt-none { margin: 0; font-size: 12px; color: var(--color-tx3); }
+  .alt-main.now { padding: 6px 8px; border-radius: 8px; background: color-mix(in oklab, var(--color-mint) 7%, transparent); }
+  .alt { display: grid; gap: 4px; padding-top: 8px; border-top: 1px dashed var(--color-line); }
+  .alt:first-of-type { border-top: 0; padding-top: 0; }
+  .alt-main { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 10px; align-items: center; font-size: 13px; }
+  .alt-name { display: grid; line-height: 1.35; }
+  .alt-name small { font-size: 11.5px; color: var(--color-tx3); }
+  .alt-num { text-align: right; white-space: nowrap; }
+  .alt-num small { color: var(--color-tx3); }
+  .alt .bad { color: var(--color-peach); }
+  .alt .good { color: var(--color-mint); }
+  .alt .more { justify-self: start; font-size: 12px; }
+  .alt-all { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--color-tx2); padding: 6px 8px; border-radius: 8px; background: color-mix(in oklab, var(--color-lav) 6%, transparent); }
+  .btn.sm { font-size: 12px; padding: 5px 10px; }
+  td.d small.swp { display: block; color: var(--color-lav); }
+  @media (max-width: 672px) {
+    .alt-main { grid-template-columns: 1fr auto; }
+    .alt-main .alt-name { grid-column: 1 / -1; }
   }
 </style>

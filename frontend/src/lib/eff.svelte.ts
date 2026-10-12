@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { MONTHLY, PG_ID, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { MONTHLY, PG_ID, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type Route, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 
@@ -52,6 +52,13 @@ const runs = new Map<string, WeekResult[] | null>()
 
 /** 최저가 · 최적화 · 횟수 정하기 · 직접 짜기 */
 export type Want = 'best' | 'knee' | 'count' | 'custom'
+/**
+ * 주마다 바꿔 끼우는 루트 종류(2026-10-12 사용자: 최적화가 고른 것과 회수율이 비슷한 다른 루트로 그 주만 바꿔 보고 싶다).
+ * 개수가 아니라 종류로 저장한다. 목표 계획이 바뀌어 그 주 금액이 달라져도 그 방식대로 다시 짠다.
+ * best: 아이템까지 다 쓰는 최저가 조합 · gift: 선물식만 · mk: 메소마켓만 · item:아이디: 그 아이템 위주(끝자리는 메소마켓) · sales:n: 판매 n회까지
+ */
+export type RouteKind = 'best' | 'gift' | 'mk' | `item:${string}` | `sales:${number}`
+
 /** 루트 설정 한 벌. 달성·유지를 따로 정하면 두 벌을 쓴다 */
 /** minRate: 최적화의 회수율 하한(%). 0이면 없음 */
 export interface RouteSet { want: Want; salesN: number; sellCost: number; minRate?: number; combo: Combo }
@@ -134,6 +141,10 @@ interface Saved {
   /** 목표 계획에서 유지를 켰을 때, 달성과 유지를 따로 정할지. 위 want·salesN·sellCost·combo가 달성용이 된다 */
   split: boolean
   keep: RouteSet
+  /** 주 시작일 → 그 주에만 바꿔 끼운 루트 종류 */
+  weekRoute: Record<string, RouteKind>
+  /** 모든 주에 건 루트 종류. 주마다 바꾼 것이 있으면 그것이 먼저다 */
+  allRoute: RouteKind | null
 }
 
 function fresh(): Saved {
@@ -145,6 +156,7 @@ function fresh(): Saved {
     um: 0, umFee: 5, mk: 0, gift: 0, giftUnit: 10_000, giftMin: 10_000, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
+    weekRoute: {}, allRoute: null,
   }
 }
 
@@ -397,6 +409,30 @@ export interface EffOut {
   waitOnly: Summary | null
   fastOnly: Summary | null
   bigOnly: Summary | null
+  /** 그 주(순서)에 바꿔 끼울 만한 루트 후보. 화면에서 보고 있는 주만 그때 센다 */
+  alts: (i: number) => RouteAlt[]
+  /** 주마다 실제로 쓴 루트 종류(바꿔 끼운 것). 안 바꾼 주는 null */
+  kinds: (RouteKind | null)[]
+  labelOf: (k: RouteKind) => string
+}
+
+/**
+ * 바꿔 끼울 루트 후보 하나. 금액은 그 주만 본 어림값이다(크레딧은 쌓이는 만큼 값으로 친다. 실제로 큐브를 사서 파는 건 주를 이어 센다).
+ * rate: 크레딧 값까지 친 회수율, money: 돈만 친 회수율. diff: 지금 그 주 루트보다 더 나가는 돈(음수면 덜).
+ * all: 모든 주를 이 방식으로 했을 때(합계 어림값과 판매 횟수, 지금 계획과의 차이). 한 주뿐이거나 판매 횟수 종류면 null
+ */
+export interface RouteAlt {
+  kind: RouteKind
+  label: string
+  /** '선물식 20만 · 메소마켓 3천'처럼 그 주에 하는 일 */
+  what: string
+  route: Route
+  rate: number
+  money: number
+  diff: number
+  sales: number
+  current: boolean
+  all: { diff: number; sales: number; salesNow: number } | null
 }
 
 /** 계획을 따를 수 있으면 계획대로, 아니면 정한 금액 한 번 */
@@ -478,8 +514,68 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const sets = weeks.map((_, i) => setOf(i))
   const linked = !eff.split || !keepStarts
   const simple = linked && eff.want !== 'custom'
-  const sel = simple ? (eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best) : compose(sets) ?? best
-  const custom = hasCombo(eff.combo) ? (linked && eff.want === 'custom' ? sel : compose(weeks.map(() => ({ ...reachSet(), want: 'custom' as const })))) : null
+  const base = simple ? (eff.want === 'knee' ? kp : eff.want === 'count' ? cp : best) : compose(sets) ?? best
+
+  // ---- 주마다 바꿔 끼우는 루트 ----
+  const priced0 = all.filter(x => x.price > 0)
+  const onlyMk0 = { mk: eff.mk, gift: 0 }
+  /** 그 종류로 모든 주를 푼 결과(주마다 그 종류의 가장 싼 조합이 solved.best). 판매 횟수 종류는 기본 계산을 쓴다 */
+  const kindRes = (k: RouteKind): WeekResult[] | null =>
+    k === 'best' || k.startsWith('sales:') ? res
+    : k === 'gift' ? (eff.gift > 0 ? run([], undefined, true, { mk: 0, gift: eff.gift }) : null)
+    : k === 'mk' ? (eff.mk > 0 ? run([], undefined, true, onlyMk0) : null)
+    : run(priced0.filter(x => x.id === k.slice(5)), undefined, true, onlyMk0)
+  /** i번째 주를 그 종류로 했을 때의 루트. 안 되면 null */
+  const routeOf = (k: RouteKind, i: number): Route | null => {
+    const r = kindRes(k)?.[i]
+    if (!r) return null
+    if (!k.startsWith('sales:')) return r.solved.best
+    const n = Number(k.slice(6))
+    return Number.isFinite(r.solved.lossAt[n]) ? r.solved.routeAt(n) : null
+  }
+  const kinds = weeks.map(w => eff.weekRoute[w.start] ?? eff.allRoute ?? null)
+  // 바꿔 끼운 주는 그 루트를, 나머지 주는 고른 루트를 그대로 넣고 크레딧은 주를 이어 다시 센다
+  const swapped = kinds.map((k, i) => (k ? routeOf(k, i) : null))
+  const sel = swapped.some(Boolean)
+    ? pickAt(base.weeks.map((p, i) => ({ ...p.w, solved: { ...p.w.solved, best: swapped[i] ?? p.route } })), null, credit)
+    : base
+
+  const est = (r: Route) => r.cost - r.back - r.creditEst
+  const rateOf = (r: Route) => (r.cost ? (r.back + r.creditEst) / r.cost : 0)
+  const itemName = (id: string) => all.find(x => x.id === id)?.name ?? id
+  const labelOf = (k: RouteKind) => k === 'best' ? '최저가 조합' : k === 'gift' ? '선물식' : k === 'mk' ? '메소마켓'
+    : k.startsWith('item:') ? `${itemName(k.slice(5))} 위주` : `판매 ${k.slice(6)}회로 줄이기`
+  const whatOf = (r: Route) => [
+    ...r.lines.map(l => `${l.item.set > 1 || l.item.bundle ? `${l.item.name}(${l.item.set}개)` : l.item.name} ${l.n}${l.item.set > 1 ? '세트' : '개'}`),
+    ...(r.gift ? [`선물식 ${(r.gift / 10_000).toLocaleString('ko-KR')}만`] : []),
+    ...(r.market ? [`메소마켓 ${r.market >= 10_000 ? `${(r.market / 10_000).toLocaleString('ko-KR')}만` : `${(r.market / 1_000).toLocaleString('ko-KR')}천`}`] : []),
+  ].join(' · ')
+  const same = (a: Route, b: Route) => a.market === b.market && a.gift === b.gift && a.lines.length === b.lines.length
+    && a.lines.every(l => b.lines.some(m => m.item.id === l.item.id && m.n === l.n))
+  /** 비슷하다고 볼 회수율 차이(크레딧 포함). 없으면 가장 가까운 둘 */
+  const NEAR = 0.02
+  const alts = (i: number): RouteAlt[] => {
+    const now = sel.weeks[i]?.route
+    if (!now) return []
+    const kindsTry: RouteKind[] = ['best', ...(eff.gift > 0 ? ['gift' as const] : []), ...(eff.mk > 0 ? ['mk' as const] : []),
+      ...priced0.map(x => `item:${x.id}` as const),
+      ...(now.sales > 1 ? [`sales:${now.sales - 1}` as const] : [])]
+    const nowAll = sel.weeks.reduce((a, p) => a + est(p.route), 0)
+    const out: RouteAlt[] = []
+    for (const k of kindsTry) {
+      const r = routeOf(k, i)
+      if (!r || out.some(a => same(a.route, r))) continue
+      const rs = k.startsWith('sales:') || weeks.length < 2 ? null : weeks.map((_, j) => routeOf(k, j))
+      const allOk = rs && rs.every(Boolean) ? rs as Route[] : null
+      out.push({ kind: k, label: labelOf(k), what: whatOf(r), route: r, rate: rateOf(r), money: r.cost ? r.back / r.cost : 0,
+        diff: est(r) - est(now), sales: r.sales, current: same(r, now),
+        all: allOk ? { diff: allOk.reduce((a, x) => a + est(x), 0) - nowAll, sales: allOk.reduce((a, x) => a + x.sales, 0), salesNow: sel.sales } : null })
+    }
+    const others = out.filter(a => !a.current).sort((a, b) => a.diff - b.diff)
+    const near = others.filter(a => Math.abs(a.rate - rateOf(now)) <= NEAR)
+    return (near.length ? near : others.slice(0, 2)).slice(0, 4)
+  }
+  const custom = hasCombo(eff.combo) ? (linked && eff.want === 'custom' ? base : compose(weeks.map(() => ({ ...reachSet(), want: 'custom' as const })))) : null
   const alt = (items: Sellable[], sink = { mk: eff.mk, gift: eff.gift }): Summary | null => {
     if (!items.some(x => x.price > 0) && !sink.mk && !sink.gift) return null
     const r = run(items, undefined, true, sink)
@@ -497,7 +593,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
   return {
     mode, target: weeks.reduce((a, w) => a + w.amount, 0), use, useOver: left, weeks: res, curve, lo, hi, credit,
-    best, knee: kp, count: cp, sel, custom, keepStarts,
+    best, knee: kp, count: cp, sel, custom, keepStarts, alts, kinds, labelOf,
     // 아이템 하나로만 하는 비교는 끝자리만 메소마켓으로 채운다. 선물식까지 넣으면 선물식이 나을 때 아이템을 안 사 '플가만'이 '전부 선물식'이 된다
     pgOnly: priced.some(x => x.id === PG_ID) ? alt(priced.filter(x => x.id === PG_ID), onlyMk) : null,
     mkOnly: eff.mk > 0 ? alt([], { mk: eff.mk, gift: 0 }) : null,
@@ -506,4 +602,18 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     fastOnly: fast.length ? alt(fast, onlyMk) : null,
     bigOnly: big.length ? alt(big, onlyMk) : null,
   }
+}
+
+/** 그 주에만 루트를 바꿔 끼운다. 'reset'이면 되돌린다 */
+export function setWeekRoute(start: string, k: RouteKind | null) {
+  if (k) eff.weekRoute[start] = k
+  else delete eff.weekRoute[start]
+  saveEff()
+}
+
+/** 모든 주에 같은 루트를 건다. 주마다 바꿔 둔 것은 지운다. null이면 되돌린다 */
+export function setAllRoute(k: RouteKind | null) {
+  eff.allRoute = k
+  eff.weekRoute = {}
+  saveEff()
 }
