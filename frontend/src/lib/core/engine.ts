@@ -396,34 +396,66 @@ export function simulate(b: Base, extra: number): Sim {
 
 /**
  * 계획의 성격. 목표가 지금 등급보다 높으면 '날짜까지 달성', 같으면 '지금부터 유지',
- * 낮으면 '그 날짜가 든 주부터 그 등급 유지(그 전까지는 지금 등급 유지)'
+ * 낮으면 '낮춰서 유지'(결제를 줄여 그 등급으로 내려가되, 그 등급은 끊기지 않게). 낮출 때 지금 등급을 날짜까지 지키는 것은 고를 때만
  */
 export type PlanMode = 'reach' | 'keep' | 'hold'
 
+/**
+ * holdCur: 낮춰서 유지할 때 지금 등급을 dateIso가 든 주까지 지킨다(그다음 주부터 목표 등급). 끄면 바로 낮춘다.
+ * 2026-10-12 문의: '이 날짜부터 골드'를 '그때 골드가 된다'로 읽었다. 기준이 바뀌는 날일 뿐이고, 옛 결제가 남은 동안은 위 등급으로 보인다.
+ * 그래서 기본은 바로 낮추고, 실제로 목표 등급이 되는 주(firstAt)와 결제 없이 내려가는 흐름(decay)을 같이 낸다
+ */
 export function makePlan(b: Base, target: TierKey, dateIso: string,
-                         fixed: Record<string, number>, skipThisWeek: boolean, keep: KeepOpt | null = null, unit = 1000) {
+                         fixed: Record<string, number>, skipThisWeek: boolean, keep: KeepOpt | null = null, unit = 1000,
+                         holdCur = false) {
   const tAt = Math.round((Date.parse(weekStart(dateIso)) - Date.parse(b.thisWeek)) / (7 * 864e5))
-  if (tAt < 0) return { error: '목표 날짜는 오늘 이후여야 해요.' }
   const tier = TIERS.find(x => x.key === target)!
   // 지금 등급 이하를 고르면 '달성'할 것이 없다. 전에는 날짜까지 손 놓고 기준에 턱걸이하는 계획이 나왔다.
-  // 지금부터 유지하는 계획으로 본다. 더 낮은 등급이면 그 날짜가 든 주부터 내려가고, 그 전까지는 지금 등급을 지킨다
-  // (2026-10-04 사용자)
+  // 지금부터 유지하는 계획으로 본다(2026-10-04 사용자)
   const ci = tierIndex(b.current), ti = TIERS.indexOf(tier)
   const mode: PlanMode = ti > ci ? 'reach' : ti === ci ? 'keep' : 'hold'
+  const useDate = mode === 'reach' || (mode === 'hold' && holdCur)
+  if (useDate && tAt < 0) return { error: '목표 날짜는 오늘 이후여야 해요.' }
   const t = mode === 'reach' ? tAt : 0
-  const hold = mode === 'hold' ? { th: b.current!.th, until: tAt } : null
-  const offsets: Record<number, number> = {}
-  for (const [k, v] of Object.entries(fixed)) {
-    offsets[Math.round((Date.parse(k) - Date.parse(b.thisWeek)) / (7 * 864e5))] = Number(v)
+  const hold = mode === 'hold' && holdCur ? { th: b.current!.th, until: tAt + 1 } : null
+  const toOffsets = (f: Record<string, number>) => {
+    const out: Record<number, number> = {}
+    for (const [k, v] of Object.entries(f)) out[Math.round((Date.parse(k) - Date.parse(b.thisWeek)) / (7 * 864e5))] = Number(v)
+    return out
   }
   // 유지를 켜면 지금 이월도 주마다 따라간다. 안 켜도 등급 칸은 이월로 채워 매긴다
   // 유지·내려가기 계획은 결제 주마다 모자라는 만큼만 낸다. 같은 금액을 매주 내면 옛 결제가 남은 앞쪽 주에서 한 단계 위로 올라간다
   const k = keep && mode !== 'reach' ? { ...keep, asNeeded: true } : keep
-  const p = planCalc(b.last13, tier, t, offsets, skipThisWeek, unit, k, b.carry, hold)
+  const run = (f: Record<string, number>, tg: Tier, h: typeof hold) => planCalc(b.last13, tg, t, toOffsets(f), skipThisWeek, unit, k, b.carry, h)
+  const p = run(fixed, tier, hold)
+  const rank = (x: Tier | null) => (x ? TIERS.indexOf(x) : -1)
+  /** 그 계획에서 목표 등급이 실제로 되는(낮출 때는 목표 등급까지 내려오는) 첫 주. 달성은 목표 등급 이상이 되는 첫 주 */
+  const firstAt = (q: ReturnType<typeof planCalc>) => {
+    if (mode === 'hold') return q.timeline.find(w => w.offset >= (hold?.until ?? 0) && rank(w.tier) <= ti)?.offset ?? null
+    return mode === 'reach' ? q.reached : 0
+  }
+  const shortOf = (q: ReturnType<typeof planCalc>) => q.shortfall > 0 || (q.keep?.blocked.length ?? 0) > 0
+  // 고정한 금액이 있으면 '모두 자동으로 짰다면'을 같이 낸다. 고정 때문에 더 내거나 목표 등급이 늦어지는 걸 알려 준다
+  const auto = Object.keys(fixed).length ? run({}, tier, hold) : null
+  // 낮출 때는 '지금 등급을 같은 기간 계속 지켰다면'의 금액을 같이 낸다(낮추면 얼마 아끼는지). 고정 없이 견준다
+  const stay = mode === 'hold' ? planCalc(b.last13, b.current!, 0, {}, skipThisWeek, unit, k, b.carry, null) : null
+  // 결제를 더 안 하면 언제 몇 등급으로 내려가는지(목요일 갱신마다)
+  const decay: { start: string; tier: TierKey | null }[] = []
+  let prevTier: TierKey | null = key(b.current)
+  forecast(b.last13, b.carry).forEach((r, i) => {
+    const tk = key(r.tier)
+    if (tk !== prevTier) decay.push({ start: addDays(b.thisWeek, (i + 1) * 7), tier: tk })
+    prevTier = tk
+  })
   return {
     ...p,
     mode,
+    holdCur: !!hold,
     curTier: key(b.current),
+    firstAt: firstAt(p),
+    decay,
+    auto: auto && { planned: auto.planned, firstAt: firstAt(auto), short: shortOf(auto) },
+    stay: stay && { planned: stay.planned, short: shortOf(stay) },
     timeline: p.timeline.map(w => {
       const start = addDays(b.thisWeek, w.offset * 7)
       return { ...w, start, end: addDays(start, 6), tier: key(w.tier), thu: w.thu ? key(w.thu) : null }

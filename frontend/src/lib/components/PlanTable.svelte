@@ -12,7 +12,23 @@
   const tierRank = (k: string | null) => (k ? d.tiers.findIndex(t => t.key === k) : -1)
   /** 그 주에 지켜야 할 등급. 더 낮은 등급으로 내려가는 계획이면 그 전 주까지는 지금 등급이다 */
   const goalAt = (w: { offset: number }) => (r?.hold && w.offset < r.hold.until ? r.curTier : goal)
+  /** 표시할 '목표' 주. 낮출 때는 지금 등급이 이미 목표보다 위라 첫 주가 '달성'으로 잡혔다. 실제로 목표 등급이 되는 주를 쓴다 */
+  const markAt = $derived(r && !r.error ? (r.mode === 'hold' ? r.firstAt : r.reached) : null)
   const allSelected = $derived(counting.length > 0 && counting.every(w => planner.selected.includes(w.start)))
+  /**
+   * 기준에 못 미치는 주와 모자라는 금액. 유지 구간은 끊기는 주 전부, 달성은 목표 주.
+   * 전에는 첫 주 하나만 위에 적어서 나머지는 표에서 직접 찾아야 했다(2026-10-12)
+   */
+  const short = $derived.by(() => {
+    const m = new Map<number, number>()
+    if (!r || r.error) return m
+    for (const b of r.keep?.blocked ?? []) m.set(b.offset, b.missing)
+    if (r.mode === 'reach' && r.shortfall > 0) {
+      const t = Math.max(...r.timeline.filter(w => !w.keep).map(w => w.offset))
+      m.set(t, r.shortfall)
+    }
+    return m
+  })
 
   function selectAll() {
     planner.selected = allSelected ? [] : counting.map(w => w.start)
@@ -49,13 +65,17 @@
         <span>등급</span>
       </div>
       {#each r.timeline as w (w.start)}
+        <!-- 유지 기간이 해를 넘기면 날짜만으로는 올해인지 내년인지 모른다 -->
+        {#if w.offset > 0 && w.start.slice(0, 4) !== r.timeline[w.offset - 1].start.slice(0, 4)}
+          <div class="divider year">{w.start.slice(0, 4)}년</div>
+        {/if}
         {#if w.keep && !r.timeline[w.offset - 1]?.keep}
           <div class="divider">여기부터 {tierName(d.tiers, goalAt(w))} 유지 · {r.keep?.every === 1 ? '매주' : `${r.keep?.every}주마다`} 결제</div>
         {/if}
         {#if r.hold && r.hold.until > 1 && w.offset === r.hold.until}
           <div class="divider">여기부터 {tierName(d.tiers, goal)} · 그 전까지는 {tierName(d.tiers, r.curTier)} 유지</div>
         {/if}
-        <div class="row" class:off={!w.counts} class:sel={planner.selected.includes(w.start)} class:reached={r.reached === w.offset}>
+        <div class="row" class:off={!w.counts} class:sel={planner.selected.includes(w.start)} class:reached={markAt === w.offset} class:short={short.has(w.offset)}>
           <label class="ck">
             <input type="checkbox" disabled={!w.counts} checked={planner.selected.includes(w.start)} onchange={() => toggleSelect(w.start)} aria-label="{md(w.start)} 주 선택" />
           </label>
@@ -63,12 +83,16 @@
             <b>{w.offset === 0 ? '이번 주' : `${w.offset}주 뒤`}</b>
             <span class="mono">{md(w.start)} – {md(w.end)}</span>
             {#if w.offset === 0 && r.spentThisWeek}<em>이미 {won(r.spentThisWeek)}원 결제</em>{/if}
+            {#if short.has(w.offset)}<em class="miss">{tierName(d.tiers, goalAt(w))} 기준에 {won(short.get(w.offset)!)}원 모자라요</em>{/if}
+            {#if w.fixed && w.amount === 0 && !w.skipped}<em class="zero">0원 고정</em>{/if}
             {#if w.skipped}<em>추가 결제 없음으로 설정됨</em>{:else if w.keep}{#if w.keepPay}<em class="kp">{w.amount || w.fixed ? '유지 결제' : '결제 없이 유지'}</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{#if goal}{@const g = goalAt(w)}{@const up = tierRank(w.thu) >= tierRank(g)}<em class="thu" class:down={!up}>{up
-                ? `목요일에도 ${tierName(d.tiers, g)} 유지${w.keepPay ? ' · 다음 주를 위한 결제' : ''}`
-                : `목요일에 ${tierName(d.tiers, w.thu)}${w.keepPay ? ` · 결제하면 ${tierName(d.tiers, g)}` : ''}`}</em>{/if}{:else if !w.counts}<em>목표일 전에 빠지는 주</em>{/if}
+                ? (r.mode === 'hold' && tierRank(w.tier) > tierRank(g)
+                  ? `지금 결제가 남아 ${tierName(d.tiers, w.tier)} · ${tierName(d.tiers, g)} 기준은 넘어요`
+                  : `목요일에도 ${tierName(d.tiers, g)} 유지${w.keepPay ? ' · 다음 주를 위한 결제' : ''}`)
+                : `목요일에 ${tierName(d.tiers, w.thu)}${w.keepPay && tierRank(w.tier) >= tierRank(g) ? ` · 결제하면 ${tierName(d.tiers, g)}` : ''}`}</em>{/if}{:else if !w.counts}<em>목표일 전에 빠지는 주</em>{/if}
           </span>
           <span class="num">
-            <input class="amt mono" class:locked={w.fixed} type="text" inputmode="numeric" disabled={!w.counts}
+            <input class="amt mono" class:locked={w.fixed} class:zero={w.fixed && w.amount === 0} type="text" inputmode="numeric" disabled={!w.counts}
               value={editing === w.start ? draft : w.amount.toLocaleString('ko-KR')}
               onfocus={e => { begin(w.start, w.fixed ? w.amount : 0); e.currentTarget.select() }}
               oninput={e => (draft = e.currentTarget.value)}
@@ -92,7 +116,7 @@
           <span class="num mono">{won(w.sum)}</span>
           <span class="tier" style="color:{tierVar(w.tier)}">
             {tierName(d.tiers, w.tier)}
-            {#if r.reached === w.offset}<i>목표 달성</i>{/if}
+            {#if markAt === w.offset}<i>{r.mode === 'hold' ? `여기부터 ${tierName(d.tiers, goal)}` : '목표 달성'}</i>{/if}
           </span>
         </div>
       {/each}
@@ -117,6 +141,11 @@
   .row.sel { background: color-mix(in oklab, var(--color-lav) 8%, transparent); }
   .row.reached { background: color-mix(in oklab, var(--color-mint) 8%, transparent); }
   .row.off { opacity: .45; }
+  .row.short { background: color-mix(in oklab, var(--color-bad) 10%, transparent); box-shadow: inset 3px 0 0 var(--color-bad); }
+  .wk em.miss { color: var(--color-bad); font-weight: 600; }
+  .wk em.zero { color: var(--color-peach); }
+  .amt.locked.zero { border-style: dashed; border-color: color-mix(in oklab, var(--color-peach) 60%, var(--color-line)); color: var(--color-peach); }
+  .divider.year { color: var(--color-tx2); border-top-color: var(--color-line2); }
   .num { text-align: right; }
   .ck { display: grid; place-items: center; }
   .ck input { width: 16px; height: 16px; accent-color: var(--color-lav); cursor: pointer; }

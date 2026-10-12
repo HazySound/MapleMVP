@@ -135,8 +135,8 @@ describe('계획의 성격: 달성 · 유지 · 내려가기', () => {
   // 13주 내내 20만씩 → 260만, 지금 블랙
   const black: Row[] = Array.from({ length: 13 }, (_, i) => ({ date: addDays('2026-07-09', i * 7 + 1), item: '결제', price: 200_000 }))
   const keep = { every: 1, weeks: 8 }
-  const made = (rows: Row[], target: 'black' | 'red' | 'gold', date: string, k = keep) => {
-    const p = makePlan(buildBase(rows, {}, NOW3), target as never, date, {}, false, k)
+  const made = (rows: Row[], target: 'black' | 'red' | 'gold', date: string, k = keep, holdCur = false) => {
+    const p = makePlan(buildBase(rows, {}, NOW3), target as never, date, {}, false, k, 1000, holdCur)
     if (!('mode' in p)) throw new Error(p.error)
     return p
   }
@@ -150,11 +150,36 @@ describe('계획의 성격: 달성 · 유지 · 내려가기', () => {
     expect(p.curTier).toBe('black')
   })
 
-  it('더 낮은 레드를 고르면 그 날짜가 든 주부터 레드, 그 전까지 블랙', () => {
-    const p = made(black, 'red', '2026-10-29')        // 목요일 → 4주 뒤 주
+  it('더 낮은 레드를 고르면 바로 레드 기준으로 낮춰 유지한다(날짜는 안 쓴다)', () => {
+    const p = made(black, 'red', '2020-01-01')        // 지난 날짜여도 낮출 때는 날짜를 안 써서 오류가 아니다
     expect(p.mode).toBe('hold')
-    expect(p.hold).toEqual({ th: 2_500_000, until: 4 })
+    expect(p.hold).toBeNull()
+    expect(p.holdCur).toBe(false)
+    // 결제를 더 안 하면 내려가는 흐름과, 블랙을 계속 지킬 때 금액을 같이 낸다
+    expect(p.decay.length).toBeGreaterThan(0)
+    expect(p.stay).not.toBeNull()
+    expect(p.planned).toBeLessThanOrEqual(p.stay!.planned)
+  })
+
+  it('블랙을 날짜까지 지키기를 켜면 그 날짜가 든 주까지 블랙, 다음 주부터 레드 기준', () => {
+    const p = made(black, 'red', '2026-10-29', keep, true)        // 목요일 → 4주 뒤 주까지 블랙
+    expect(p.mode).toBe('hold')
+    expect(p.hold).toEqual({ th: 2_500_000, until: 5 })
     expect(p.timeline[4].start).toBe('2026-10-29')
+    expect(p.timeline.slice(0, 5).every(w => w.tier === 'black')).toBe(true)
+  })
+
+  it('고정한 금액이 있으면 모두 자동으로 짰을 때와 견준다', () => {
+    const base = buildBase(black, {}, NOW3)
+    const fixed = { '2026-10-08': 900_000, '2026-10-15': 0 }
+    const p = makePlan(base, 'red', '2026-10-29', fixed, false, keep)
+    if (!('mode' in p)) throw new Error(p.error)
+    expect(p.auto).not.toBeNull()
+    expect(p.planned).toBeGreaterThanOrEqual(p.auto!.planned)
+    const q = makePlan(base, 'red', '2026-10-29', {}, false, keep)
+    if (!('mode' in q)) throw new Error(q.error)
+    expect(q.auto).toBeNull()
+    expect(q.planned).toBe(p.auto!.planned)
   })
 
   it('지금보다 높은 등급은 전처럼 날짜까지 달성', () => {

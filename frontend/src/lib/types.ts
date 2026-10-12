@@ -115,5 +115,7 @@ export interface PlanInput {
   keep?: { on: boolean; every: number; weeks: number }
   /** 자동으로 나누는 금액의 단위(원). 없으면 1,000원 */
   unit?: number
+  /** 지금보다 낮은 등급으로 낮출 때 지금 등급을 date가 든 주까지 지킨다. 없거나 false면 바로 낮춘다 */
+  holdCur?: boolean
 }
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../store.svelte'
-  import { KEEP_DEFAULT, planner, setDate, setKeep, setSkipThisWeek, setTarget, setUnit } from '../plan.svelte'
-  import { TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, md, spotlight, won } from '../format'
+  import { KEEP_DEFAULT, planner, setDate, setHoldCur, setKeep, setSkipThisWeek, setTarget, setUnit } from '../plan.svelte'
+  import { TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, eul, eun, iga, md, mdw, ro, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
   const p = $derived(planner.input!)
@@ -13,8 +13,10 @@
   const keep = $derived({ ...KEEP_DEFAULT, ...p.keep })
   const tierName = $derived(d.tiers.find(t => t.key === p.target)!.name)
   const cur = $derived(d.tiers.find(t => t.key === d.current) ?? null)
-  /** reach: 날짜까지 달성 · keep: 지금 등급 유지 · hold: 날짜가 든 주부터 더 낮은 등급 유지 */
-  const mode = $derived(r && !r.error ? r.mode : 'reach')
+  /** reach: 날짜까지 달성 · keep: 지금 등급 유지 · hold: 더 낮은 등급으로 낮춰 유지 */
+  const mode = $derived(r && !r.error ? r.mode : d.tiers.findIndex(t => t.key === p.target) < d.tiers.findIndex(t => t.key === d.current) ? 'hold' : 'reach')
+  /** 낮출 때 실제로 목표 등급이 되는 주 */
+  const firstWeek = $derived(r && !r.error && r.firstAt != null ? r.timeline[r.firstAt] : null)
 </script>
 
 <article class="card" use:spotlight>
@@ -32,11 +34,21 @@
   {#if mode === 'keep'}
     <p class="modenote">지금 <b>{cur?.name}</b> 등급이에요. 날짜와 상관없이 <b>지금부터 {tierName} 유지</b> 계획으로 봐요.</p>
   {:else if mode === 'hold'}
-    <p class="modenote">지금 <b>{cur?.name}</b> 등급이에요. 아래 날짜가 든 주부터 <b>{tierName}</b>로 내려가고, 그 전까지는 {cur?.name}을 지켜요.</p>
+    <!-- 낮추는 날을 정하는 칸이 '그날 그 등급이 된다'로 읽혔다(2026-10-12 문의). 기준은 바로 낮추고, 지금 등급을 지킬 날만 고르게 한다 -->
+    <p class="modenote">지금 <b>{cur?.name}</b> 등급이에요. 결제를 줄여 <b>{tierName}</b>{ro(tierName)} 낮추고, {tierName}{eun(tierName)} 끊기지 않게 가장 적게 내는 계획을 짜요.
+      지금 결제가 13주 안에 남아 있는 동안은 {tierName}보다 위 등급으로 보여요.</p>
+    <label class="toggle" for="hold-cur">
+      <input id="hold-cur" type="checkbox" checked={!!p.holdCur} onchange={e => setHoldCur(e.currentTarget.checked)} />
+      <span class="sw" aria-hidden="true"></span>
+      <span class="tx">
+        <b>{cur?.name}{eul(cur?.name ?? '')} 날짜까지 지키기</b>
+        <small>{p.holdCur ? `아래 날짜가 든 주까지 ${cur?.name}${eul(cur?.name ?? '')} 지키고, 그다음 주부터 ${tierName} 기준으로 나눠요` : `끄면 바로 ${tierName} 기준으로 나눠요`}</small>
+      </span>
+    </label>
   {/if}
 
-  {#if mode !== 'keep'}
-    <label class="label" for="plan-date">{mode === 'hold' ? `이 날짜부터 ${tierName}` : '이 날짜까지'}</label>
+  {#if mode === 'reach' || (mode === 'hold' && p.holdCur)}
+    <label class="label" for="plan-date">{mode === 'hold' ? `이 날짜까지 ${cur?.name}` : '이 날짜까지'}</label>
     <div class="daterow">
       <input id="plan-date" type="date" min={d.thisWeek} value={p.date} onchange={e => e.currentTarget.value && setDate(e.currentTarget.value)} />
       <span class="dow">{dow(p.date)}요일</span>
@@ -69,7 +81,7 @@
     <input id="keep-on" type="checkbox" checked={keep.on || mode !== 'reach'} disabled={mode !== 'reach'} onchange={e => setKeep({ on: e.currentTarget.checked })} />
     <span class="sw" aria-hidden="true"></span>
     <span class="tx">
-      <b>{mode === 'keep' ? `지금부터 ${tierName} 유지` : mode === 'hold' ? `${cur?.name} 유지 → ${tierName} 유지` : `달성한 뒤에도 ${tierName} 유지`}</b>
+      <b>{mode === 'keep' ? `지금부터 ${tierName} 유지` : mode === 'hold' ? (p.holdCur ? `${cur?.name} 지키기 → ${tierName} 유지` : `${tierName}${ro(tierName)} 낮춰 유지`) : `달성한 뒤에도 ${tierName} 유지`}</b>
       <small>{mode !== 'reach' ? `${keep.every === 1 ? '매주' : `${keep.every}주마다`} 결제 기회에 모자라는 만큼만 내서 ${keep.weeks}주 동안 지켜요` : keep.on ? `${keep.every === 1 ? '매주' : `${keep.every}주마다`} 한 번 결제해서 ${keep.weeks}주 동안 지켜요` : '켜면 유지에 필요한 금액까지 주차별 계획에 넣어요'}</small>
     </span>
   </label>
@@ -90,17 +102,18 @@
 
   <div class="facts">
     {#if mode === 'reach'}
-      <div><span>목표 주</span><b class="mono">{md(weekStart)}(목) – {md(p.date)}({dow(p.date)})</b></div>
+      <div><span>목표 주</span><b class="mono">{mdw(weekStart, d.thisWeek)} – {md(p.date)}({dow(p.date)})</b></div>
       <div><span>남은 결제 기회</span><b>{weeksAhead === 0 ? '이번 주뿐' : `이번 주 포함 ${weeksAhead + 1}주`}</b></div>
     {:else if mode === 'hold'}
-      <div><span>{tierName}로 내려가는 주</span><b class="mono">{md(weekStart)}(목)부터</b></div>
+      {#if p.holdCur}<div><span>{cur?.name} 지키는 마지막 주</span><b class="mono">{mdw(weekStart, d.thisWeek)}~{md(addDays(weekStart, 6))}</b></div>{/if}
+      <div><span>실제로 {tierName}{iga(tierName)} 되는 주</span><b class="mono">{firstWeek ? `${mdw(firstWeek.start, d.thisWeek)}부터` : r && !r.error ? '유지 기간 안에는 안 돼요' : '-'}</b></div>
     {/if}
     {#if r && !r.error}
-      <div><span>결제를 나눌 주</span><b>{r.weeksCount}주{#if p.skipThisWeek} <em>(이번 주 제외)</em>{/if}{#if r.timeline.some(w => !w.counts && !w.skipped)} <em>(그 전 결제는 목표일 전에 빠져요)</em>{/if}</b></div>
+      {#if mode === 'reach'}<div><span>결제를 나눌 주</span><b>{r.weeksCount}주{#if p.skipThisWeek} <em>(이번 주 제외)</em>{/if}{#if r.timeline.some(w => !w.counts && !w.skipped)} <em>(그 전 결제는 목표일 전에 빠져요)</em>{/if}</b></div>{/if}
       <div><span>이번 주 이미 결제</span><b class="mono">{won(r.spentThisWeek)}원</b></div>
     {/if}
   </div>
-  {#if keep.on || mode !== 'reach'}
+  {#if (keep.on || mode !== 'reach') && (d.carry > 0 || p.target === 'black')}
     <p class="note">유지 계산에는 블랙 이월{d.carry ? `(지금 ${won(d.carry)}원)` : ''}도 넣었어요. 250만을 넘긴 결제는 그 주 실적에 들지 않고 이월로 쌓였다가, 모자라는 목요일에 채워져요.</p>
   {:else if d.carry}
     <p class="note">이월 {won(d.carry)}원은 목요일 갱신 때 부족분을 메우는 데만 쓰여서 계획에는 넣지 않았어요. 유지를 켜면 넣어 계산해요.</p>

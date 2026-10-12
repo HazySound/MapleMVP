@@ -25,7 +25,7 @@ export async function initPlan(api: PyApi, data: State) {
   const fallbackTarget = data.tiers[Math.min(idx + 1, data.tiers.length - 1)].key
   const date = saved.date && saved.date >= data.thisWeek ? saved.date : addDays(data.thisWeek, 8 * 7 + 6)
   planner.input = { target: saved.target ?? fallbackTarget, date, fixed: saved.fixed ?? {}, skipThisWeek: saved.skipThisWeek ?? false,
-    keep: { ...KEEP_DEFAULT, ...saved.keep }, ...(saved.unit ? { unit: saved.unit } : {}) }
+    keep: { ...KEEP_DEFAULT, ...saved.keep }, ...(saved.unit ? { unit: saved.unit } : {}), ...(saved.holdCur ? { holdCur: true } : {}) }
   requestPlan()
 }
 
@@ -43,7 +43,7 @@ export function requestPlan() {
   // 지금 등급 이하를 고르면 달성이 아니라 유지 계획이다. 유지 스위치를 안 켰어도 유지 설정대로 나눈다
   const keepOn = !!p.keep?.on || TIERS.findIndex(t => t.key === p.target) <= tierIndex(b.current)
   const k = keepOn ? { every: p.keep?.every ?? KEEP_DEFAULT.every, weeks: p.keep?.weeks ?? KEEP_DEFAULT.weeks } : null
-  planner.result = makePlan(b, p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek, k, p.unit ?? 1000) as PlanResult
+  planner.result = makePlan(b, p.target, p.date, $state.snapshot(p.fixed), p.skipThisWeek, k, p.unit ?? 1000, !!p.holdCur) as PlanResult
 }
 
 function changed() {
@@ -75,6 +75,9 @@ if (typeof document !== 'undefined') {
 // ---- 입력 조작 ----
 export function setTarget(k: TierKey) { planner.input!.target = k; changed() }
 export function setDate(iso: string) { planner.input!.date = iso; planner.selected = []; changed() }
+
+/** 낮춰서 유지할 때 지금 등급을 날짜까지 지킬지. 끄면 바로 낮춘다 */
+export function setHoldCur(on: boolean) { planner.input!.holdCur = on; planner.selected = []; changed() }
 
 /** 자동으로 나누는 금액의 단위. 5만원권으로만 충전하는 사람은 5만 원 단위로 */
 export function setUnit(u: number) { planner.input!.unit = u; changed() }
@@ -126,6 +129,13 @@ export function fixTargets(amount: number) {
 export function unlockAll() {
   planner.input!.fixed = {}
   planner.selected = []
+  changed()
+}
+
+/** 0원으로 고정한 주만 자동으로 되돌린다. 0원 고정은 비워 둔 칸과 비슷해 보여 자동 계산이 왜 그 주를 안 쓰는지 알기 어렵다 */
+export function unlockZeros() {
+  const f = planner.input!.fixed
+  for (const [w, v] of Object.entries(f)) if (!v) delete f[w]
   changed()
 }
 

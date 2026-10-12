@@ -59,6 +59,14 @@ export const man = (n: number) => (n >= 10000 ? `${Math.round(n / 1000) / 10}만
 /** 'YYYY-MM-DD' → 'MM.DD' */
 export const md = (iso: string) => iso.slice(5, 10).replace('-', '.')
 
+/**
+ * 계획 문구용 날짜. 기준(ref, 보통 이번 주 시작일)과 해가 다르면 연도를 붙인다: '10.13' / '2027.10.13'.
+ * 52주 유지 끝 날짜를 연도 없이 '10.13'으로 써서 이번 달로 읽혔다(2026-10-12 문의)
+ */
+export const mdy = (iso: string, ref: string) => (iso.slice(0, 4) === ref.slice(0, 4) ? md(iso) : `${iso.slice(0, 4)}.${md(iso)}`)
+/** '10.15(목)'. 해가 다르면 연도도 */
+export const mdw = (iso: string, ref: string) => `${mdy(iso, ref)}(${'일월화수목금토'[new Date(iso + 'T00:00:00Z').getUTCDay()]})`
+
 /** PC방 보정 합계. 범위로만 아는 주가 있으면 '최소~최대' */
 export const pcRange = (p: { total: number; totalMax: number }) =>
   p.totalMax > p.total ? `${won(p.total)}~${won(p.totalMax)}` : won(p.total)

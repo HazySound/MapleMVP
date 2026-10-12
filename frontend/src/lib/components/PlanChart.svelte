@@ -65,8 +65,10 @@
       ctx.fillStyle = tierColor(x.tier); ctx.fill()
       if (on) { ctx.strokeStyle = C.tx; ctx.lineWidth = 2; ctx.stroke() }
     })
-    if (r.reached != null) {
-      const i = r.reached, x = cx(i), y = Y(tl[i].sum)
+    // 낮추는 계획은 지금 등급이 이미 목표 위라 첫 주가 '달성'으로 잡혔다. 실제로 목표 등급이 되는 주에 '부터'로 단다
+    const mark = r.mode === 'hold' ? r.firstAt : r.reached
+    if (mark != null && tl[mark]) {
+      const i = mark, x = cx(i), y = Y(tl[i].sum)
       ctx.save()
       ctx.shadowColor = hexA(TIER_COLOR[target.key], 0.8); ctx.shadowBlur = 18
       ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2)
@@ -74,7 +76,7 @@
       ctx.restore()
       ctx.font = `600 11px ${FONT.sans}`; ctx.fillStyle = TIER_COLOR[target.key]
       ctx.textAlign = i > n - 3 ? 'right' : 'center'; ctx.textBaseline = 'bottom'
-      ctx.fillText(`${target.name} 달성`, i > n - 3 ? x + 8 : x, y - 12)
+      ctx.fillText(r.mode === 'hold' ? `여기부터 ${target.name}` : `${target.name} 달성`, i > n - 3 ? x + 8 : x, y - 12)
     }
 
     // ---- 아래 패널: 주별 계획 결제 (이번 주에 이미 결제한 금액은 위 합계에만 반영) ----
