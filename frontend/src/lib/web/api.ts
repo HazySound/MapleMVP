@@ -11,6 +11,8 @@ import type { PyApi } from '../api'
 import type { ExportResult, HistoryPage, PcRoomScan, PlanInput, Raw, Row } from '../types'
 import { weekStart } from '../core/mvp'
 import { META } from '../core/pcroom'
+import type { ScanResult } from '../core/ocr'
+import type { ScanDone, ScanJob } from './ocr.worker'
 
 const KEY = {
   rows: 'maplemvp.rows',
@@ -263,6 +265,17 @@ function raw(): Raw {
 }
 
 /** 브라우저에서는 넥슨 수집도, 창 조작도 없다. 자리만 맞춰 둔다. */
+/** 캡처 한 장을 워커에서 읽는다. 다 읽으면 워커를 닫는다 */
+function scanInWorker(data: ArrayBuffer, width: number, height: number, fallbackScale: number): Promise<ScanResult> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (e: MessageEvent<ScanDone>) => { worker.terminate(); const { id: _, ...r } = e.data; resolve(r) }
+    worker.onerror = e => { worker.terminate(); reject(e.message) }
+    const msg: ScanJob = { id: 1, data, width, height, fallbackScale, net: 'always' }
+    worker.postMessage(msg, [data])
+  })
+}
+
 export const webApi: PyApi = {
   async get_state() { return raw() },
   async refresh() { return raw() },
@@ -274,7 +287,6 @@ export const webApi: PyApi = {
                message: '이미지를 붙여넣거나 끌어다 놓아 주세요. (브라우저는 클립보드를 마음대로 볼 수 없어요)' }
     }
     try {
-      const { scan, toGray } = await import('../core/ocr')
       const img = await loadImage(dataUrl)
       const cv = document.createElement('canvas')
       cv.width = img.width
@@ -282,7 +294,8 @@ export const webApi: PyApi = {
       const ctx = cv.getContext('2d', { willReadFrequently: true })!
       ctx.drawImage(img, 0, 0)
       const px = ctx.getImageData(0, 0, cv.width, cv.height)
-      const r = scan(toGray(px.data, cv.width, cv.height), scale || 0)
+      // 새 판독기까지 같이 돌리면 1~2초 걸린다. 화면이 멈추지 않게 화면공유처럼 따로 띄운 작업(워커)에서 읽는다
+      const r = await scanInWorker(px.data.buffer as ArrayBuffer, cv.width, cv.height, scale || 0)
       const ok = !!(r.readings.length || r.amounts.length)
       return { ok, ...r, size: `${cv.width}x${cv.height}`,
                message: ok ? '' : 'MVP 등급 툴팁을 찾지 못했어요. 등급 게이지에 마우스를 올린 채로 찍어 주세요.' }

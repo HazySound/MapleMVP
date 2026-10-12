@@ -8,6 +8,7 @@
  */
 import templates from './ocr.templates.json'
 import gradeTpl from './ocr.anchor.json'
+import { readLine } from './ocrnet'
 
 export const ROWS = 12          // 툴팁 줄 수
 const SPACING = 54.2            // 기준 배율에서의 줄 간격 (픽셀)
@@ -346,12 +347,12 @@ function score(g: Gray, rows: [number, number][], x0: number, x1: number,
 }
 
 /** 간격이 고르게 이어지는 가장 긴 줄 묶음. */
-function chain(segs: [number, number][]): [number, number][] {
+function chain(segs: [number, number][], minPitch = 12): [number, number][] {
   let best: [number, number][] = []
   for (let i = 0; i < segs.length; i++) {
     for (let j = i + 1; j < segs.length; j++) {
       const d = segs[j][0] - segs[i][0]
-      if (d < 12) continue
+      if (d < minPitch) continue
       const c = [segs[i], segs[j]]
       let last = segs[j][0]
       for (let k = j + 1; k < segs.length; k++) {
@@ -379,7 +380,22 @@ export function findTables(g: Gray, win = 320, step = 40, limit = 6): Table[] {
   return []
 }
 
-function tablesAt(g: Gray, th: number, win: number, step: number, limit: number): Table[] {
+/**
+ * 새 판독기(ocrnet)용 표 자리. findTables와 같은 방법으로 12줄을 찾되 '글자를 잘라 보니 숫자 같은가' 점수로 거르지 않는다.
+ * 금액 열인지는 모델이 읽어 보고 정한다(금액이 아닌 열은 빈 답). 점수가 획이 두꺼워진 HDR 캡처의 금액 열을 0점으로 떨궜고,
+ * 줄 찾기의 고정 픽셀 기준(글자 높이 8px)이 작은 캡처(글자 7px)의 줄을 못 찾았다. 기준마다 찾아 겹치는 열은 하나로
+ */
+export function findSpans(g: Gray): Table[] {
+  const out: Table[] = []
+  for (const th of TABLE_THRESHOLDS) {
+    for (const t of tablesAt(g, th, 320, 40, 99, true)) {
+      if (!out.some(u => u.rows[0][0] === t.rows[0][0] && t.x0 < u.x1 && u.x0 < t.x1)) out.push(t)
+    }
+  }
+  return out
+}
+
+function tablesAt(g: Gray, th: number, win: number, step: number, limit: number, loose = false): Table[] {
   const { width: W, height: H } = g
   // 가로 누적합을 만들어 두면 어떤 열 구간의 밝은 화소 수도 뺄셈 한 번이다
   const cum = new Int32Array((W + 1) * H)
@@ -392,8 +408,8 @@ function tablesAt(g: Gray, th: number, win: number, step: number, limit: number)
   for (let x0 = 0; x0 < Math.max(1, W - win + 1); x0 += step) {
     const x1 = Math.min(W, x0 + win)
     const hit = (y: number) => cum[y * (W + 1) + x1] - cum[y * (W + 1) + x0] >= 3
-    const segs = runs(hit, H, 6, 5).filter(([a, b]) => b - a >= 8)
-    const c = chain(segs).slice(0, ROWS)
+    const segs = loose ? runs(hit, H, 3, 3).filter(([a, b]) => b - a >= 4) : runs(hit, H, 6, 5).filter(([a, b]) => b - a >= 8)
+    const c = chain(segs, loose ? 9 : 12).slice(0, ROWS)
     if (c.length < ROWS) continue
     const gaps: number[] = []
     for (let i = 0; i < ROWS - 1; i++) gaps.push(c[i + 1][0] - c[i][0])
@@ -431,6 +447,7 @@ function tablesAt(g: Gray, th: number, win: number, step: number, limit: number)
       if (hi0 - lo0 > s(420)) continue
       const lo = Math.max(0, lo0 - s(6))
       const hi = Math.min(W, hi0 + s(7))
+      if (loose) { if (everyRow(lo0, hi0)) out.push({ s: 1, t: { rows, x0: lo, x1: hi, scale } }); continue }
       const sc = score(g, rows, lo, hi, scale, th)
       if (sc > 0) out.push({ s: sc, t: { rows, x0: lo, x1: hi, scale } })
     }
@@ -875,8 +892,81 @@ function spacedAfter(g: Gray, t: Table): boolean {
  */
 const notAmounts = (v: number[]) => v.filter(n => n >= 1 && n <= 12).length >= 8 || v.some(n => n > 2_500_000)
 
-/** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
-export function scan(g: Gray, fallbackScale = 0): ScanResult {
+/**
+ * 새 판독기(ocrnet)가 읽은 표의 한 표 값. 글자를 잘라 맞추는 판독은 한 판독이 조합 42개에서 많아야 30여 번 나온다.
+ * 모델은 한 번 읽지만 받아 둔 캡처와 일부러 망가뜨린 사본에서 그보다 훨씬 정확했다(2026-10-12 비교: 252장 중 203 대 171).
+ * 둘이 같으면 표가 합쳐지고, 다르면 모델 쪽이 앞서되 '확실한 판독'(2등의 3배) 문턱은 못 넘어 다시 찍어 달라고 하기 쉽다
+ */
+const NET_VOTES = 40
+
+/**
+ * 새 판독기로 표를 읽는다. 툴팁 오른쪽 끝이 금액 열(블랙은 사용 이월 열, 그 왼쪽이 금액 열)이고, 그 왼쪽은 등급 이름·날짜·
+ * 'n 주차 뒤'라 모델이 빈 답을 낸다. 오른쪽부터 읽어 12줄 모두 숫자(250만 이하)인 열을 모은다
+ */
+function netColumns(g: Gray): { need: number[]; carry: number[] | null; t: Table } | null {
+  const spans = findSpans(g).filter(t => t.rows.length === ROWS).sort((a, b) => b.x0 - a.x0)
+    .filter((t, i, a) => !a.slice(0, i).some(u => t.x0 < u.x1 && u.x0 < t.x1))
+  const cols: { t: Table; v: number[] }[] = []
+  for (const t of spans) {
+    const s = (v: number) => Math.max(1, Math.round(v * t.scale))
+    const v = t.rows.map(([y0, y1]) => {
+      const pad = Math.round((y1 - y0) * 0.35)
+      const ya = Math.max(0, y0 - pad), yb = Math.min(g.height, y1 + pad)
+      const xa = Math.max(0, t.x0 - s(12)), xb = Math.min(g.width, t.x1 + s(70))
+      const w = xb - xa, h = yb - ya
+      const d = new Float32Array(w * h)
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d[y * w + x] = g.data[(y + ya) * g.width + x + xa]
+      return readLine(d, w, h).text
+    })
+    if (!v.every(x => /^\d+$/.test(x) && Number(x) <= 2_500_000)) { if (cols.length) break; continue }
+    cols.push({ t, v: v.map(Number) })
+    if (cols.length === 2) break
+  }
+  const up = (v: number[]) => v.every((n, i) => i === 0 || n >= v[i - 1])
+  // 숫자 열이 둘이면 블랙: 왼쪽이 금액(줄지 않는다), 오른쪽이 사용 이월
+  if (cols.length === 2 && up(cols[1].v)) return { need: cols[1].v, carry: cols[0].v, t: cols[1].t }
+  return cols[0] && up(cols[0].v) ? { need: cols[0].v, carry: null, t: cols[0].t } : null
+}
+
+/** 표 값과 같은 판독이 있으면 표를 더하고, 없으면 넣는다. 많이 나온 것부터 */
+function addVote(list: number[][], votes: number[], v: number[], n: number) {
+  const i = list.findIndex(x => x.length === v.length && x.every((k, j) => k === v[j]))
+  if (i >= 0) votes[i] += n
+  else { list.push(v); votes.push(n) }
+  const order = list.map((_, k) => k).sort((a, b) => votes[b] - votes[a])
+  return { list: order.map(k => list[k]), votes: order.map(k => votes[k]) }
+}
+
+/**
+ * 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다.
+ * net: 새 판독기를 언제 같이 돌릴지. 'always'(캡처 한 장), 'fallback'(화면공유 프레임: 글자 판독이 확실하지 않을 때만. 한 장에 1초 남짓 든다), 'off'
+ */
+export function scan(g: Gray, fallbackScale = 0, net: 'always' | 'fallback' | 'off' = 'always'): ScanResult {
+  const r = scanGlyphs(g, fallbackScale)
+  if (net === 'off') return r
+  const top = r.votes?.[0] ?? 0, second = r.votes?.[1] ?? 0
+  if (net === 'fallback' && r.readings.length && top >= 8 && top >= second * 3) return r
+  const n = netColumns(g)
+  if (!n) return r
+  if (!r.readings.length) {
+    // 글자 판독이 표를 못 찾았다(작은 캡처·HDR 등). 모델이 읽은 표로 채운다
+    const sp = amountSpots(g, n.t.scale, { x0: n.t.x0, x1: n.t.x1, rows: n.t.rows })
+    return { readings: [n.need], votes: [NET_VOTES], carries: n.carry ? [n.carry] : [], carryVotes: n.carry ? [NET_VOTES] : [],
+             scale: n.t.scale, amounts: [...new Set(sp.map(x => x.v))].sort((a, b) => a - b), panel: panelAmounts(g, sp, n.t.scale),
+             balance: n.carry ? readBalance(g, findSpans(g), n.t) : r.balance ?? null }
+  }
+  const rd = addVote([...r.readings], [...(r.votes ?? r.readings.map(() => 1))], n.need, NET_VOTES)
+  const out: ScanResult = { ...r, readings: rd.list, votes: rd.votes }
+  if (n.carry) {
+    const cv = addVote([...r.carries], [...(r.carryVotes ?? r.carries.map(() => 1))], n.carry, NET_VOTES)
+    out.carries = cv.list
+    out.carryVotes = cv.votes
+  }
+  return out
+}
+
+/** 글자를 하나씩 잘라 견본과 맞추는 판독 */
+function scanGlyphs(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
   // 표 자리는 밝은 그대로 찾은 것을 쓴다. 되돌린 뒤 다시 찾으면 '0 캐시' 줄이 짧아져 금액 열을 놓쳤다
   if (tables.length) {

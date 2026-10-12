@@ -201,7 +201,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
       worker.addEventListener('message', on)
       const msg: ScanJob = {
         id, data: img.data.buffer as ArrayBuffer,
-        width: img.width, height: img.height, fallbackScale: scale,
+        width: img.width, height: img.height, fallbackScale: scale, net: 'fallback',
       }
       worker.postMessage(msg, [msg.data])
     })

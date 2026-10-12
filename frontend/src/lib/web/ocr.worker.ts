@@ -13,13 +13,15 @@ export interface ScanJob {
   width: number
   height: number
   fallbackScale: number
+  /** 새 판독기(ocrnet)를 언제 같이 돌릴지. 화면공유는 'fallback'(한 장에 1초 남짓 들어 프레임마다는 못 돌린다) */
+  net?: 'always' | 'fallback' | 'off'
 }
 
 export type ScanDone = ScanResult & { id: number }
 
 addEventListener('message', (e: MessageEvent<ScanJob>) => {
-  const { id, data, width, height, fallbackScale } = e.data
+  const { id, data, width, height, fallbackScale, net } = e.data
   const g = toGray(new Uint8ClampedArray(data), width, height)
-  const r = scan(g, fallbackScale)
+  const r = scan(g, fallbackScale, net ?? 'always')
   postMessage({ id, ...r } satisfies ScanDone)
 })
