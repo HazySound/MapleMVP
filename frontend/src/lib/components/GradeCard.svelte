@@ -207,6 +207,14 @@
                ...(fixedOn ? ['', `마지막으로 맞춘 날 ${fixedOn}`] : [])].join('\n')}>
         {#if fixed && !needPc}맞춤 완료 ✓{:else}인게임 금액 맞추기{/if}
       </button>
+    {:else if fixed && needPc}
+      <!-- 맞춰 둔 뒤 새 주가 비었으면 PC처럼 다시 맞추라고 알린다. '맞춤 완료'로 두면 PC와 달라 동기화가 안 된 줄 안다
+           (2026-10-12 사용자 제보: 목요일이 지나 PC는 맥동, 휴대폰은 맞춤 완료) -->
+      <span class="pc tag hl"
+        use:tip={`${recheck ? '지난번 맞출 때 합계만 알던 주가 있는데 그 뒤 등급이 올라 다시 맞춰야 해요.'
+          : `새 주가 시작돼 13주 중 ${d.pcroom.missing.length}주가 아직 비어 있어요.`} 인게임 금액 맞추기는 PC에서 해 주세요.`}>
+        인게임 금액 맞추기
+      </span>
     {:else if fixed}
       <span class="pc tag on"
         use:tip={`PC에서 인게임 금액과 맞춰 뒀어요. 고치는 건 PC에서만 돼요.${pcCaveat(d.pcroom) ? '\n\n' + pcCaveat(d.pcroom) : ''}`}>
@@ -302,10 +310,11 @@
   }
   .pc.off:hover { color: var(--color-tx3); border-color: var(--color-line); }
   .pc.tag { cursor: default; }
-  .pc.tag:hover { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
+  .pc.tag.on:hover { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
   .pc.on { color: var(--color-butter); border-color: color-mix(in oklab, var(--color-butter) 45%, var(--color-line)); }
   /* 크기는 그대로 두고 테두리 빛만 번지게 한다 */
   .pc.hl { color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 65%, transparent); animation: call 2.2s ease-out infinite; }
+  .pc.tag.hl:hover { color: var(--color-lav); border-color: color-mix(in oklab, var(--color-lav) 65%, transparent); }
   @keyframes call {
     0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-lav) 50%, transparent); }
     70%, 100% { box-shadow: 0 0 0 10px transparent; }

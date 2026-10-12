@@ -279,8 +279,9 @@
     .knob { width: 18px; height: 18px; }
     .sw[aria-checked="true"] .knob { transform: translateX(18px); }
   }
-  /* 360px 폰: 탭이 셋이라 로그인 단추가 밀려 잘렸다. 탭 여백을 줄여 한 줄에 넣는다 */
-  @media (max-width: 400px) {
+  /* 360px 폰: 탭이 셋이라 로그인 단추가 밀려 잘렸다. 탭 여백을 줄여 한 줄에 넣는다.
+     412·430px 폰(갤럭시·아이폰 큰 기종)도 계정 단추가 오른쪽 밖으로 밀렸다(2026-10-12 사용자 제보). 460px까지 같이 줄인다 */
+  @media (max-width: 460px) {
     .bar { gap: 4px; padding-left: 8px; }
     .bar:not(:has(.winctl)) { padding-right: 8px; }
     .tabs button { padding: 5px 7px; font-size: 12px; }

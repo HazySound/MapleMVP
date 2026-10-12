@@ -43,20 +43,36 @@ const UNIT_DIM = 0.87
  * 바로 뒤가 밝은 숫자인 어두운 조각은 숫자 사이의 쉼표라 넘어간다. 얇은 쉼표는 흐린 캡처에서 숫자보다 어둡게 잡힌다
  * (2026-10-06 제보: '159,800'의 쉼표가 220(숫자 255의 0.86배)이라 '159'에서 끊겼다. '캐시'는 0.7배쯤이고 뒤도 어둡다)
  */
-function numberPart(segs: [number, number][], peak: (a: number, c: number) => number): [number, number][] {
+function numberPart(segs: [number, number][], peak: (a: number, c: number) => number,
+                    space: number): [number, number][] {
   // 작은 화면을 키우면 보간이 밝은 곳에서 255를 넘게 튄다. 눌러 두지 않으면 쉼표가 어둡게 보여 잘린다
   const ps = segs.map(([a, c]) => Math.min(255, peak(a, c)))
   const mx = Math.max(0, ...ps)
   const dim = (k: number) => ps[k] < mx * UNIT_DIM
   const i = ps.findIndex((_, k) => dim(k) && (k + 1 >= ps.length || dim(k + 1)))
-  return i < 0 ? segs : segs.slice(0, i)
+  if (i >= 0) return segs.slice(0, i)
+  // 화면을 통째로 밝게 보정한 캡처는 '캐시'까지 숫자처럼 하얗다(scan의 washed). 그때만 숫자와 '캐시' 사이
+  // 띄어쓰기에서 끊는다: 가장 넓은 틈이 띄어쓰기 폭(space) 이상이고 그 앞(숫자 쪽) 틈들과 바로 뒤 틈의 1.5배가 넘으면
+  // 거기까지가 숫자다. 작은 화면에서는 '1' 양옆도 꽤 벌어지는데 양옆이 엇비슷해 걸러진다('1,109,330'이 '1'로 잘렸다).
+  // 바로 뒤는 '캐' 글자 안쪽이라 좁고, 그 너머 '캐시' 글자 사이 틈은 따지지 않는다. 평소에는 space가 무한대라 안 끊는다
+  const gaps = segs.slice(1).map(([a], k) => a - segs[k][1])
+  const w = Math.max(0, ...gaps)
+  const at = gaps.indexOf(w)
+  // 숫자가 한 글자만 남으면 '0 캐시'다. 폭이 좁은 '1'만 남으면 '117,100'의 '1'과 '1' 사이에서 잘린 것이다
+  const lone = at === 0 && segs[0][1] - segs[0][0] < 0.6 * Math.max(...segs.map(([a, c]) => c - a))
+  const j = w >= space && !lone && w > 1.5 * Math.max(1, ...gaps.slice(0, at), gaps[at + 1] ?? 0) ? at : -1
+  return j < 0 ? segs : segs.slice(0, j + 1)
 }
 
 const BOX_H = templates.height
 const BOX_W = templates.width
 
 /** 밝기만 남긴 회색 이미지. 좌표는 y * width + x. */
-export interface Gray { data: Float32Array; width: number; height: number }
+export interface Gray {
+  data: Float32Array; width: number; height: number
+  /** 화면을 통째로 밝게 보정한 캡처(scan이 가린다). 밝기를 되돌린 뒤에도 '캐시'는 숫자만큼 하얗다 */
+  washed?: boolean
+}
 
 export function toGray(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number): Gray {
   const data = new Float32Array(width * height)
@@ -64,6 +80,43 @@ export function toGray(rgba: Uint8ClampedArray | Uint8Array, width: number, heig
     data[i] = (rgba[p] + rgba[p + 1] + rgba[p + 2]) / 3
   }
   return { data: level(data), width, height }
+}
+
+/**
+ * 화면을 통째로 밝게 보정한 캡처(HDR을 켠 채 찍은 것 등, 2026-10-12 제보). 툴팁 바탕이 57쯤에서 106으로 뜨고
+ * 회색 '캐시'(179)와 글자 가장자리까지 255로 꽉 찬다. 그대로 평소 기준(180~240)으로 자르면 획이 두꺼워져 3을 9로 읽고,
+ * '캐시'를 숫자에 붙여 읽는다. 툴팁 바탕이 밝고(받아 둔 캡처 56~63, 화면공유를 밝게 당겨도 85 아래) 어느 열에도
+ * 회색 '캐시'가 없으면 그렇게 본다
+ */
+const WASHED_BG = 90
+/** 보통 캡처의 툴팁 바탕 밝기와, 밝게 보정했을 때 255로 꽉 차기 시작하는 원래 밝기('캐시' 회색 179 언저리) */
+const TOOLTIP_BG = 57
+const CLIP_AT = 180
+
+/**
+ * 밝게 보정한 캡처를 원래 밝기로 되돌린다. 보정을 v' = a·v + b로 보고, 툴팁 바탕(bg → 57)과 꽉 차는 곳(255 → 180)
+ * 두 점으로 a, b를 구한다. 꽉 찬 화소는 되돌릴 수 없어 흰색으로 둔다(숫자와 '캐시'가 여기 든다).
+ * 꽉 차지 않은 글자 가장자리가 원래대로 어두워져 획 두께가 평소와 같아진다
+ */
+function unwash(g: Gray, bg: number): Gray {
+  const a = (255 - bg) / (CLIP_AT - TOOLTIP_BG), b = 255 - CLIP_AT * a
+  const data = new Float32Array(g.data.length)
+  for (let i = 0; i < data.length; i++) {
+    const v = g.data[i]
+    data[i] = v >= 254.5 ? 255 : Math.max(0, Math.min(255, (v - b) / a))
+  }
+  return { ...g, data }
+}
+
+/** 표 줄 띠의 밝기 가운데값. 글자보다 바탕이 훨씬 넓어 곧 바탕 밝기다 */
+function tooltipBg(g: Gray, tables: Table[]): number {
+  const hist = new Int32Array(256)
+  let n = 0
+  for (const t of tables) {
+    for (const [y0, y1] of t.rows) for (let y = y0; y < y1; y++) for (let x = t.x0; x < t.x1; x++) { hist[g.data[y * g.width + x] | 0]++; n++ }
+  }
+  for (let v = 0, acc = 0; v < 256; v++) if ((acc += hist[v]) * 2 >= n) return v
+  return TOOLTIP_BG
 }
 
 /**
@@ -451,7 +504,7 @@ export function lineGlyphs(g: Gray, y0: number, y1: number, x0: number, x1: numb
     const xa = Math.floor(a * k), xc = Math.max(xa + 1, Math.ceil(c * k))
     for (let y = 0; y < src.height; y++) for (let x = xa; x < Math.min(src.width, xc); x++) m = Math.max(m, src.data[y * src.width + x])
     return m
-  })
+  }, g.washed ? s(9) : Infinity)
   if (!segs.length) return []
   top = Math.max(0, top - 2)
   bot = Math.min(b.height, bot + 3)
@@ -542,7 +595,7 @@ function digitClusters(g: Gray, scale: number, skip?: Skip,
             let m = 0
             for (let y = Math.max(0, ya); y < Math.min(H, yb); y++) for (let x = lo + p; x < lo + q; x++) m = Math.max(m, g.data[y * W + x])
             return m
-          }).length
+          }, g.washed ? s(9) : Infinity).length
           const key = `${(a / 6) | 0}:${(lo / 10) | 0}:${th}`
           if (n >= 3 && n <= 9 && !seen.has(key)) {
             seen.add(key)
@@ -733,7 +786,8 @@ function readBalance(g: Gray, tables: Table[], t: Table): number | null {
   const { width: W, height: H } = g
   const s = (v: number) => Math.max(1, Math.round(v * t.scale))
   const right = Math.max(t.x1, ...tables.filter(u => u.x0 > t.x1 && sameRows(u, t)).map(u => u.x1))
-  const x0 = Math.max(0, t.x0 - s(260)), x1 = Math.min(W, right + s(120))
+  // 밝게 보정한 캡처는 툴팁 밖 게임 화면도 밝아 줄이 위아래로 이어진다. 툴팁 안('…000,000 캐시' 끝)까지만 본다
+  const x0 = Math.max(0, t.x0 - s(260)), x1 = Math.min(W, right + s(g.washed ? 20 : 120))
   const last = t.rows[t.rows.length - 1]
   const pitch = t.rows[1][0] - t.rows[0][0]
   /**
@@ -768,7 +822,10 @@ function readBalance(g: Gray, tables: Table[], t: Table): number | null {
     for (const th of [180, 190, 200, 210, 220, 230]) {
       // 밝은 덩어리 중 마지막이 잔액이다. 그 덩어리를 못 읽었으면 이 기준은 버린다. 읽힌 앞 조각만
       // 잔액으로 쓰면 '12,530'이 '12'가 된다(2026-10-01 제보)
-      const n = chunksAt(y0, y1, th).at(-1)
+      // 밝게 보정한 캡처는 '/ 10,000,000 캐시'까지 하얗게 꽉 차면 마지막 덩어리가 잔액이 아니다. 10,000,000 바로 앞 숫자를 쓴다
+      const cs = chunksAt(y0, y1, th)
+      const capAt = g.washed ? cs.findIndex(c => /0{6}$/.test(c.text)) : -1
+      const n = capAt > 0 ? cs.slice(0, capAt).reverse().find(c => /^\d+$/.test(c.text) && c.q - c.p >= s(20)) : cs.at(-1)
       if (!n || !/^\d+$/.test(n.text)) continue
       const cap = chunksAt(y0, y1, 130, s(7)).some(c => c.p > n.q && /0{6}$/.test(c.text))
       if (cap) votes.set(Number(n.text), (votes.get(Number(n.text)) ?? 0) + 1)
@@ -799,9 +856,33 @@ function cashAfter(g: Gray, t: Table): boolean {
   return hit >= t.rows.length - 2
 }
 
+/**
+ * 화면을 통째로 밝게 보정한 캡처(washed)에서는 '캐시'까지 하얘서 cashAfter가 어느 열에서도 회색을 못 찾는다. 그때는 줄마다 숫자 뒤에 띄어쓰기가 있고 그 뒤에 글자가 이어지는지로 금액 열을 가린다.
+ * '1 주차 뒤' 열도 그렇게 생겼지만 1~12로만 읽혀 따로 뺀다. 등급 이름·날짜 열은 띄어쓰기가 없다
+ */
+function spacedAfter(g: Gray, t: Table): boolean {
+  const s = (v: number) => Math.max(1, Math.round(v * t.scale))
+  let hit = 0
+  for (const [y0, y1] of t.rows) {
+    const segs = digitSegs(g, y0, y1, t.x0, Math.min(g.width, t.x1 + s(60)), t.scale, 240)
+    if (segs.some(([a], k) => k > 0 && a - segs[k - 1][1] >= s(9))) hit++
+  }
+  return hit >= t.rows.length - 2
+}
+/**
+ * 띄어쓰기 뒤에 글자가 붙은 열은 금액 말고도 '1 주차 뒤'(대부분 1~12로 읽힌다)와 '2026-10-15 블랙'(250만을 넘는 숫자로 읽힌다)이 있다.
+ * 유지까지 금액·사용 이월은 한 줄이 250만을 넘을 수 없고, 1~12캐시일 수도 없다
+ */
+const notAmounts = (v: number[]) => v.filter(n => n >= 1 && n <= 12).length >= 8 || v.some(n => n > 2_500_000)
+
 /** 캡처에서 숫자 후보를 뽑는다. 판단은 core/scan.ts가 한다. */
 export function scan(g: Gray, fallbackScale = 0): ScanResult {
   const tables = findTables(g)
+  // 표 자리는 밝은 그대로 찾은 것을 쓴다. 되돌린 뒤 다시 찾으면 '0 캐시' 줄이 짧아져 금액 열을 놓쳤다
+  if (tables.length) {
+    const bg = tooltipBg(g, tables)
+    if (bg >= WASHED_BG && !tables.some(t => cashAfter(g, t))) g = { ...unwash(g, bg), washed: true }
+  }
   const spotsOf = (scale: number, skip?: Skip) => {
     const sp = amountSpots(g, scale, skip)
     return { amounts: [...new Set(sp.map(x => x.v))].sort((a, b) => a - b), panel: panelAmounts(g, sp, scale) }
@@ -819,8 +900,10 @@ export function scan(g: Gray, fallbackScale = 0): ScanResult {
   for (const t of tables) {
     const seen = readVotes(g, t)
     if (!seen.readings.length) continue
-    const up = seen.readings.some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))
-    if (up && cashAfter(g, t)) return found(t, seen)
+    if (g.washed && notAmounts(seen.readings[0])) continue
+    // 밝게 보정한 캡처는 오독이 많아 이월 열에서도 줄지 않는 판독이 우연히 나온다. 가장 많이 나온 판독으로만 본다
+    const up = (g.washed ? seen.readings.slice(0, 1) : seen.readings).some(v => v.every((n, i) => i === 0 || n >= v[i - 1]))
+    if (up && (g.washed ? spacedAfter(g, t) : cashAfter(g, t))) return found(t, seen)
     if (up) mono ??= found(t, seen)
     first ??= found(t, seen)
   }

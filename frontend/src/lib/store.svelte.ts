@@ -102,6 +102,7 @@ export async function boot() {
     await listenWeb()
     ;(await import('./qna.svelte')).initBoard()
     void signedIn()
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void comeBack() })
   }
   py.get_ui().then(ui => {
     if (typeof ui?.medal === 'boolean') app.medal = ui.medal
@@ -158,6 +159,20 @@ export async function pcroomSave(weeks: Record<string, number>) {
 /** 북마클릿이 보내온 구매내역이 저장된 뒤 화면을 다시 만든다 */
 export async function reloadWeb() {
   handle(await py.get_state())
+}
+
+/**
+ * 탭으로 돌아오면 다시 계산하고, 로그인해 있으면 계정 것도 다시 받는다.
+ * 휴대폰은 탭을 며칠씩 새로 받지 않고 이어 띄워, 목요일이 지나도 지난주 기준으로 '맞춤 완료'를 보이고
+ * PC에서 고친 것도 안 들어왔다(2026-10-12 사용자 제보). 1분 안에 다시 오면 그냥 둔다.
+ * 맞추기 창을 열어 두었거나 가져오는 중이면 손대지 않는다
+ */
+let shownAt = Date.now()
+async function comeBack() {
+  if (Date.now() - shownAt < 60_000 || app.showPcRoom || app.syncing || app.importing) return
+  shownAt = Date.now()
+  if (app.user) await signedIn()
+  else await reloadWeb()
 }
 
 /**
