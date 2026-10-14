@@ -189,6 +189,14 @@ describe('구매용 아이템이 섞인 결제', () => {
   it('구매용이 없으면 전과 같다', () => {
     expect(run(0)[0].solved.best.pay).toBe(run(undefined)[0].solved.best.pay)
   })
+
+  it('구매용도 캐시샵에서 사니 크레딧이 쌓인다(2026-10-14 사용자: 20만 중 플가 1개 구매용, 크레딧 19,705라 에디큐브를 못 샀다)', () => {
+    const [w] = run(5_900, 200_000)
+    const p = pickAt([w], null, { balance: 10_000, items: [{ id: 'primeadd', name: '프라임 에디셔널 큐브', credits: 20_000, price: 3 }] }).weeks[0]
+    expect(p.credit!.earned).toBeCloseTo(p.route.credits + 295, 6)
+    expect(p.credit!.have).toBeGreaterThanOrEqual(20_000)
+    expect(p.credit!.buys.map(b => b.n)).toEqual([1])
+  })
 })
 
 describe('주별 상품권 한도', () => {

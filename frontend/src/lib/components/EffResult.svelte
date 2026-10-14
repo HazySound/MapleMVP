@@ -423,7 +423,7 @@
         <li>
           <div class="t">캐시 {won(cur.route.pay + cur.w.use)} 충전 → 현금 {won(cur.funding.cost)}원</div>
           <div class="chips">{#each cur.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}</span>{/each}</div>
-          {#if cur.w.use}<div class="dd">이 중 <b>{won(cur.w.use)}캐시는 구매용</b>(실제로 쓸 아이템)이에요. 아래 MVP작은 나머지 {won(cur.route.pay)}캐시로만 짰어요.</div>{/if}
+          {#if cur.w.use}<div class="dd">이 중 <b>{won(cur.w.use)}캐시는 구매용</b>(실제로 쓸 아이템)이에요. 아래 MVP작은 나머지 {won(cur.route.pay)}캐시로만 짰어요. 구매용도 캐시샵 결제라 MVP 금액({won(cur.route.pay + cur.w.use)}원 전부)과 크레딧에 들어가요.</div>{/if}
           {#if cur.funding.spare}<div class="dd">끝자리 때문에 한 권 더 사서 <b>{won(cur.funding.spare.cash)}캐시가 남아요</b>. 다음 주에 먼저 쓰고, 그 값은 다음 주에 세요.</div>{/if}
         </li>
         {#if cur.route.lines.length}

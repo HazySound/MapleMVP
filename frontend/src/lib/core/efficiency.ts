@@ -767,8 +767,10 @@ export function pickAt(weeks: WeekResult[], n: number | null | (number | null)[]
     const route = k == null ? w.solved.best : w.solved.routeAt(k)
     let spend: CreditSpend | null = null
     if (credit) {
-      carry += route.credits
-      spend = spendCredits(carry, route.credits, i === weeks.length - 1 && !credit.keepRest ? credit.items : top, w.fee, w.um)
+      // 구매용도 캐시샵에서 사니 크레딧이 쌓인다
+      const earned = route.credits + w.use * CREDIT_RATE
+      carry += earned
+      spend = spendCredits(carry, earned,i === weeks.length - 1 && !credit.keepRest ? credit.items : top, w.fee, w.um)
       carry = spend.left
     }
     // 충전 내역은 구매용 몫까지 합친 전체 결제로 만든다. 효율(cost·back·loss)은 MVP작 몫만이다
