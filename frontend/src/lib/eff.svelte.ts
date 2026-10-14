@@ -437,6 +437,16 @@ export interface RouteAlt {
   all: { diff: number; sales: number; salesNow: number } | null
 }
 
+/**
+ * 유지 구간의 주. 달성 계획은 목표 주 뒤의 주다.
+ * 이미 목표 등급 이상인 계획(유지·낮춰서 유지)은 이번 주부터 전부 유지다. 계획표는 이번 주를 목표 주로 두어(keep=false)
+ * 이번 주만 달성 설정을 탔다(2026-10-15 사용자: 블랙인데 이번 주가 '달성 1주'로 최적화 하한에 걸려 플가 33개)
+ */
+export function keepStartsOf(plan: PlanResult | null): Set<string> | null {
+  if (!plan?.keep) return null
+  return new Set(plan.timeline.filter(w => w.keep || plan.mode !== 'reach').map(w => w.start))
+}
+
 /** 계획을 따를 수 있으면 계획대로, 아니면 정한 금액 한 번 */
 export function planWeeks(d: State, plan: PlanResult | null) {
   if (!plan || plan.error) return null
@@ -480,8 +490,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const res = run(all)
   if (!res) return null
 
-  // 유지를 켰으면 목표 주 뒤의 주가 유지 구간이다
-  const keepStarts = mode === 'plan' && plan?.keep ? new Set(plan.timeline.filter(w => w.keep).map(w => w.start)) : null
+  const keepStarts = mode === 'plan' ? keepStartsOf(plan) : null
   // 회수율 하한은 화면처럼 달성·유지 구간마다 따로 확인한다
   const idxOf = (keep: boolean) => weeks.flatMap((w, i) => ((keepStarts?.has(w.start) ?? false) === keep ? [i] : []))
   const groups = keepStarts ? [idxOf(false), idxOf(true)].filter(g => g.length) : undefined

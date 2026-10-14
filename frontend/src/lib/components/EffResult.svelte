@@ -10,7 +10,7 @@
   import EffCombo from './EffCombo.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { SHOP, eff, saveEff, setAllRoute, setWeekRoute, umNet, type EffOut, type Pick, type RouteAlt, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
+  import { SHOP, eff, keepStartsOf, saveEff, setAllRoute, setWeekRoute, umNet, type EffOut, type Pick, type RouteAlt, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
   import { GIFT_ID, PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun, ro } from '../format'
   import { won } from '../format'
@@ -79,7 +79,7 @@
   // 유지를 켰으면 달성하는 주와 유지하는 주를 나눠 본다. 유지 주는 주차별 계획에서 목표 주 뒤의 주
   const split = $derived.by(() => {
     if (!pick || out?.mode !== 'plan' || !planner.result?.keep) return null
-    const keepStarts = new Set(planner.result.timeline.filter(w => w.keep).map(w => w.start))
+    const keepStarts = keepStartsOf(planner.result)!
     const part = (ws: WeekPick[]) => {
       const cost = ws.reduce((a, w) => a + w.route.cost, 0)
       const back = ws.reduce((a, w) => a + w.route.back + (w.credit?.back ?? 0), 0)
@@ -178,7 +178,7 @@
 
     {#if apart}
       <div class="phases">
-        {#each [['reach', '달성'], ['keep', '유지']] as const as [k, name] (k)}
+        {#each ([['reach', '달성'], ['keep', '유지']] as const).filter(([k]) => weeksOf(k)) as [k, name] (k)}
           {@const s = phaseSet(k)}
           <div class="phase">
             <div class="ph-h"><b>{name}</b><small>{weeksOf(k)}주</small></div>
@@ -251,7 +251,7 @@
       {/if}
       {#if split}
         <div class="split">
-          {#each [['달성', split.reach], ['유지', split.keep]] as const as [name, s] (name)}
+          {#each ([['달성', split.reach], ['유지', split.keep]] as const).filter(([, s]) => s.n) as [name, s] (name)}
             {@const low = s.gap < 1}
             <div class:low>
               <span>{name} <small>{s.n}주</small>{#if low}<i class="badge">최저가</i>{/if}</span>
