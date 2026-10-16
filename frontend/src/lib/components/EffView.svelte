@@ -149,10 +149,16 @@
     .c4.wide { grid-column: span 5 !important; }
     .c4:first-child { grid-column: span 3 !important; }
   }
+  /*
+   * 노트북 폭(1280 등): 왼쪽에 1번·3번을 쌓고 오른쪽에 키가 큰 2번을 둔다.
+   * 전에는 2번이 한 줄을 다 써서 결제수단 줄 오른쪽 절반이 비었다(2026-10-17 사용자)
+   */
   @media (min-width: 912px) and (max-width: 1295px) {
-    .c4 { grid-column: span 6 !important; }
-    .c4.wide { grid-column: span 12 !important; order: 3; }
-    .c12 { order: 4; }
+    /* 2번이 더 길면 남는 높이는 아래 3번이 받는다(1번 가운데가 비지 않게) */
+    .grid { grid-template-rows: auto 1fr; }
+    .c4:first-child { grid-column: 1 / span 5 !important; grid-row: 1; }
+    .c4.wide { grid-column: 6 / span 7 !important; grid-row: 1 / span 2; }
+    .c4:not(:first-child):not(.wide) { grid-column: 1 / span 5 !important; grid-row: 2; }
   }
   .weeknav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .weeknav .arr {

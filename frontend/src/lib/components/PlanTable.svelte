@@ -180,4 +180,23 @@
   .divider { margin: 10px 0 2px; padding: 6px 8px; font-size: 12px; font-weight: 600; color: var(--color-lav); border-top: 1px solid color-mix(in oklab, var(--color-lav) 45%, var(--color-line)); }
   .tier { font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .tier i { font-style: normal; font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 6px; background: color-mix(in oklab, var(--color-mint) 20%, transparent); color: var(--color-mint); }
+  /*
+   * 폰: 표를 옆으로 넘기면 금액·등급이 화면 밖에 있었다(2026-10-17 사용자). 한 주를 세 줄로 접는다
+   * 주차·설명 / 계획 결제·고정 / 빠지는 금액·13주 합계·등급
+   */
+  @media (max-width: 672px) {
+    .table { min-width: 0; }
+    .row.head { grid-template-columns: 24px minmax(0, 1fr); }
+    .row.head > :nth-child(n+3) { display: none; }
+    .row:not(.head) { grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr) auto; row-gap: 8px; padding: 10px 6px; }
+    .row:not(.head) > :nth-child(1) { grid-row: 1 / span 3; align-self: start; padding-top: 2px; }
+    .row:not(.head) > :nth-child(2) { grid-column: 2 / -1; }
+    .row:not(.head) > :nth-child(3) { grid-column: 2 / 4; }
+    .row:not(.head) > :nth-child(4) { grid-column: 4; }
+    .row:not(.head) > :nth-child(5) { grid-column: 2; text-align: left; font-size: 12px; }
+    .row:not(.head) > :nth-child(6) { grid-column: 3; text-align: left; font-size: 12px; white-space: nowrap; }
+    .row:not(.head) > :nth-child(7) { grid-column: 4; justify-content: flex-end; flex-wrap: wrap; gap: 4px 6px; font-size: 12.5px; }
+    .row:not(.head) > :nth-child(5)::before { content: '빠짐 '; color: var(--color-tx3); font-family: var(--font-sans, inherit); }
+    .row:not(.head) > :nth-child(6)::before { content: '13주 '; color: var(--color-tx3); font-family: var(--font-sans, inherit); }
+  }
 </style>
