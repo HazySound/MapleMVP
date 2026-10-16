@@ -8,7 +8,7 @@
    */
   import { isBig, shopItems, type EffOut, type Summary } from '../eff.svelte'
   import { PG_ID, isShort, itemLabel } from '../core/efficiency'
-  import { won } from '../format'
+  import { won, spotlight } from '../format'
 
   let { out }: { out: EffOut | null } = $props()
 
@@ -40,7 +40,7 @@
   ] as { key: string; color: string; title: string; who: string; items: string[]; why: string; sum: Summary | null }[])
 </script>
 
-<article class="card">
+<article class="card" use:spotlight>
   <h3 class="card-title">나에게 맞는 방법 <span class="sub">아이템 성격에 따라 맞는 사람이 달라요</span></h3>
   <div class="list">
     {#each styles as s (s.key)}

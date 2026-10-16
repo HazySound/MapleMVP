@@ -241,6 +241,8 @@ export interface Route {
   lines: Line[]
   /** 메이플포인트로 사서 메소마켓에 파는 캐시 */
   market: number
+  /** 그 캐시로 메소마켓에서 사는 메소(억). 1억 단위라 딱 안 떨어진 메포는 남는다(남는 메포 = market − mkMeso × 시세) */
+  mkMeso?: number
   /** 선물식: 캐시템(메이플포인트 상품)을 선물해 주고 현금으로 바로 받는 캐시. 메소를 거치지 않고 크레딧도 안 쌓인다 */
   gift: number
   fee: number
@@ -321,8 +323,13 @@ export function solve(o: SolveIn): Solved | null {
   const freeIdx = usable.flatMap((_, j) => (capOf(j) == null ? [j] : []))
   const capIdx = usable.flatMap((_, j) => (capOf(j) != null ? [j] : []))
   const mk1 = o.mk > 0 ? U / o.mk * o.um : 0
+  /**
+   * 메소마켓은 1억 단위로만 산다(2026-10-16 사용자). 메포를 산 캐시로 살 수 있는 메소(억)와 그 값(크레딧 포함).
+   * 딱 안 떨어진 메포는 그 결제에서 돌려받지 못한 것으로 센다
+   */
+  const mkMeso = (cash: number) => (o.mk > 0 ? Math.floor(cash / o.mk + 1e-9) : 0)
+  const mkValueU = (units: number) => (units > 0 && mk1 ? mkMeso(units * U) * o.um + units * U * CREDIT_RATE * cp : 0)
   // 메이플포인트도 캐시샵에서 사므로 크레딧이 쌓인다. 조합을 고를 때는 그 값까지 본다
-  const mkVal = mk1 ? mk1 + U * CREDIT_RATE * cp : 0
   const need = Math.ceil(o.target / U)
   if (need <= 0) return null
   if (!usable.length && !mk1) return null
@@ -369,7 +376,7 @@ export function solve(o: SolveIn): Solved | null {
   let combos = combosOf(A)
 
   const finish = (counts: Map<number, number>, market: number, pay: number): Route => {
-    let back = market / U * mk1, sales = market ? 1 : 0, meso = 0, credits = market * CREDIT_RATE, gift = 0
+    let back = mkMeso(market) * o.um, sales = market ? 1 : 0, meso = 0, credits = market * CREDIT_RATE, gift = 0
     const lines: Line[] = []
     for (const [j, n] of counts) {
       if (!n) continue
@@ -380,7 +387,7 @@ export function solve(o: SolveIn): Solved | null {
     }
     lines.sort((a, b) => b.n * b.item.cash - a.n * a.item.cash)
     const c = cost[pay / U], creditEst = credits * cp
-    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market, gift, fee: o.fee, meso, credits, creditEst }
+    return { pay, cost: c, back, loss: c - back - creditEst, sales, lines, market, mkMeso: mkMeso(market), gift, fee: o.fee, meso, credits, creditEst }
   }
   const comboCounts = (c: Combo) => new Map(capIdx.map((j, i) => [j, c.cnt[i]] as [number, number]))
 
@@ -388,32 +395,40 @@ export function solve(o: SolveIn): Solved | null {
   // 상한 없는 아이템과 메소마켓으로 만든 표에 상한 있는 조합을 하나씩 얹어 본다
   const EPS = 0.01, NEG = -1e18
   const best1 = () => {
-    const v = new Float64Array(A + 1).fill(NEG), how = new Int16Array(A + 1).fill(-3), mkIn = new Uint8Array(A + 1)
+    // 아이템만으로 a를 채우는 가장 큰 값
+    const v = new Float64Array(A + 1).fill(NEG), how = new Int16Array(A + 1).fill(-3)
     v[0] = 0
     for (let a = 1; a <= A; a++) {
-      if (mk1 && a >= MU && v[a - MU] > NEG) { v[a] = v[a - MU] + MU * mkVal - (mkIn[a - MU] ? 0 : EPS); how[a] = -2; mkIn[a] = 1 }
       for (const j of freeIdx) {
         const q = usable[j]
         if (q.u > a || v[a - q.u] <= NEG) continue
         const val = v[a - q.u] + q.val - EPS
-        if (val > v[a]) { v[a] = val; how[a] = j; mkIn[a] = mkIn[a - q.u] }
+        if (val > v[a]) { v[a] = val; how[a] = j }
+      }
+    }
+    // 메소마켓은 마지막에 한 번(1억 단위라 값이 금액에 딱 비례하지 않는다): w[a] = 아이템 a − m + 메소마켓 m 중 가장 큰 값
+    const w = new Float64Array(A + 1).fill(NEG), wm = new Int32Array(A + 1)
+    for (let a = 0; a <= A; a++) {
+      w[a] = v[a]
+      if (!mk1) continue
+      for (let m = MU; m <= a; m += MU) {
+        if (v[a - m] <= NEG) continue
+        const val = v[a - m] + mkValueU(m) - EPS
+        if (val > w[a]) { w[a] = val; wm[a] = m }
       }
     }
     let pick = -1, pc = -1, net = -Infinity
     combos.forEach((c, ci) => {
       for (let a = Math.max(0, need - c.C); a + c.C <= A; a++) {
-        if (v[a] <= NEG) continue
-        const x = v[a] + c.V - c.n * EPS - cost[a + c.C]
+        if (w[a] <= NEG) continue
+        const x = w[a] + c.V - c.n * EPS - cost[a + c.C]
         if (x > net) { net = x; pick = a; pc = ci }
       }
     })
     if (pick < 0) return null
-    const counts = comboCounts(combos[pc]); let m = 0
-    for (let a = pick; a > 0;) {
-      const h = how[a]
-      if (h === -2) { m += MU * U; a -= MU } else { counts.set(h, (counts.get(h) ?? 0) + 1); a -= usable[h].u }
-    }
-    return finish(counts, m, (pick + combos[pc].C) * U)
+    const counts = comboCounts(combos[pc]), m = wm[pick]
+    for (let a = pick - m; a > 0;) { const h = how[a]; counts.set(h, (counts.get(h) ?? 0) + 1); a -= usable[h].u }
+    return finish(counts, m * U, (pick + combos[pc].C) * U)
   }
   let best = best1()
   if (!best && o.exact) { ({ A, cost } = run('free')); combos = combosOf(A); best = best1() }
@@ -438,24 +453,23 @@ export function solve(o: SolveIn): Solved | null {
   const comboAt = new Map<number, Combo>()
   for (const cb of combos) if (cb.n <= L) { byN[cb.n].push(cb); comboAt.set(cb.n * (A + 1) + cb.C, cb) }
   const lastN = byN.findLastIndex(x => x.length > 0)
-  /**
-   * 메포를 m(1,000원 단위)만큼 더 사서 결제액이 tot이 되면 값 = row[a] + m × mkVal − cost[tot], m = tot − a.
-   * 모자라는 만큼만이 아니라 더 사는 것도 본다(5만원권에 맞추면 더 싸질 때가 있다. 최저가 루트도 그렇게 고른다).
-   * tot마다 'row[a] − a × mkVal'이 가장 큰 a(tot − MU 이하, MU로 나눈 나머지가 tot과 같은 것)만 보면 된다.
-   * bestLow[a] = a 이하에서 나머지가 a와 같은 것 중 그 값이 가장 큰 곳(같으면 작은 a)
-   */
-  const bestLow = new Int32Array(A + 1)
+  // 메소마켓 m(100원 단위 수)의 값. 1억 단위라 금액에 딱 비례하지 않아, tot마다 메소마켓에 쓸 몫을 다 따져 본다.
+  // 계획이면 tot이 결제액 1,000원 안쪽 열 칸뿐이라 빠르다(2026-10-16 사용자: 메소마켓 1억 단위)
+  const mkv = new Float64Array(A + 1)
+  for (let m = MU; m <= A; m += MU) mkv[m] = mkValueU(m)
   const consider = (row: Float64Array, s: number, lo: number, hi: number) => {
     // 결제액을 채우거나 넘기는 쪽
     for (let a = Math.max(lo, need); a <= hi; a++) if (row[a] > NEG) put(s, row[a] - cost[a], { k: s, a, m: 0, tot: a })
     if (!mk1 || s + 1 > L) return
-    for (let a = lo; a <= A; a++) {
-      const p = a - MU >= lo ? bestLow[a - MU] : -1
-      bestLow[a] = a <= hi && row[a] > NEG && (p < 0 || row[a] - a * mkVal > row[p] - p * mkVal) ? a : p
-    }
     for (let tot = Math.max(need, lo + MU); tot <= A; tot++) {
-      const a = bestLow[tot - MU]
-      if (a >= 0) put(s + 1, row[a] + (tot - a) * mkVal - cost[tot], { k: s, a, m: tot - a, tot })
+      let bv = NEG, ba = -1
+      for (let m = Math.max(MU, Math.ceil((tot - hi) / MU) * MU); tot - m >= lo; m += MU) {
+        const a = tot - m
+        if (row[a] <= NEG) continue
+        const v = row[a] + mkv[m]
+        if (v > bv) { bv = v; ba = a }
+      }
+      if (ba >= 0) put(s + 1, bv - cost[tot], { k: s, a: ba, m: tot - ba, tot })
     }
   }
   // 캐시가가 같으면 값이 큰(같으면 앞의) 아이템만 이길 수 있다. 나머지는 층 계산에서 뺀다
@@ -553,6 +567,8 @@ export interface Plan {
   weeks: { start: string; amount: number; tier: TierKey | null; month: string; use?: number }[]
   /** 캐시 잔액. 이미 낸 돈이라 1:1로 센다 */
   balance: number
+  /** 잔액에 든 현금. 없으면 1:1(충전 기록으로 남은 캐시는 할인된 값으로 넘어온다) */
+  balanceWon?: number
   cards: CardSetting[]
   /** 직접 추가한 결제수단 */
   methods?: MethodSetting[]
@@ -700,7 +716,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     return a.plain < b.plain && a.won < b.won - 0.5
   }
   const plainOn = p.plainOn ?? true
-  const st: St = { held: { cash: p.balance, won: p.balance }, lim, capLeft: p.barcode.cap }
+  const st: St = { held: { cash: p.balance, won: p.balanceWon ?? p.balance }, lim, capLeft: p.barcode.cap }
   const out: WeekResult[] = []
   for (const [wi, w] of p.weeks.entries()) {
     // 끝자리: 일반 충전을 끄면 늘 할인 수단으로 한 권 더(한도가 없으면 그때만 일반 충전).

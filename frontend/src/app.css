@@ -143,6 +143,13 @@ body {
   word-break: keep-all;
 }
 :focus-visible { outline: 2px solid var(--color-lav); outline-offset: 3px; border-radius: 6px; }
+/*
+ * 드롭다운을 펼친 목록. 글자는 우리 글자색을 물려받는데 바탕은 브라우저가 흰색으로 그려 밝은 글씨가 흰 바탕에 묻혔다
+ * (2026-10-16 사용자: 효율표 주 목록). 목록 바탕과 글자를 테마 색으로 못박는다
+ */
+select { color-scheme: inherit; }
+select option, select optgroup { background: var(--color-panel2); color: var(--color-tx); }
+select option:disabled { color: var(--color-tx3); }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

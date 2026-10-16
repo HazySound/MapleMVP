@@ -14,6 +14,8 @@
   const goalAt = (w: { offset: number }) => (r?.hold && w.offset < r.hold.until ? r.curTier : goal)
   /** 표시할 '목표' 주. 낮출 때는 지금 등급이 이미 목표보다 위라 첫 주가 '달성'으로 잡혔다. 실제로 목표 등급이 되는 주를 쓴다 */
   const markAt = $derived(r && !r.error ? (r.mode === 'hold' ? r.firstAt : r.reached) : null)
+  /** 이번 주 목표를 다 채웠다(낸 금액 ≥ 이번 주 목표). 표의 이번 주 줄을 완료로 보여 준다 */
+  const doneNow = $derived(!!r && !r.error && !!r.timeline[0] && r.timeline[0].goal > 0 && r.spentThisWeek >= r.timeline[0].goal)
   const allSelected = $derived(counting.length > 0 && counting.every(w => planner.selected.includes(w.start)))
   /**
    * 기준에 못 미치는 주와 모자라는 금액. 유지 구간은 끊기는 주 전부, 달성은 목표 주.
@@ -75,14 +77,14 @@
         {#if r.hold && r.hold.until > 1 && w.offset === r.hold.until}
           <div class="divider">여기부터 {tierName(d.tiers, goal)} · 그 전까지는 {tierName(d.tiers, r.curTier)} 유지</div>
         {/if}
-        <div class="row" class:off={!w.counts} class:sel={planner.selected.includes(w.start)} class:reached={markAt === w.offset} class:short={short.has(w.offset)}>
+        <div class="row" class:off={!w.counts} class:sel={planner.selected.includes(w.start)} class:reached={markAt === w.offset} class:short={short.has(w.offset)} class:done={w.offset === 0 && doneNow}>
           <label class="ck">
             <input type="checkbox" disabled={!w.counts} checked={planner.selected.includes(w.start)} onchange={() => toggleSelect(w.start)} aria-label="{md(w.start)} 주 선택" />
           </label>
           <span class="wk">
-            <b>{w.offset === 0 ? '이번 주' : `${w.offset}주 뒤`}</b>
+            <b>{w.offset === 0 ? '이번 주' : `${w.offset}주 뒤`}{#if w.offset === 0 && doneNow}<span class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>완료</span>{/if}</b>
             <span class="mono">{md(w.start)} – {md(w.end)}</span>
-            {#if w.offset === 0 && r.spentThisWeek}<em>이미 {won(r.spentThisWeek)}원 냄 · {w.amount ? `${won(w.amount)}원 더` : '목표 채움'}</em>{/if}
+            {#if w.offset === 0 && r.spentThisWeek}<em class:okt={doneNow}>이미 {won(r.spentThisWeek)}원 냄 · {w.amount ? `${won(w.amount)}원 더` : '목표 채움'}</em>{/if}
             {#if short.has(w.offset)}<em class="miss">{tierName(d.tiers, goalAt(w))} 기준에 {won(short.get(w.offset)!)}원 모자라요</em>{/if}
             {#if w.fixed && w.amount === 0}<em class="zero">0원 고정</em>{/if}
             {#if w.keep}{#if w.keepPay}<em class="kp">{w.amount || w.fixed ? '유지 결제' : '결제 없이 유지'}</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{#if goal}{@const g = goalAt(w)}{@const up = tierRank(w.thu) >= tierRank(g)}<em class="thu" class:down={!up}>{up
@@ -139,6 +141,11 @@
   .row.sel { background: color-mix(in oklab, var(--color-lav) 8%, transparent); }
   .row.reached { background: color-mix(in oklab, var(--color-mint) 8%, transparent); }
   .row.off { opacity: .45; }
+  /* 이번 주 목표 완료: 민트 바탕과 왼쪽 줄, '완료' 표 */
+  .row.done { background: color-mix(in oklab, var(--color-mint) 11%, transparent); box-shadow: inset 3px 0 0 var(--color-mint); }
+  .ok { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 7px 1px 5px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 1px; color: var(--color-bg); background: var(--color-mint); }
+  .ok svg { width: 11px; height: 11px; }
+  .wk em.okt { color: var(--color-mint); }
   .row.short { background: color-mix(in oklab, var(--color-bad) 10%, transparent); box-shadow: inset 3px 0 0 var(--color-bad); }
   .wk em.miss { color: var(--color-bad); font-weight: 600; }
   .wk em.zero { color: var(--color-peach); }

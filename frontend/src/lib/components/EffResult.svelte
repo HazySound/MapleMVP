@@ -5,15 +5,15 @@
    *   최적화 루트: 판매를 한 번 줄일 때 더 내는 돈이 '판매 1회 수고비' 이하인 한도에서 가장 적게 파는 조합
    *   횟수 정하기: 판매 n회까지
    * 계획을 따르면 이번 주에 더 낼 금액만 본다(2026-10-16 사용자).
-   * 이번 주 목표를 이미 채웠으면 이번 주에 결제한 금액의 결과를 보여 준다. 실제로 산 것을 직접 짜기에 적으면 최저가보다 얼마 더 잃었는지 나온다
+   * 이번 주 목표를 이미 채웠으면 이번 주에 산 것은 위 결산(EffLedger)에서 본다
    */
   import NumBox from './NumBox.svelte'
   import EffCombo from './EffCombo.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { eff, saveEff, setWeekRoute, umNet, type EffOut, type RouteAlt, type RouteSet, type Want } from '../eff.svelte'
+  import { eff, effWeek, planWeeks, saveEff, setWeekRoute, umNet, type EffOut, type RouteAlt, type RouteSet, type Want } from '../eff.svelte'
   import { GIFT_ID, PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
-  import { eul, eun, ro } from '../format'
+  import { eul, eun, ro, spotlight } from '../format'
   import { won } from '../format'
 
   let { out, sel = $bindable(0) }: { out: EffOut | null; sel?: number } = $props()
@@ -30,8 +30,9 @@
   let altOpen = $state(false)
   const alts = $derived(altOpen && out && pick ? out.alts(curIdx) : [] as RouteAlt[])
   const curKind = $derived(out?.kinds[curIdx] ?? null)
-  /** 계획을 따르는데 이번 주 목표를 이미 다 채웠고 이번 주 결제도 없다 */
-  const planDone = $derived(eff.usePlan && !!planner.result && !planner.result.error && !planner.result.timeline[0]?.amount && !planner.result.boughtThisWeek)
+  /** 계획을 따르는데 보는 주에 더 낼 금액이 없다(이번 주는 다 채웠다) */
+  const planDone = $derived(eff.usePlan && !!planner.result && !planner.result.error && !planWeeks(d, planner.result))
+  const nextView = $derived(!!effWeek.sel && effWeek.sel > d.thisWeek)
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`
   const signed = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${won(Math.abs(Math.round(x)))}원`
   /**
@@ -49,10 +50,6 @@
     const set = eff.split && out.keepStarts?.has(cur.w.start) ? eff.keep : { want: eff.want, combo: eff.combo }
     return set.want === 'custom' && set.combo[GIFT_ID] != null
   })
-  /** 지금 보는 주의 구간 설정(달성·유지를 따로 정했으면 그 구간 것) */
-  const curSet = $derived(cur && out && eff.split && out.keepStarts?.has(cur.w.start) ? eff.keep : null)
-  /** 이번 주 결제 결과에서 '직접 짜기'로: 따로 정하고 있으면 그 구간을 바꾼다 */
-  const toCustom = () => { if (curSet) { curSet.want = 'custom'; saveEff() } else choose('custom') }
   /** 선물식으로 받은 현금(메소를 거치지 않는다) */
   const giftWon = (r: { gift: number }) => r.gift * eff.gift / 10_000
 
@@ -67,7 +64,7 @@
   const question = $derived.by(() => {
     if (!out) return ''
     const minus = out.use ? ` (구매용 ${won(out.use)}원 제외)` : ''
-    if (out.paid) return `이번 주에 결제한 ${won(out.target)}원 중 실제로 쓴 돈${minus}`
+    if (out.mode === 'plan' && nextView) return `다음 주 계획 ${won(out.target)}원을 결제하면 실제로 나가는 돈${minus} · 미리 보기`
     if (out.mode === 'plan') return `이번 주 남은 목표 ${won(out.target)}원을 결제하면 실제로 나가는 돈${minus}`
     return `${won(out.target)}원 결제하면 실제로 나가는 돈${minus}`
   })
@@ -125,7 +122,7 @@
 </script>
 
 
-<article class="card answer" id="eff-answer">
+<article class="card answer" id="eff-answer" use:spotlight>
   {#if missing.length}
     <div class="empty">
       <b>몇 칸만 더 채우면 결론이 나와요</b>
@@ -133,14 +130,11 @@
     </div>
   {:else if planDone}
     <div class="empty">
-      <b>이번 주는 더 낼 금액이 없어요</b>
-      <span>목표 계획의 이번 주 목표를 이미 채웠어요. 그래도 더 결제하려면 1번에서 '금액 직접'으로 정해요.</span>
+      <b>{nextView ? '다음 주는 계획한 결제가 없어요' : '이번 주는 더 낼 금액이 없어요'}</b>
+      <span>{nextView ? '목표 계획에서 다음 주 금액이 0원이에요.' : "이번 주 목표를 이미 채웠어요. 이번 주에 산 것은 바로 위 결산에서 봐요. 그래도 더 결제하려면 1번에서 '금액 직접'으로 정해요."}</span>
     </div>
   {:else if out && pick && cur}
     <p class="q">{question}</p>
-    {#if out.paid}
-      <p class="paidnote">이번 주 목표는 이미 채웠어요. 실제로 산 것과 다르면 <button class="link" onclick={toCustom}>직접 짜기</button>에 산 아이템과 개수를 적어 보세요. 그 루트의 회수율과 실제로 쓴 돈이 나와요.</p>
-    {/if}
 
     {#if canSplit}
       <label class="together" for="eff-split">
@@ -263,7 +257,7 @@
     {#if eff.want === 'count' && !apart}
       <div class="sales">
         <div class="srow">
-          <label for="eff-sales">{per}경매장에 최대</label>
+          <label for="eff-sales">경매장에 최대</label>
           <b class="mono n">{out.count.n}회</b>
           <input id="eff-sales" type="range" min={out.lo} max={out.hi} value={out.count.n}
             oninput={e => { eff.salesN = Number(e.currentTarget.value); saveEff() }} />
@@ -298,7 +292,7 @@
 
     <section class="route">
       <div class="rhead">
-        <h4>{out.paid ? '이번 주 결제 루트' : out.mode === 'plan' ? '이번 주에 이렇게 하면 돼요' : '이렇게 하면 돼요'}</h4>
+        <h4>{out.mode === 'plan' && nextView ? '다음 주에 이렇게 하면 돼요' : out.mode === 'plan' ? '이번 주에 이렇게 하면 돼요' : '이렇게 하면 돼요'}</h4>
         <button class="altbtn" aria-expanded={altOpen} onclick={() => { altOpen = !altOpen }}>다른 루트 보기 {altOpen ? '▴' : '▾'}</button>
       </div>
       {#if curKind}
@@ -351,7 +345,7 @@
         {#if cur.route.market}
           <li>
             <div class="t">캐시 {won(cur.route.market)} → 메이플포인트로 사서 메소마켓에 팔기 (1회)</div>
-            <div class="dd">{(cur.route.market / eff.mk).toFixed(2)}억 메소{cur.route.lines.length ? (fillerOnly(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
+            <div class="dd">{cur.route.mkMeso ?? 0}억 메소(1억 단위{cur.route.market - (cur.route.mkMeso ?? 0) * eff.mk > 0 ? ` · 남는 ${won(cur.route.market - (cur.route.mkMeso ?? 0) * eff.mk)}메포` : ''}){cur.route.lines.length ? (fillerOnly(cur.route) ? ` · ${out.mode === 'plan' ? '계획' : '목표'} 금액을 딱 맞추려고 남은 끝자리` : ' · 아이템으로 채우지 않은 금액') : ''}</div>
           </li>
         {/if}
         {#if cur.route.gift}
@@ -374,7 +368,7 @@
         {/if}
         {#if cur.route.back + (cur.credit?.back ?? 0) - giftWon(cur.route) > 0}
           <li>
-            <div class="t">메소 {(cur.route.meso + (cur.route.market && eff.mk ? cur.route.market / eff.mk : 0) + (cur.credit?.meso ?? 0)).toFixed(1)}억 → 엄 시세로{eff.umFee ? ` (판매 수수료 ${eff.umFee}% 빼고)` : ''} {won(cur.route.back + (cur.credit?.back ?? 0) - giftWon(cur.route))}원</div>
+            <div class="t">메소 {(cur.route.meso + (cur.route.mkMeso ?? 0) + (cur.credit?.meso ?? 0)).toFixed(1)}억 → 엄 시세로{eff.umFee ? ` (판매 수수료 ${eff.umFee}% 빼고)` : ''} {won(cur.route.back + (cur.credit?.back ?? 0) - giftWon(cur.route))}원</div>
           </li>
         {/if}
       </ol>
@@ -429,7 +423,6 @@
   .empty b { font-size: 16px; }
   .empty span { font-size: 13px; color: var(--color-tx3); }
   .q { margin: 0; font-size: 14px; color: var(--color-tx2); }
-  .paidnote { margin: -4px 0 0; font-size: 12.5px; color: var(--color-tx3); }
 
   .routes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 1100px) { .routes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

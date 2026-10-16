@@ -7,14 +7,17 @@
    * 계획을 따르면 주마다 쌓이는 크레딧을 모아 가며 가장 효율적으로 턴다.
    */
   import NumBox from './NumBox.svelte'
-  import { addCreditItem, creditItems, eff, removeCreditItem, saveEff, umNet, type EffOut } from '../eff.svelte'
+  import { addCreditItem, creditFlow, creditItems, eff, removeCreditItem, saveEff, setCreditNow, umNet, type EffOut } from '../eff.svelte'
+  import { app, getBase } from '../store.svelte'
   import { CREDIT_RATE, daysLabel } from '../core/efficiency'
-  import { won } from '../format'
+  import { won, spotlight } from '../format'
   import { tip } from '../tip'
 
   let { out, fee }: { out: EffOut | null; fee: number } = $props()
 
   const items = $derived(creditItems())
+  /** 지금 남은 크레딧: 흐름(쌓인 것 − 결산에 적은 산 것)으로 센다. 게임과 다르면 여기서 고친다 */
+  const now = $derived(app.data ? Math.round(creditFlow(getBase()?.rows ?? [], app.data.thisWeek).left) : eff.creditBalance)
   /** 크레딧 1만 개당 돌려받는 돈 */
   const per10k = (x: { price: number; credits: number }) => x.price && eff.um ? x.price * (1 - fee) * umNet() / x.credits * 10_000 : 0
   const bestId = $derived([...items].filter(x => x.price > 0).sort((a, b) => b.price / b.credits - a.price / a.credits)[0]?.id)
@@ -42,7 +45,7 @@
   }
 </script>
 
-<article class="card">
+<article class="card" use:spotlight>
   <h3 class="card-title"><span class="n">5</span>메이플 크레딧 <span class="sub">캐시샵에서 쓴 캐시의 {Math.round(CREDIT_RATE * 100)}%가 크레딧으로 쌓여요</span></h3>
 
   <div class="wrap">
@@ -52,9 +55,10 @@
         <button aria-pressed={!eff.creditOn} onclick={() => { eff.creditOn = false; saveEff() }}>안 쓰기</button>
       </div>
       <div class="ef-field">
-        <label for="eff-credit-bal">남아 있는 크레딧</label>
-        <NumBox id="eff-credit-bal" label="남아 있는 크레딧" unit="크레딧" placeholder="없으면 비움" value={eff.creditBalance}
-          set={v => { eff.creditBalance = v; saveEff() }} disabled={!eff.creditOn} />
+        <label for="eff-credit-bal">지금 남은 크레딧</label>
+        <NumBox id="eff-credit-bal" label="지금 남은 크레딧" unit="크레딧" placeholder="없으면 비움" value={now}
+          set={v => app.data && setCreditNow(getBase()?.rows ?? [], app.data.thisWeek, v)} disabled={!eff.creditOn} />
+        <span class="ef-hint">구매로 쌓인 크레딧이 저절로 더해지고, 결산에 '크레딧샵에서 산 것'을 적으면 빠져요. 게임 안 크레딧과 다르면 여기서 고쳐 주세요.</span>
       </div>
       <div class="ef-field">
         <span class="lbl">끝에 남는 크레딧</span>
@@ -66,7 +70,7 @@
       </div>
       {#if eff.creditOn && sum}
         <div class="sum">
-          <span>이번에 쌓이는 크레딧 <b class="mono">{won(sum.earned)}</b>{#if eff.creditBalance} + 남아 있던 <b class="mono">{won(eff.creditBalance)}</b>{/if}</span>
+          <span>이번에 쌓이는 크레딧 <b class="mono">{won(sum.earned)}</b>{#if now} + 남아 있던 <b class="mono">{won(now)}</b>{/if}</span>
           {#if sum.buys.length}
             <span class="buy">{sum.buys.map(b => `${b.name} ${b.n}개`).join(' + ')} → 팔아서 <b class="mono up">+{won(sum.back)}원</b></span>
           {:else}

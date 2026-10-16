@@ -371,9 +371,10 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
           const cands: [number, number, number][] = []
           const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
           if (cash >= T100 && cash <= limit) cands.push([cash, back, sales])
+          // 메소마켓은 1억 단위: 메포 m원으로 floor(m / 시세)억. 더 사서 1억을 채우는 게 나을 수도 있어 한도 안에서 다 본다
           if (mk1 && cash < T100) {
-            const m = Math.ceil((T100 - cash) / 1000) * 1000
-            if (cash + m <= limit) cands.push([cash + m, back + m * mk1, sales + 1])
+            for (let m = Math.ceil((T100 - cash) / 1000) * 1000; cash + m <= limit; m += 1000)
+              cands.push([cash + m, back + Math.floor(m / mk + 1e-9) * 1500, sales + 1])
           }
           for (const [pay, b, s] of cands) {
             const loss = pay * rate - b
@@ -433,9 +434,10 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
           const cands: [number, number, number][] = []
           const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
           if (cash >= T100 && cash <= limit) cands.push([cash, back, sales])
+          // 메소마켓은 1억 단위: 메포 m원으로 floor(m / 시세)억. 더 사서 1억을 채우는 게 나을 수도 있어 한도 안에서 다 본다
           if (mk1 && cash < T100) {
-            const m = Math.ceil((T100 - cash) / 1000) * 1000
-            if (cash + m <= limit) cands.push([cash + m, back + m * mk1, sales + 1])
+            for (let m = Math.ceil((T100 - cash) / 1000) * 1000; cash + m <= limit; m += 1000)
+              cands.push([cash + m, back + Math.floor(m / mk + 1e-9) * 1500, sales + 1])
           }
           for (const [pay, b, s] of cands) {
             const loss = pay * rate - b
@@ -491,9 +493,10 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
           const limit = tier === 0 ? T100 : tier === 1 ? T100 + 900 : top
           const cands: [number, number, number][] = []
           if (cash >= T100 && cash <= limit) cands.push([cash, back, sales])
+          // 메소마켓은 1억 단위: 메포 m원으로 floor(m / 시세)억. 더 사서 1억을 채우는 게 나을 수도 있어 한도 안에서 다 본다
           if (mk1 && cash < T100) {
-            const m = Math.ceil((T100 - cash) / 1000) * 1000
-            if (cash + m <= limit) cands.push([cash + m, back + m * mk1, sales + 1])
+            for (let m = Math.ceil((T100 - cash) / 1000) * 1000; cash + m <= limit; m += 1000)
+              cands.push([cash + m, back + Math.floor(m / mk + 1e-9) * 1500, sales + 1])
           }
           for (const [pay, b, s] of cands) {
             const loss = costOf(pay) - b
@@ -541,7 +544,7 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       const walk = (j: number, cash: number, back: number) => {
         if (j === items.length) {
           if (cash >= T100 && cash <= top) bestLoss = Math.min(bestLoss, cash * 0.95 - back)
-          if (cash < T100) { const m = Math.ceil((T100 - cash) / 1000) * 1000; if (cash + m <= top) bestLoss = Math.min(bestLoss, (cash + m) * 0.95 - back - m * mk1) }
+          if (cash < T100) for (let m = Math.ceil((T100 - cash) / 1000) * 1000; cash + m <= top; m += 1000) bestLoss = Math.min(bestLoss, (cash + m) * 0.95 - back - Math.floor(m / mk + 1e-9) * 1500)
           return
         }
         const lo = j === 0 ? fixed.i0 : 0, hi = j === 0 ? fixed.i0 : (items[j].cap ?? Infinity)
@@ -573,11 +576,15 @@ describe('모든 조합을 다 따져 본 답과 같다', () => {
       if (C < T100 && !mk) { expect(r).toBeNull(); continue }
       expect(r).not.toBeNull()
       if (!r) continue
-      const m = C >= T100 ? 0 : Math.ceil((T100 - C) / 1000) * 1000
-      expect(r.best.market).toBe(m)
+      // 메소마켓은 1억 단위라, 모자라는 만큼보다 1,000원 단위로 조금 더 사서 1억을 채우는 게 나을 수 있다(그래도 그만큼 덜 잃어야 한다)
+      const m0 = C >= T100 ? 0 : Math.ceil((T100 - C) / 1000) * 1000, m = r.best.market
+      const lossOf = (mm: number) => (C + mm) * 0.95 - B - (mm ? Math.floor(mm / mk + 1e-9) * 1500 : 0)
+      expect(m % 1000).toBe(0)
+      expect(m).toBeGreaterThanOrEqual(m0)
       expect(r.best.pay).toBe(C + m)
       expect(r.best.sales).toBe(S + (m ? 1 : 0))
-      expect(r.best.loss).toBeCloseTo((C + m) * 0.95 - B - (m ? m / mk * 1500 : 0), 0)
+      expect(r.best.loss).toBeCloseTo(lossOf(m), 0)
+      expect(r.best.loss).toBeLessThanOrEqual(lossOf(m0) + 0.5)
       for (const l of r.best.lines) expect(l.n).toBe(fixed[l.item.id])
     }
   })
@@ -733,11 +740,11 @@ describe('선물식과 크레딧', () => {
     expect(s.best.creditEst).toBe(0)
   })
   it('크레딧 값이 있으면 그만큼 다른 길(메소마켓·아이템)이 유리해진다', () => {
-    // 메소마켓 0.667원 + 크레딧 5% × 1원 = 0.717원 > 선물식 0.7원
+    // 메소마켓 0.667원 + 크레딧 5% × 1원 = 0.717원 > 선물식 0.7원. 메소마켓은 1억 단위라 딱 떨어지는 9만(40억)으로 본다
     const base = { costOf: (c: number) => c * 0.9, fee: 0.03, um: 1500, mk: 2250, items: [], exact: true, bestOnly: true, creditPer: 1 }
-    const s = solve({ ...base, target: 100_000, gift: { rate: 0.7, unit: 10_000, min: 10_000 } })!
+    const s = solve({ ...base, target: 90_000, gift: { rate: 0.7, unit: 10_000, min: 10_000 } })!
     expect(s.best.gift).toBe(0)
-    expect(s.best.market).toBe(100_000)
+    expect(s.best.market).toBe(90_000)
   })
 })
 

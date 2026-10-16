@@ -3,13 +3,15 @@
   import NumBox from './NumBox.svelte'
   import { app } from '../store.svelte'
   import { planner, weekNow } from '../plan.svelte'
-  import { eff, saveEff } from '../eff.svelte'
-  import { TIER_INK_VAR, won } from '../format'
+  import { eff, effWeek, saveEff } from '../eff.svelte'
+  import { TIER_INK_VAR, won, spotlight } from '../format'
 
   const d = $derived(app.data!)
   const planOk = $derived(!!planner.result && !planner.result.error)
   const usePlan = $derived(planOk && eff.usePlan)
   const n = $derived(planOk ? weekNow() : null)
+  /** 다음 주를 보고 있으면 그 주 계획 */
+  const next = $derived(planOk && effWeek.sel > d.thisWeek ? planner.result!.timeline[1] ?? null : null)
   const tier = $derived(planner.input ? d.tiers.find(t => t.key === planner.input!.target) : null)
   const sum13 = $derived(d.weeks.reduce((a, w) => a + w.amount, 0))
   const curName = $derived(d.tiers.find(t => t.key === d.current)?.name ?? '등급 없음')
@@ -21,7 +23,7 @@
   function pick(v: number) { eff.amount = v; saveEff() }
 </script>
 
-<article class="card">
+<article class="card" use:spotlight>
   <h3 class="card-title"><span class="n">1</span>얼마나 결제할까</h3>
 
   {#if planOk}
@@ -33,14 +35,15 @@
 
   {#if usePlan && n && tier}
     <div class="plan" style="--ink:{TIER_INK_VAR[tier.key]}">
-      <span class="from">목표 계획에서 가져옴 · 이번 주만</span>
+      <span class="from">목표 계획에서 가져옴 · {next ? '다음 주 미리 보기' : '이번 주만'}</span>
       <span class="goal">{#if planner.result?.mode === 'keep'}<b>{tier.name}</b> 유지{:else if planner.result?.mode === 'hold'}<b>{tier.name}</b> {md(planner.input!.date)}부터 유지{:else}<b>{tier.name}</b> {md(planner.input!.date)}까지{/if}</span>
       <span class="amt">
+        {#if next}다음 주 계획 <b class="mono">{won(next.amount)}원</b>{:else}
         이번 주 목표 <b class="mono">{won(n.goal)}원</b> · 낸 금액 <b class="mono">{won(n.paid)}원</b>
-        → {#if n.left}더 낼 금액 <b class="mono">{won(n.left)}원</b>{:else}더 낼 금액 없음{#if n.bought}{' · '}아래는 이번 주 결제 {won(n.bought)}원의 결과{/if}{/if}
+        → {#if n.left}더 낼 금액 <b class="mono">{won(n.left)}원</b>{:else}더 낼 금액 없음{/if}{/if}
       </span>
     </div>
-    <p class="ef-hint">다음 주 금액은 목요일에 다음 주로 넘어가면 여기서 계산해요. 금액을 바꾸려면 목표 계획 탭에서.</p>
+    <p class="ef-hint">{next ? '시세·한도는 지금 값으로 미리 계산해요. 목요일에 이번 주가 되면 그때 값으로 다시 계산해요.' : '다음 주는 아래 결과에서 주를 넘겨 미리 볼 수 있어요.'} 금액을 바꾸려면 목표 계획 탭에서.</p>
   {:else}
     {#if quick.length}
       <div class="quick">

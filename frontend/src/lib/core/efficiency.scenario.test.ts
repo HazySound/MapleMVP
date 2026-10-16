@@ -69,7 +69,7 @@ function checkPick(p: RoutePick, res: WeekResult[], c: Plan) {
     near(funding.cost, route.cost)
     // 돌려받는 돈·판매 횟수를 처음부터 다시 센다
     const keep = (1 - w.fee) * c.um
-    const b = route.lines.reduce((a, l) => a + l.n * l.item.price * keep, 0) + (route.market && c.mk ? route.market / c.mk * c.um : 0)
+    const b = route.lines.reduce((a, l) => a + l.n * l.item.price * keep, 0) + (route.market && c.mk ? Math.floor(route.market / c.mk + 1e-9) * c.um : 0)
     near(route.back, b)
     near(route.loss, route.cost - route.back)
     expect(route.sales).toBe(route.lines.reduce((a, l) => a + l.n, 0) + (route.market ? 1 : 0))
@@ -224,7 +224,8 @@ describe('캐시 잔액·결제수단', () => {
 
   it('남은 한도가 5만 원이 안 되면 상품권은 못 쓰고 일반 충전', () => {
     const x = run({ weeks: once(100_000), exact: true, cards: [CARDS[0]], leftNow: { nexon: 31_000 } })
-    expect(fundOf(x)).toEqual([['일반 충전', 100_000]])
+    // 메소마켓이 1억 단위라 1,000원 안쪽으로 더 낼 수 있다. 상품권 없이 일반 충전만
+    expect(fundOf(x)).toEqual([['일반 충전', x.r.best.weeks[0].route.pay]])
   })
 
   it('바코드 이벤트: 추가분 한도에 닿으면 그 뒤는 1:1', () => {
@@ -242,7 +243,8 @@ describe('시세·아이템', () => {
     const x = run({ weeks: once(250_000), exact: true, items: sell({}), cards: [] })
     expect(x.r.best.weeks[0].route.lines).toEqual([])
     expect(x.r.best.sales).toBe(1)
-    near(x.r.best.loss, 250_000 - 250_000 / 2250 * 1500)
+    // 1억 단위: 250,000메포 ÷ 2,250 → 111억(남는 250메포는 못 쓴다)
+    near(x.r.best.loss, 250_000 - Math.floor(250_000 / 2250) * 1500)
   })
 
   it('플가만 가격을 넣으면 플가 + 끝자리 메소마켓', () => {

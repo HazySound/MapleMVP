@@ -7,7 +7,7 @@
   import NumBox from './NumBox.svelte'
   import { app } from '../store.svelte'
   import { ageOf, eff, saveEff, touch, umNet } from '../eff.svelte'
-  import { won } from '../format'
+  import { won, spotlight } from '../format'
   import { feeOf } from '../core/efficiency'
   import type { TierKey } from '../types'
 
@@ -21,7 +21,7 @@
   const setFee = (v: number | null) => { eff.feeOverride = v; saveEff() }
 </script>
 
-<article class="card">
+<article class="card" use:spotlight>
   <h3 class="card-title"><span class="n">3</span>시세</h3>
 
   <div class="ef-field">

@@ -16,7 +16,7 @@
   import NumBox from './NumBox.svelte'
   import { GIFT_UNITS, setGiftUnit, type BuyItem, addBuy, ageOf, buyTotal, catalog, eff, pickItem, removeBuy, removeCustom, restoreCustom, saveCustom, saveEff, shopItems, touch, umNet, unpickItem, updateBuy } from '../eff.svelte'
   import { PG_ID, daysLabel, isShort, itemLabel, minPrice, type ShopItem } from '../core/efficiency'
-  import { eul, won } from '../format'
+  import { eul, won, spotlight } from '../format'
   import { tip } from '../tip'
 
   let { fee, used }: { fee: number; used: Set<string> } = $props()
@@ -133,27 +133,27 @@
   // ---- 탭: MVP작용(사서 팔아 회수) / 구매용(실제로 쓸 것, 회수 없음) ----
   // 구매용은 이름과 캐시 가격만 적는다. 첫 결제 주부터 차례로 빼고 남은 금액으로 MVP작을 짠다 (2026-10-04 건의)
   let tab = $state<'mvp' | 'buy'>('mvp')
-  let buyForm = $state({ name: '', cash: 0 })
+  let buyForm = $state({ name: '', cash: 0, n: 0 })
   let buyEditing = $state<string | null>(null)
   let buyNameEl = $state<HTMLInputElement>()
   const buyQ = $derived(norm(buyForm.name))
   // 캐시샵 이름 일부를 치면 후보가 떠서 캐시가를 채워 준다. 없는 이름이면 금액을 직접 적는다
   const buyCands = $derived(buyQ && !buyEditing ? catalog().filter(x => norm(itemLabel(x)).includes(buyQ) && norm(itemLabel(x)) !== buyQ).slice(0, 6) : [])
   const canBuy = $derived(buyForm.name.trim().length > 0 && buyForm.cash > 0)
-  const chooseBuy = (x: ShopItem) => { buyForm = { name: itemLabel(x), cash: x.cash } }
-  const editBuy = (b: BuyItem) => { buyEditing = b.id; buyForm = { name: b.name, cash: b.cash }; queueMicrotask(() => buyNameEl?.focus()) }
-  const cancelBuy = () => { buyEditing = null; buyForm = { name: '', cash: 0 } }
+  const chooseBuy = (x: ShopItem) => { buyForm = { ...buyForm, name: itemLabel(x), cash: x.cash } }
+  const editBuy = (b: BuyItem) => { buyEditing = b.id; buyForm = { name: b.name, cash: b.cash, n: b.n ?? 1 }; queueMicrotask(() => buyNameEl?.focus()) }
+  const cancelBuy = () => { buyEditing = null; buyForm = { name: '', cash: 0, n: 0 } }
   function submitBuy(e: Event) {
     e.preventDefault()
     if (!canBuy) return
-    const x = { name: buyForm.name.trim(), cash: Math.round(buyForm.cash) }
+    const x = { name: buyForm.name.trim(), cash: Math.round(buyForm.cash), n: Math.max(1, Math.round(buyForm.n || 1)) }
     if (buyEditing) updateBuy(buyEditing, x); else addBuy(x)
     cancelBuy()
     buyNameEl?.focus()
   }
 </script>
 
-<article class="card">
+<article class="card" use:spotlight>
   <div class="tabs-head">
     <h3 class="card-title"><span class="n">4</span>아이템</h3>
     <div class="ef-seg tabs" role="tablist" aria-label="아이템 목록">
@@ -366,13 +366,13 @@
   {:else}
   <!-- 구매용: 실제로 쓸 아이템. 결제액에는 들지만 팔지 않으니 회수가 없다. 표 규칙(폰에서 카드로 접히는 것)을 안 타게 표 대신 목록으로 -->
   <div class="buytab">
-    <p class="ef-hint">실제로 쓰려고 사는 아이템(모멘텀 패스 등)이에요. <b>결제액에는 들어가지만 팔지 않으니 회수가 없어요.</b> 첫 결제 주부터 차례로 빼고, 남은 금액으로만 MVP작 조합을 짜요. 효율도 MVP작 몫만 봐요.</p>
+    <p class="ef-hint">실제로 쓰려고 사는 아이템(모멘텀 패스 등)이에요. <b>결제액에는 들어가지만 팔지 않으니 회수가 없어요.</b> 이번 주에 더 낼 금액에서 빼고, 남은 금액으로만 MVP작 조합을 짜요. 효율도 MVP작 몫만 봐요. <b>이번 주에만 쓰여요.</b> 목요일이 지나면 비워지고, 이미 산 것은 아래 결산에 남아요.</p>
     {#if eff.buys.length}
       <div class="buylist" role="list">
         {#each eff.buys as b (b.id)}
           <div class="buyrow" role="listitem" class:editing={buyEditing === b.id}>
             <span class="bn">{b.name}</span>
-            <span class="mono bc">{won(b.cash)}<small>캐시</small></span>
+            <span class="mono bc">{#if (b.n ?? 1) > 1}<small class="x">{won(b.cash)} × {b.n}</small>{/if}{won(b.cash * (b.n ?? 1))}<small>캐시</small></span>
             <span class="acts">
               <button type="button" onclick={() => editBuy(b)} aria-label="{b.name} 고치기" use:tip={'고치기'}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
@@ -405,6 +405,10 @@
       <div class="ef-field">
         <label for="eff-buy-cash">캐시 가격</label>
         <NumBox id="eff-buy-cash" label="구매용 캐시 가격" unit="캐시" placeholder="예: 29,800" value={buyForm.cash} set={v => (buyForm.cash = v)} />
+      </div>
+      <div class="ef-field">
+        <label for="eff-buy-n">개수</label>
+        <NumBox id="eff-buy-n" label="구매용 개수" unit="개" placeholder="1" value={buyForm.n} set={v => (buyForm.n = v)} />
       </div>
       <div class="btns">
         {#if buyEditing}<button type="button" class="btn" onclick={cancelBuy}>취소</button>{/if}
@@ -564,7 +568,8 @@
   .buyrow .bc { text-align: right; }
   .buyrow .bc small { font-family: var(--font-sans); font-size: 11px; color: var(--color-tx3); margin-left: 3px; }
   .buyrow .acts { justify-self: end; }
-  .buyadd { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto; }
+  .buyadd { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, .6fr) auto; }
+  .buyrow .bc small.x { margin: 0 6px 0 0; }
   .buyadd .btns { align-self: end; }
 
   /* 패드: 표 그대로 두되 이름·머리글이 줄바꿈되게 해서 가격 칸까지 화면 안에 넣는다 */
