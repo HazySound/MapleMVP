@@ -66,8 +66,11 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
       + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
       + 'ON CONFLICT(uid) DO UPDATE SET rows = excluded.rows, pcroom = excluded.pcroom, '
       + 'pcroom_at = excluded.pcroom_at, synced_at = excluded.synced_at, saved_at = excluded.saved_at, '
-      + 'eff = COALESCE(excluded.eff, vault.eff), eff_at = COALESCE(excluded.eff_at, vault.eff_at), '
-      + 'plan = COALESCE(excluded.plan, vault.plan), plan_at = COALESCE(excluded.plan_at, vault.plan_at)')
+      // 효율표·계획은 계정 것보다 오래된 걸 받지 않는다. 오래 안 연 기기가 올린 지난 계획이 진짜 계획을 덮었다(2026-10-17 사용자)
+      + `eff = CASE WHEN ${NEWER('eff')} THEN excluded.eff ELSE vault.eff END, `
+      + `eff_at = CASE WHEN ${NEWER('eff')} THEN excluded.eff_at ELSE vault.eff_at END, `
+      + `plan = CASE WHEN ${NEWER('plan')} THEN excluded.plan ELSE vault.plan END, `
+      + `plan_at = CASE WHEN ${NEWER('plan')} THEN excluded.plan_at ELSE vault.plan_at END`)
     .bind(me.uid, JSON.stringify(data.rows), JSON.stringify(data.pcroom ?? {}),
           JSON.stringify(data.pcroomAt ?? {}),
           typeof data.syncedAt === 'string' ? data.syncedAt : null, Date.now(), eff, effAt, plan, planAt)
@@ -75,6 +78,9 @@ export async function onRequestPut(ctx: Ctx): Promise<Response> {
 
   return json({ ok: true })
 }
+
+/** 올라온 효율표·계획(k)이 있고, 고친 시각이 계정 것보다 늦거나 같을 때만 바꾼다(시각 없는 옛 값은 0) */
+const NEWER = (k: string) => `excluded.${k} IS NOT NULL AND COALESCE(excluded.${k}_at, 0) >= COALESCE(vault.${k}_at, 0)`
 
 /** 계정에 저장된 것을 지운다. 로그인은 그대로 둔다 */
 export async function onRequestDelete(ctx: Ctx): Promise<Response> {

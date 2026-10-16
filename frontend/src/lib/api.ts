@@ -9,7 +9,8 @@ export interface PyApi {
   get_ui(): Promise<{ medal?: boolean; theme?: 'dark' | 'light' }>
   save_ui(data: { medal: boolean; theme: 'dark' | 'light' }): Promise<void>
   get_plan(): Promise<Partial<PlanInput>>
-  save_plan(p: PlanInput): Promise<void>
+  /** auto: 사용자가 고친 게 아니라 날짜·주 넘김 등으로 저절로 다시 짠 것. 고친 시각(planAt)을 바꾸지 않는다 */
+  save_plan(p: PlanInput, auto?: boolean): Promise<void>
   history(page: number, size: number, q: string, start: string, end: string, sort: string, desc: boolean): Promise<HistoryPage>
   export_history(q: string, start: string, end: string, sort: string, desc: boolean): Promise<ExportResult>
   open_login(): Promise<void>

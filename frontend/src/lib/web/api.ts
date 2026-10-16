@@ -328,7 +328,11 @@ export const webApi: PyApi = {
   async get_ui() { return load(KEY.ui, {}) },
   async save_ui(data) { save(KEY.ui, data) },
   async get_plan() { return load<Partial<PlanInput>>(KEY.plan, {}) },
-  async save_plan(p) { save(KEY.plan, p); save(`${KEY.plan}At`, Date.now()) },
+  /*
+   * 저절로 다시 짠 것(auto)은 고친 시각을 그대로 둔다. 시각을 새로 찍으면 오래 안 연 기기가 지난 계획을 다시 짠 것이
+   * 계정의 진짜 계획보다 '나중에 고친 것'이 되어 덮어썼다(2026-10-17 사용자: 이번 주 20만 → 25만)
+   */
+  async save_plan(p, auto) { save(KEY.plan, p); if (!auto) save(`${KEY.plan}At`, Date.now()) },
 
   async history(page, size, q, start, end, sort, desc) {
     const all = load<Row[]>(KEY.rows, [])

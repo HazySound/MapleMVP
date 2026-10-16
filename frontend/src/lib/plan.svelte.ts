@@ -92,7 +92,7 @@ export function requestPlan() {
   if (p.frozen && p.frozen.from < b.thisWeek) { roll(b, p); dirty = true }
   if (!p.frozen) { freeze(b, p); dirty = !!p.frozen || dirty }
   planner.result = calc(b, p, p.frozen?.weeks ?? {})
-  if (dirty) save()
+  if (dirty) save(true)
 }
 
 /** 더 낸 금액을 남은 주 계획에 반영한다: 이번 주는 낸 만큼(목표보다 적으면 목표)으로 두고 나머지 주를 다시 짠다 */
@@ -127,11 +127,16 @@ function changed(keepWeek = true) {
   save()
 }
 
-function save() {
+/** 기다리는 저장이 저절로 바뀐 것뿐인지(주 넘김·다시 묶기). 사용자가 한 번이라도 고쳤으면 false */
+let pendingAuto = true
+function save(auto = false) {
   clearTimeout(saveTimer)
+  pendingAuto = pendingAuto && auto
   saveTimer = window.setTimeout(async () => {
     if (!planner.input) return
-    await py.save_plan($state.snapshot(planner.input))
+    const a = pendingAuto
+    pendingAuto = true
+    await py.save_plan($state.snapshot(planner.input), a)
     // 로그인해 있으면 계정에도 올린다. 쓰기 횟수 제한이 있어 마지막으로 고친 뒤 잠깐 기다렸다가 한 번에
     clearTimeout(upTimer)
     upTimer = window.setTimeout(pushNow, 15_000)

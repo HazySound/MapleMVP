@@ -303,7 +303,8 @@ class Api:
     def get_plan(self) -> dict:
         return cache.load(paths.PLAN)
 
-    def save_plan(self, data: dict) -> None:
+    def save_plan(self, data: dict, auto: bool = False) -> None:
+        # auto(저절로 고친 것)는 웹에서 고친 시각을 안 바꾸는 데만 쓴다. 여기선 그대로 저장
         cache.save(paths.PLAN, data)
 
     def open_login(self) -> None:
