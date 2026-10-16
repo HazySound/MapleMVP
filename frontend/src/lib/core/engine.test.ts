@@ -280,6 +280,16 @@ describe('세워 둔 계획', () => {
     expect(b.paid13[12]).toBe(300_000)
   })
 
+  it('새로 짤 때는 이번 주에 이미 낸 결제와 상관없이 이번 주 목표가 그 주 전체 금액이다', () => {
+    // 2026-10-16 사용자: 매주 20만 유지 계획인데 20만을 낸 뒤 세우니 이번 주가 40만(낸 20만 + 이번 주 몫 20만)
+    const a = makePlan(base0, 'red', date, {}, null, 1000, false, {}, true) as any
+    const b = makePlan(base1, 'red', date, {}, null, 1000, false, {}, true) as any
+    expect(a.timeline[0].goal).toBe(b.timeline[0].goal)
+    for (let o = 1; o < a.timeline.length; o++) expect(b.timeline[o].goal).toBe(a.timeline[o].goal)
+    // 이번 주 결제가 없는 것처럼 짜서, 빼지 않고 짠 계획(낸 금액 + 이번 주 몫)보다 이번 주 목표가 작다
+    expect(a.timeline[0].goal).toBeLessThan(p0.timeline[0].goal)
+  })
+
   describe('목요일이 지나면', () => {
     const NEXT = new Date('2026-10-02T00:00:00Z')   // 10/1 주
     const frozen = { from: '2026-09-24', weeks: pins }

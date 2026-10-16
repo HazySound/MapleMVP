@@ -38,11 +38,11 @@ export async function reloadPlan() {
 }
 
 /** 계획 입력으로 계산한다. pins: 세워 둔 주별 금액(없으면 지금 상황으로 새로 짠다) */
-function calc(b: Base, p: PlanInput, pins: Record<string, number>) {
+function calc(b: Base, p: PlanInput, pins: Record<string, number>, fresh = false) {
   // 지금 등급 이하를 고르면 달성이 아니라 유지 계획이다. 유지 스위치를 안 켰어도 유지 설정대로 나눈다
   const keepOn = !!p.keep?.on || TIERS.findIndex(t => t.key === p.target) <= tierIndex(b.current)
   const k = keepOn ? { every: p.keep?.every ?? KEEP_DEFAULT.every, weeks: p.keep?.weeks ?? KEEP_DEFAULT.weeks } : null
-  return makePlan(b, p.target, p.date, $state.snapshot(p.fixed), k, p.unit ?? 1000, !!p.holdCur, pins) as PlanResult
+  return makePlan(b, p.target, p.date, $state.snapshot(p.fixed), k, p.unit ?? 1000, !!p.holdCur, pins, fresh) as PlanResult
 }
 
 /**
@@ -50,12 +50,15 @@ function calc(b: Base, p: PlanInput, pins: Record<string, number>) {
  * (다른 주를 고쳐도 이번 주 목표가 다시 나뉘지 않게)
  */
 function freeze(b: Base, p: PlanInput, goal?: number) {
-  const r = calc(b, p, goal != null ? { [b.thisWeek]: goal } : {})
+  // 이번 주에 이미 낸 결제는 빼고 짠다. 그래야 이번 주 목표가 다른 주처럼 그 주 전체 금액이다
+  const r = calc(b, p, goal != null ? { [b.thisWeek]: goal } : {}, true)
   if (r.error) { delete p.frozen; return }
   const weeks: Record<string, number> = {}
   for (const w of r.timeline) if (w.counts) weeks[w.start] = w.goal
-  p.frozen = { from: b.thisWeek, weeks }
+  p.frozen = { v: FROZEN_V, from: b.thisWeek, weeks }
 }
+
+const FROZEN_V = 2
 
 /** 목요일이 지났다: 지난 주를 판정해 history로 옮긴다. 못 채운 주가 있으면 남은 주에 다시 나눈다 */
 function roll(b: Base, p: PlanInput) {
@@ -84,6 +87,8 @@ export function requestPlan() {
   let dirty = false
   // 지난 주에 고정해 둔 금액은 더 쓰이지 않는다. 남아 있으면 '고정 모두 풀고 자동으로'가 계속 보였다
   for (const w of Object.keys(p.fixed)) if (w < b.thisWeek) { delete p.fixed[w]; dirty = true }
+  // 10/16 첫 배포(6e3e768)는 이번 주에 낸 결제 위에 이번 주 몫을 또 얹어 묶었다. 그때 묶은 것은 다시 짠다
+  if (p.frozen && p.frozen.v !== FROZEN_V) { delete p.frozen; dirty = true }
   if (p.frozen && p.frozen.from < b.thisWeek) { roll(b, p); dirty = true }
   if (!p.frozen) { freeze(b, p); dirty = !!p.frozen || dirty }
   planner.result = calc(b, p, p.frozen?.weeks ?? {})
