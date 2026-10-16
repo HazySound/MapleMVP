@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBase, buildState, makePlan, needRecheck, placeMoved, rollPlan, simulate } from './engine'
+import { basisOf, buildBase, buildState, makePlan, needRecheck, placeMoved, rollPlan, simulate } from './engine'
 import { addDays, type Row } from './mvp'
 import { writeWeeks } from './pcroom'
 
@@ -312,5 +312,16 @@ describe('세워 둔 계획', () => {
       expect(rollPlan(paidBy(30_000), frozen, []).frozen!.over).toBe(30_000)
       expect(rollPlan(paidBy(30_000), { ...frozen, ack: 10_000 }, []).frozen!.over).toBe(20_000)
     })
+  })
+})
+
+describe('basisOf: 세워 둔 계획을 다시 짤지 가르는 자료 표시', () => {
+  it('이번 주 결제는 넣지 않고, 지난 주까지의 구매내역·보정이 바뀌면 달라진다', () => {
+    const b = buildBase(rows, SAVED, NOW)
+    // 이번 주에 더 사도 그대로(산 만큼 이번 주 목표에서 빠질 뿐 다시 짜지 않는다)
+    expect(basisOf(buildBase([...rows, { date: '2026-09-25', item: '이번 주', price: 5900 }], SAVED, NOW))).toBe(basisOf(b))
+    // 계정에서 지난 주 구매내역을 받아 오거나 보정을 고치면 달라진다(2026-10-17: 옛 자료로 짠 계획이 그대로 묶였다)
+    expect(basisOf(buildBase([...rows, { date: '2026-09-18', item: '받아 온 것', price: 5900 }], SAVED, NOW))).not.toBe(basisOf(b))
+    expect(basisOf(buildBase(rows, { ...SAVED, '2026-09-17': 1000 }, NOW))).not.toBe(basisOf(b))
   })
 })

@@ -497,7 +497,21 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
 }
 
 /** 세워 둔 계획. 주 시작일 → 그 주 목표 금액. from은 그때의 이번 주. ack: 이번 주 초과분 중 그대로 두기로 한 금액, over: 넘겨받은 초과분 */
-export interface Frozen { v?: number; from: string; weeks: Record<string, number>; ack?: number; over?: number }
+/**
+ * 세워 둔 계획. basis: 짤 때 쓴 지난 주까지의 자료(basisOf). pin: 이번 주 목표를 정해 두고 짰으면 그 금액
+ */
+export interface Frozen { v?: number; from: string; weeks: Record<string, number>; ack?: number; over?: number; basis?: string; pin?: number }
+
+/**
+ * 계획을 짤 때 쓰는 자료 가운데 이번 주 전까지의 것: 구매내역 개수·합계와 보정값.
+ * 이번 주 결제는 짤 때 빼므로 넣지 않는다(이번 주에 사도 계획이 다시 짜이지 않게)
+ */
+export function basisOf(b: Base): string {
+  let n = 0, sum = 0
+  for (const r of b.rows) if (r.date < b.thisWeek) { n++; sum += r.price }
+  const pc = Object.keys(b.saved).filter(w => w < b.thisWeek).sort().map(w => `${w}=${b.saved[w]}`).join(',')
+  return `${n}:${sum}:${pc}`
+}
 export interface Done { start: string; goal: number; paid: number; tier: TierKey | null }
 
 /**

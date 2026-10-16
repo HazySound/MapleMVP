@@ -1,5 +1,5 @@
 import type { PyApi } from './api'
-import { type Base, makePlan, rollPlan } from './core/engine'
+import { type Base, basisOf, makePlan, rollPlan } from './core/engine'
 import { TIERS, tierIndex } from './core/mvp'
 import { getBase } from './store.svelte'
 import { addDays } from './format'
@@ -55,7 +55,7 @@ function freeze(b: Base, p: PlanInput, goal?: number) {
   if (r.error) { delete p.frozen; return }
   const weeks: Record<string, number> = {}
   for (const w of r.timeline) if (w.counts) weeks[w.start] = w.goal
-  p.frozen = { v: FROZEN_V, from: b.thisWeek, weeks }
+  p.frozen = { v: FROZEN_V, from: b.thisWeek, weeks, basis: basisOf(b), ...(goal != null ? { pin: goal } : {}) }
 }
 
 const FROZEN_V = 2
@@ -64,7 +64,7 @@ const FROZEN_V = 2
 function roll(b: Base, p: PlanInput) {
   const r = rollPlan(b, p.frozen!, p.history ?? [])
   p.history = r.history
-  if (r.frozen) p.frozen = r.frozen
+  if (r.frozen) p.frozen = { ...r.frozen, basis: basisOf(b) }
   else freeze(b, p)
 }
 
@@ -90,6 +90,12 @@ export function requestPlan() {
   // 10/16 첫 배포(6e3e768)는 이번 주에 낸 결제 위에 이번 주 몫을 또 얹어 묶었다. 그때 묶은 것은 다시 짠다
   if (p.frozen && p.frozen.v !== FROZEN_V) { delete p.frozen; dirty = true }
   if (p.frozen && p.frozen.from < b.thisWeek) { roll(b, p); dirty = true }
+  /*
+   * 짤 때와 지난 주까지의 자료(구매내역·보정)가 달라졌으면 지금 자료로 다시 짠다. 계정 자료를 받기 전에 기기에 남은 옛 자료로
+   * 짠 계획이 그대로 묶여, 자동 분배인데 이번 주가 20만이 아니라 25만이었다(2026-10-17 사용자). 이번 주 목표를 정해 두고 짰으면(pin) 그대로.
+   * 자료 표시(basis)가 없는 옛 계획은 한 번 다시 짠다
+   */
+  if (p.frozen && p.frozen.basis !== basisOf(b)) { freeze(b, p, p.frozen.basis ? p.frozen.pin : undefined); dirty = true }
   if (!p.frozen) { freeze(b, p); dirty = !!p.frozen || dirty }
   planner.result = calc(b, p, p.frozen?.weeks ?? {})
   if (dirty) save(true)
