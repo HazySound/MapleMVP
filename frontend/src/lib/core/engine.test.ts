@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBase, buildState, makePlan, needRecheck, placeMoved, simulate } from './engine'
+import { buildBase, buildState, makePlan, needRecheck, placeMoved, rollPlan, simulate } from './engine'
 import { addDays, type Row } from './mvp'
 import { writeWeeks } from './pcroom'
 
@@ -67,7 +67,7 @@ describe('시뮬레이션과 목표 계획', () => {
   })
 
   it('이번 주가 목표면 이미 달성이다', () => {
-    const p = makePlan(base, 'diamond', '2026-09-30', {}, false) as any
+    const p = makePlan(base, 'diamond', '2026-09-30', {}) as any
     expect(p.required).toBe(0)
     expect(p.base).toBe(909_670)
   })
@@ -75,7 +75,7 @@ describe('시뮬레이션과 목표 계획', () => {
   it('지금 등급(다이아)을 8주 뒤로 고르면 날짜와 상관없이 지금부터 유지 계획이다', () => {
     // 전에는 '8주 뒤 주에만 기준을 넘기면 된다'로 봐서 인게임 툴팁 '7주차 뒤 108,850'과 같은 금액이 나왔다.
     // 그 사이 주에는 떨어져도 되는 계획이라 쓸모가 없었다(2026-10-04 사용자). 이제는 유지로 본다
-    const p = makePlan(base, 'diamond', '2026-11-18', {}, false, { every: 1, weeks: 8 }) as any
+    const p = makePlan(base, 'diamond', '2026-11-18', {}, { every: 1, weeks: 8 }) as any
     expect(p.mode).toBe('keep')
     expect(p.required).toBe(0)
     expect(p.timeline[0].start).toBe('2026-09-24')
@@ -85,7 +85,7 @@ describe('시뮬레이션과 목표 계획', () => {
   })
 
   it('지난 날짜는 거절한다', () => {
-    expect((makePlan(base, 'red', '2026-09-01', {}, false) as any).error).toBeTruthy()
+    expect((makePlan(base, 'red', '2026-09-01', {}) as any).error).toBeTruthy()
   })
 })
 
@@ -136,7 +136,7 @@ describe('계획의 성격: 달성 · 유지 · 내려가기', () => {
   const black: Row[] = Array.from({ length: 13 }, (_, i) => ({ date: addDays('2026-07-09', i * 7 + 1), item: '결제', price: 200_000 }))
   const keep = { every: 1, weeks: 8 }
   const made = (rows: Row[], target: 'black' | 'red' | 'gold', date: string, k = keep, holdCur = false) => {
-    const p = makePlan(buildBase(rows, {}, NOW3), target as never, date, {}, false, k, 1000, holdCur)
+    const p = makePlan(buildBase(rows, {}, NOW3), target as never, date, {}, k, 1000, holdCur)
     if (!('mode' in p)) throw new Error(p.error)
     return p
   }
@@ -172,11 +172,11 @@ describe('계획의 성격: 달성 · 유지 · 내려가기', () => {
   it('고정한 금액이 있으면 모두 자동으로 짰을 때와 견준다', () => {
     const base = buildBase(black, {}, NOW3)
     const fixed = { '2026-10-08': 900_000, '2026-10-15': 0 }
-    const p = makePlan(base, 'red', '2026-10-29', fixed, false, keep)
+    const p = makePlan(base, 'red', '2026-10-29', fixed, keep)
     if (!('mode' in p)) throw new Error(p.error)
     expect(p.auto).not.toBeNull()
     expect(p.planned).toBeGreaterThanOrEqual(p.auto!.planned)
-    const q = makePlan(base, 'red', '2026-10-29', {}, false, keep)
+    const q = makePlan(base, 'red', '2026-10-29', {}, keep)
     if (!('mode' in q)) throw new Error(q.error)
     expect(q.auto).toBeNull()
     expect(q.planned).toBe(p.auto!.planned)
@@ -218,5 +218,89 @@ describe('다시 맞추라는 안내(합만 아는 묶음)', () => {
     expect(needRecheck(b, fixedAt)).toBe(true)
     expect(buildState(b, fixedAt).pcroom.recheck).toBe(true)
     expect(needRecheck(b, 0)).toBe(false)   // 맞춘 적이 없으면 이 안내가 아니다
+  })
+})
+
+/**
+ * 2026-10-16 사용자: 목표 계획은 세운 그대로 묶어 두고, 결제한 만큼 이번 주 목표에서 빠져야 한다.
+ * 전에는 결제할 때마다 남은 금액을 모든 주에 다시 나눠 이번 주 목표가 낸 만큼 줄지 않았다
+ */
+describe('세워 둔 계획', () => {
+  const base0 = buildBase(rows, SAVED, NOW)
+  const date = '2026-11-18'
+  const p0 = makePlan(base0, 'red', date, {}) as any
+  const pins = Object.fromEntries(p0.timeline.filter((w: any) => w.counts).map((w: any) => [w.start, w.goal]))
+  const more = [...rows, { date: '2026-09-26', item: '결제', price: 50_000 }]
+  const base1 = buildBase(more, SAVED, NOW)
+
+  it('이번 주 목표는 이미 낸 금액까지 친 전체다', () => {
+    expect(p0.spentThisWeek).toBe(253_700)
+    expect(p0.timeline[0].goal).toBe(253_700 + p0.timeline[0].amount)
+  })
+
+  it('세운 뒤 결제하면 그만큼 이번 주 남은 금액만 줄고 다른 주는 그대로다', () => {
+    const p1 = makePlan(base1, 'red', date, {}, null, 1000, false, pins) as any
+    expect(p1.timeline[0].goal).toBe(p0.timeline[0].goal)
+    expect(p1.timeline[0].amount).toBe(p0.timeline[0].amount - 50_000)
+    for (let o = 1; o < p0.timeline.length; o++) expect(p1.timeline[o].amount).toBe(p0.timeline[o].amount)
+    // 묶어 둔 금액은 사용자가 고정한 것이 아니다
+    expect(p1.timeline.some((w: any) => w.fixed)).toBe(false)
+    expect(p1.fixedSum).toBe(0)
+    expect(p1.autoCount).toBe(p0.autoCount)
+    expect(p1.autoPer).toBe(p0.autoPer)
+    // 묶어 두지 않으면 낸 금액이 모든 주에 나뉘어 이번 주는 조금만 줄었다
+    const live = makePlan(base1, 'red', date, {}) as any
+    expect(live.timeline[0].amount).toBeGreaterThan(p1.timeline[0].amount)
+  })
+
+  it('목표보다 더 내면 이번 주 남은 금액은 0이고 다른 주는 그대로다', () => {
+    const big = buildBase([...rows, { date: '2026-09-26', item: '결제', price: p0.timeline[0].amount + 30_000 }], SAVED, NOW)
+    const p1 = makePlan(big, 'red', date, {}, null, 1000, false, pins) as any
+    expect(p1.timeline[0].amount).toBe(0)
+    expect(p1.spentThisWeek - p1.timeline[0].goal).toBe(30_000)
+    expect(p1.timeline[1].amount).toBe(p0.timeline[1].amount)
+  })
+
+  it('이번 주를 고정하면 그 금액이 이번 주 전체 목표다(낸 금액이 두 번 잡히지 않는다)', () => {
+    const p = makePlan(base1, 'red', date, { '2026-09-24': 400_000 }) as any
+    expect(p.timeline[0].goal).toBe(400_000)
+    expect(p.timeline[0].amount).toBe(400_000 - 303_700)
+    expect(p.timeline[0].fixed).toBe(true)
+  })
+
+  it('블랙에서 인게임이 수집보다 적은 주는 이월로 간 몫까지 낸 것으로 친다', () => {
+    // 12주 동안 20만씩(240만) + 이번 주 30만 → 블랙 기준을 20만 넘겨 인게임 이번 주는 10만
+    const starts = Array.from({ length: 13 }, (_, i) => addDays('2026-09-24', (i - 12) * 7))
+    const rs: Row[] = starts.map(s => ({ date: addDays(s, 1), item: '결제', price: i0(s) }))
+    function i0(s: string) { return s === '2026-09-24' ? 300_000 : 200_000 }
+    const saved = { ...Object.fromEntries(starts.map(s => [s, 0])), '2026-09-24': -200_000 }
+    const b = buildBase(rs, saved, NOW)
+    expect(b.tier13[12]?.key).toBe('black')
+    expect(b.last13[12]).toBe(100_000)
+    expect(b.paid13[12]).toBe(300_000)
+  })
+
+  describe('목요일이 지나면', () => {
+    const NEXT = new Date('2026-10-02T00:00:00Z')   // 10/1 주
+    const frozen = { from: '2026-09-24', weeks: pins }
+    const paidBy = (extra: number) => buildBase([...rows, { date: '2026-09-26', item: '결제', price: p0.timeline[0].amount + extra }], SAVED, NEXT)
+
+    it('목표만큼 냈으면 지난 주는 기록으로 옮기고 다음 주가 이번 주가 된다', () => {
+      const r = rollPlan(paidBy(0), frozen, [])
+      expect(r.frozen!.from).toBe('2026-10-01')
+      expect(r.frozen!.weeks['2026-09-24']).toBeUndefined()
+      expect(r.frozen!.weeks['2026-10-01']).toBe(pins['2026-10-01'])
+      expect(r.frozen!.over).toBeUndefined()
+      expect(r.history).toEqual([{ start: '2026-09-24', goal: pins['2026-09-24'], paid: pins['2026-09-24'], tier: expect.anything() }])
+    })
+
+    it('못 채웠으면 다시 짜야 한다', () => {
+      expect(rollPlan(paidBy(-10_000), frozen, []).frozen).toBeNull()
+    })
+
+    it('더 낸 금액은 넘겨서 고르게 한다. 그대로 두기로 한 몫은 빼고', () => {
+      expect(rollPlan(paidBy(30_000), frozen, []).frozen!.over).toBe(30_000)
+      expect(rollPlan(paidBy(30_000), { ...frozen, ack: 10_000 }, []).frozen!.over).toBe(20_000)
+    })
   })
 })

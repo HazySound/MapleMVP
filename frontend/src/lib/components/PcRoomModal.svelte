@@ -235,6 +235,7 @@
                  note: g.note,
                  warn: dr ? `${nameList(dr.names)} ${won(cut)}원이 인게임 MVP에 들어가지 않았어요.${dr.pc ? ` 선물했거나 다른 계정에 등록한 쿠폰이에요. 나머지 ${won(dr.pc)}원이 PC방이에요.` : ''} 인게임 금액대로 저장해요.`
                    : w && w.pcMax > w.pcMin ? '' : g.warn,
+                 info: dr ? '' : g.info ?? '',
                  unknown: w ? w.unknown : g.unknown,
                  pcMin: w?.pcMin, pcMax: w?.pcMax,
                  gapMin: w ? w.gapMin - cut : undefined, gapMax: w ? w.gapMax - cut : undefined, group: w?.group,
@@ -835,6 +836,8 @@
                     : `수집보다 ${won(r.gapMin ?? r.amount)}원 많아요(수집하지 못한 결제 등).`}
                   <button class="link" onclick={() => markMissed(r.start, false)}>되돌리기</button>
                 </p>
+              {:else if !r.group && !r.note && !r.warn && r.info}
+                <p class="msg ok">{r.info}</p>
               {:else if !r.group && (r.note || r.warn)}
                 <p class="msg" class:bad={!!r.note}>
                   {r.note || r.warn}

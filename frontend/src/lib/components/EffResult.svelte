@@ -3,14 +3,14 @@
    * 결론. 루트 셋 중 하나를 골라 가장 크게 '실제로 나가는 돈', 그 아래 따라 할 순서.
    *   최저가 루트: 가장 적게 잃는 조합 (판매 횟수는 따지지 않는다)
    *   최적화 루트: 판매를 한 번 줄일 때 더 내는 돈이 '판매 1회 수고비' 이하인 한도에서 가장 적게 파는 조합
-   *   횟수 정하기: 주마다 판매 n회까지
-   * 계획을 따르면 주별 표가 붙고, 줄을 누르면 순서가 그 주로 바뀐다.
+   *   횟수 정하기: 판매 n회까지
+   * 계획을 따르면 이번 주에 더 낼 금액만 본다(2026-10-16 사용자).
    */
   import NumBox from './NumBox.svelte'
   import EffCombo from './EffCombo.svelte'
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { SHOP, eff, keepStartsOf, saveEff, setAllRoute, setWeekRoute, umNet, type EffOut, type Pick, type RouteAlt, type RouteSet, type Summary, type Want, type WeekPick } from '../eff.svelte'
+  import { eff, saveEff, setWeekRoute, umNet, type EffOut, type RouteAlt, type RouteSet, type Want } from '../eff.svelte'
   import { GIFT_ID, PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun, ro } from '../format'
   import { won } from '../format'
@@ -19,22 +19,20 @@
 
   const d = $derived(app.data!)
   const tierName = (k: string | null) => d.tiers.find(t => t.key === k)?.name ?? '등급 없음'
-  const md = (iso: string) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`
   const pick = $derived(out?.sel ?? null)
   const curIdx = $derived(pick ? Math.min(sel, pick.weeks.length - 1) : 0)
   const cur = $derived(pick ? pick.weeks[curIdx] : null)
 
   /**
-   * 회수율이 비슷한 다른 루트(2026-10-12 사용자). 보고 있는 주에만 바꿔 끼우는 게 기본이고,
-   * 모든 주를 그 방식으로 했을 때를 한 줄로 보여 주고 거기서도 고를 수 있게 한다
+   * 회수율이 비슷한 다른 루트(2026-10-12 사용자). 이번 주에 바꿔 끼운다
    */
   let altOpen = $state(false)
-  let altMore = $state<string | null>(null)
   const alts = $derived(altOpen && out && pick ? out.alts(curIdx) : [] as RouteAlt[])
   const curKind = $derived(out?.kinds[curIdx] ?? null)
+  /** 계획을 따르는데 이번 주 목표를 이미 다 채웠다 */
+  const planDone = $derived(eff.usePlan && !!planner.result && !planner.result.error && !planner.result.timeline[0]?.amount)
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`
   const signed = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${won(Math.abs(Math.round(x)))}원`
-  const per = $derived(out?.mode === 'plan' ? '주마다 ' : '')
   /**
    * 메소마켓이 고른 아이템 모두보다 덜 남으면, 그 금액은 메소마켓이 나아서가 아니라 결제액을 맞추려고 남은 끝자리다.
    * '메소마켓을 사라는 거냐'는 오해가 있었다(2026-10-01 댓글)
@@ -64,35 +62,11 @@
   const question = $derived.by(() => {
     if (!out) return ''
     const minus = out.use ? ` (구매용 ${won(out.use)}원 제외)` : ''
-    if (out.mode === 'plan' && planner.input) {
-      const k = planner.result?.keep
-      const m = planner.result?.mode ?? 'reach'
-      const head = m === 'keep' ? `${tierName(planner.input.target)} ${k?.weeks ?? ''}주 유지`
-        : m === 'hold' ? `${tierName(planner.input.target)}로 내려가며 ${k?.weeks ?? ''}주 유지`
-        : `${tierName(planner.input.target)} 달성${k ? ` + ${k.weeks}주 유지` : ''}`
-      return `${head}까지 실제로 나가는 돈${minus}`
-    }
+    if (out.mode === 'plan') return `이번 주 남은 목표 ${won(out.target)}원을 결제하면 실제로 나가는 돈${minus}`
     return `${won(out.target)}원 결제하면 실제로 나가는 돈${minus}`
   })
-  const rate = (p: Pick) => p.cost ? p.back / p.cost * 100 : 0
+  const rate = (p: { cost: number; back: number }) => p.cost ? p.back / p.cost * 100 : 0
 
-  // 유지를 켰으면 달성하는 주와 유지하는 주를 나눠 본다. 유지 주는 주차별 계획에서 목표 주 뒤의 주
-  const split = $derived.by(() => {
-    if (!pick || out?.mode !== 'plan' || !planner.result?.keep) return null
-    const keepStarts = keepStartsOf(planner.result)!
-    const part = (ws: WeekPick[]) => {
-      const cost = ws.reduce((a, w) => a + w.route.cost, 0)
-      const back = ws.reduce((a, w) => a + w.route.back + (w.credit?.back ?? 0), 0)
-      const sales = ws.reduce((a, w) => a + w.route.sales, 0)
-      return { n: ws.length, cost, back, sales, loss: ws.reduce((a, w) => a + w.loss, 0), rate: cost ? back / cost * 100 : 0 }
-    }
-    const keep = pick.weeks.filter(w => keepStarts.has(w.w.start))
-    if (!keep.length) return null
-    // 같은 구간을 최저가로 했을 때 잃는 돈. 그 차이를 주당으로도 보여 준다
-    const bestOf = (k: boolean) => out!.best.weeks.filter(w => keepStarts.has(w.w.start) === k).reduce((a, w) => a + w.loss, 0)
-    const withGap = (p: ReturnType<typeof part>, k: boolean) => ({ ...p, gap: Math.max(0, p.loss - bestOf(k)) })
-    return { reach: withGap(part(pick.weeks.filter(w => !keepStarts.has(w.w.start))), false), keep: withGap(part(keep), true) }
-  })
   const choose = (w: Want) => { eff.want = w; saveEff() }
   // 달성·유지를 따로 정할 수 있는 때: 목표 계획에서 유지를 켰을 때
   const canSplit = $derived(out?.mode === 'plan' && !!out.keepStarts?.size)
@@ -142,28 +116,19 @@
   })
 
   const cardDetail = (q: Part) => q.card && q.unit ? `${unitName(q.unit)} ${q.cash / q.unit}장` : ''
-  const discount = (w: WeekPick) => w.funding.parts.filter(q => !q.held).reduce((a, q) => a + q.cash - q.won, 0)
-  const byMonth = $derived.by(() => {
-    const m: Record<string, Record<string, string[]>> = {}
-    for (const w of pick?.weeks ?? []) for (const q of w.funding.parts) if (q.card) ((m[w.w.month] ??= {})[q.name] ??= []).push(`${md(w.w.start)} ${won(q.cash)}`)
-    return m
-  })
-  const firstOfMonth = (i: number) => !pick || i === 0 || pick.weeks[i - 1].w.month !== pick.weeks[i].w.month
-  // 달 한도가 있는 결제수단만(상품권 + 직접 추가한 것 중 한도가 있는 것)
-  const monthLine = (month: string) => [...eff.cards.filter(c => c.on), ...eff.methods.filter(m => m.on && m.monthly)]
-    .map(c => `${c.name} ${byMonth[month]?.[c.name]?.join(', ') ?? '안 씀'}`).join(' · ')
-  const setWeekBc = (start: string, v: number) => { if (v) eff.weekBarcode[start] = v; else delete eff.weekBarcode[start]; saveEff() }
 </script>
 
-{#snippet vsSplit(s: Summary)}
-  {#if s.split}<small class="vsp">달성 <b class="mono">{won(s.split.reach.loss)}원</b> ({s.split.reach.sales}회) · 유지 <b class="mono">{won(s.split.keep.loss)}원</b> ({s.split.keep.sales}회)</small>{/if}
-{/snippet}
 
 <article class="card answer" id="eff-answer">
   {#if missing.length}
     <div class="empty">
       <b>몇 칸만 더 채우면 결론이 나와요</b>
       <span>남은 것: {missing.join(', ')}</span>
+    </div>
+  {:else if planDone}
+    <div class="empty">
+      <b>이번 주는 더 낼 금액이 없어요</b>
+      <span>목표 계획의 이번 주 목표를 이미 채웠어요. 그래도 더 결제하려면 1번에서 '금액 직접'으로 정해요.</span>
     </div>
   {:else if out && pick && cur}
     <p class="q">{question}</p>
@@ -189,7 +154,7 @@
             </div>
             {#if s.want === 'count'}
               <div class="srow">
-                <label for="eff-sales-{k}">주마다 경매장에 최대</label>
+                <label for="eff-sales-{k}">경매장에 최대</label>
                 <b class="mono n">{s.salesN}회</b>
                 <input id="eff-sales-{k}" type="range" min={out.lo} max={out.hi} value={Math.min(s.salesN, out.hi)}
                   oninput={e => { s.salesN = Number(e.currentTarget.value); saveEff() }} />
@@ -223,7 +188,7 @@
       <button class:on={eff.want === 'count'} onclick={() => choose('count')}>
         <span class="rn">횟수 정하기</span>
         <b class="mono">{won(out.count.loss)}원</b>
-        <span class="rs">{per}최대 {out.count.n}회 · 판매 {out.count.sales}회</span>
+        <span class="rs">최대 {out.count.n}회 · 판매 {out.count.sales}회</span>
       </button>
       <button class:on={eff.want === 'custom'} onclick={() => choose('custom')}>
         <span class="rn">직접 짜기</span>
@@ -236,7 +201,7 @@
         {/if}
       </button>
     </div>
-    {#if eff.want === 'custom'}<EffCombo combo={eff.combo} title="{out.mode === 'plan' ? '매주 이 조합' : '이 조합으로'}" id="eff-combo-all" />{/if}
+    {#if eff.want === 'custom'}<EffCombo combo={eff.combo} title="이 조합으로" id="eff-combo-all" />{/if}
     {/if}
 
     <div class="headline">
@@ -249,19 +214,6 @@
       {#if out.use}
         <p class="usenote">결제 {won(out.target)}원 중 <b>구매용 {won(out.use)}원</b>({eff.buys.map(b => b.name).join(', ')})은 쓰는 돈이라 뺐어요. 위 숫자는 MVP작 <b>{won(out.target - out.use)}원</b> 기준이에요.{#if out.useOver} 구매용이 결제액보다 <b class="bad">{won(out.useOver)}원</b> 많아 그만큼은 넣지 못했어요.{/if}</p>
       {/if}
-      {#if split}
-        <div class="split">
-          {#each ([['달성', split.reach], ['유지', split.keep]] as const).filter(([, s]) => s.n) as [name, s] (name)}
-            {@const low = s.gap < 1}
-            <div class:low>
-              <span>{name} <small>{s.n}주</small>{#if low}<i class="badge">최저가</i>{/if}</span>
-              <b class="mono">{won(s.loss)}원</b>
-              {#if !low}<strong class="gap">최저가보다 <span class="mono">+{won(s.gap)}원</span>{#if s.n > 1}{' · 주당 '}<span class="mono">+{won(s.gap / s.n)}원</span>{/if}</strong>{/if}
-              <em>현금 {won(s.cost)}원 · 회수율 {s.rate.toFixed(1)}% · 판매 {s.sales}회{s.n > 1 ? ` (주당 ${Math.round(s.sales / s.n)}회)` : ''}</em>
-            </div>
-          {/each}
-        </div>
-      {/if}
     </div>
 
     {#if chart}
@@ -269,7 +221,7 @@
         <figcaption>판매 횟수를 줄이면 얼마나 비싸지나</figcaption>
         <svg viewBox="0 0 {W} {H + 38}" role="img" aria-label="판매 횟수별 실제로 나가는 돈">
           <text x="12" y={H / 2} class="at" text-anchor="middle" transform="rotate(-90 12 {H / 2})">실제로 나가는 돈</text>
-          <text x={PX + (W - 12 - PX) / 2} y={H + 32} class="at" text-anchor="middle">{out.mode === 'plan' ? '주마다 최대 판매 횟수' : '경매장 판매 횟수'}</text>
+          <text x={PX + (W - 12 - PX) / 2} y={H + 32} class="at" text-anchor="middle">경매장 판매 횟수</text>
           <line x1={PX} x2={W - 12} y1={H - PY} y2={H - PY} class="axis" />
           <text x={PX - 6} y={PY + 4} class="yl" text-anchor="end">{won(Math.round(chart.y1 / 1000))}천</text>
           <text x={PX - 6} y={H - PY} class="yl" text-anchor="end">{won(Math.round(chart.y0 / 1000))}천</text>
@@ -290,7 +242,6 @@
           <span>아래로 안 내려가게 해요.</span>
           {#if out.knee.sales < out.best.sales}
             <span>지금은 한 번 줄일 때 평균 <b>{won((out.knee.loss - out.best.loss) / (out.best.sales - out.knee.sales))}원</b>이라 {out.best.sales - out.knee.sales}회 줄였어요. 회수율 <b>{(out.knee.cost ? out.knee.back / out.knee.cost * 100 : 0).toFixed(1)}%</b>{eff.minRate ? ` (하한 ${eff.minRate}%)` : ''}.</span>
-            {#if !chart.one}<span>최적화는 주마다 판매 횟수를 따로 정해서, 모든 주에 같은 상한을 거는 이 곡선 위에는 없어요.</span>{/if}
           {:else if eff.minRate && (out.best.cost ? out.best.back / out.best.cost * 100 : 0) < eff.minRate}
             <span>최저가 루트도 회수율이 <b>{(out.best.back / out.best.cost * 100).toFixed(1)}%</b>라 하한 {eff.minRate}%에 못 미쳐요. 판매를 줄이면 더 내려가서 최저가 그대로 둬요.</span>
           {:else}
@@ -331,62 +282,22 @@
     {/if}
 
     <div class="vs">
-      {#if out.pgOnly}<div>플가만 ({out.pgOnly.sales}회)<b class="mono">{won(out.pgOnly.loss)}원</b>{@render vsSplit(out.pgOnly)}</div>{/if}
-      {#if out.mkOnly}<div>전부 메소마켓 ({out.mkOnly.sales}회)<b class="mono">{won(out.mkOnly.loss)}원</b>{@render vsSplit(out.mkOnly)}</div>{/if}
-      {#if out.giftOnly}<div>전부 선물식 ({out.giftOnly.sales}회)<b class="mono">{won(out.giftOnly.loss)}원</b>{@render vsSplit(out.giftOnly)}</div>{/if}
+      {#if out.pgOnly}<div>플가만 ({out.pgOnly.sales}회)<b class="mono">{won(out.pgOnly.loss)}원</b></div>{/if}
+      {#if out.mkOnly}<div>전부 메소마켓 ({out.mkOnly.sales}회)<b class="mono">{won(out.mkOnly.loss)}원</b></div>{/if}
+      {#if out.giftOnly}<div>전부 선물식 ({out.giftOnly.sales}회)<b class="mono">{won(out.giftOnly.loss)}원</b></div>{/if}
     </div>
-
-    {#if out.mode === 'plan'}
-      <section class="weeks">
-        <h4>주별로 보면 <span>줄을 누르면 아래 순서가 그 주로 바뀌어요</span></h4>
-        <p class="note">결제액은 <b>목표 계획의 주별 금액 그대로</b>예요. 결제수단은 할인이 큰 것부터 그 달 남은 한도 안에서 권 단위로 써요. {#if eff.plainOn}한 권보다 작은 끝자리는 {SHOP.barcode.on ? '바코드나 ' : ''}일반 충전으로 딱 맞추고, 남긴 캐시를 뒤 주에서 다 쓸 수 있을 때만 한 권 더 사서 <b>남는 캐시를 다음 주에</b> 써요.{:else}한 권보다 작은 끝자리는 한 권 더 사서 <b>남는 캐시를 다음 주에</b> 써요(일반 충전 꺼 둠).{/if} 달 줄에 그 달 한도를 어느 주에 썼는지 나와요.</p>
-        <div class="tbl">
-          <table>
-            <thead><tr><th>주</th><th>결제</th><th>충전</th>{#if SHOP.barcode.on}<th>바코드로 받을 캐시</th>{/if}<th>할인 받음</th><th>판매</th>{#if out.credit}<th>크레딧</th>{/if}<th>낸 현금</th><th>실제로 나감</th></tr></thead>
-            <tbody>
-              {#each pick.weeks as w, i (w.w.start)}
-                {#if firstOfMonth(i)}
-                  <tr class="month"><td colspan={7 + (SHOP.barcode.on ? 1 : 0) + (out.credit ? 1 : 0)}><b>{Number(w.w.month.slice(5))}월 결제수단 한도</b> ({i === 0 ? '2번에 넣은 남은 한도' : '달마다 새로'}) — {monthLine(w.w.month)}</td></tr>
-                {/if}
-                <tr class="wk" class:sel={w === cur} onclick={() => (sel = i)}>
-                  <td class="d">{md(w.w.start)} 주{#if i === 0}<small>이번 주</small>{/if}{#if out.kinds[i]}<small class="swp">{out.labelOf(out.kinds[i]!)}</small>{/if}</td>
-                  <td class="mono" data-l="결제">{won(w.route.pay + w.w.use)}{#if w.w.use}<small class="use">구매용 {won(w.w.use)}</small>{/if}</td>
-                  <td class="pt"><div class="parts">{#each w.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if q.spare}<em class="sp">{won(q.spare)} 남김</em>{/if}</span>{/each}</div></td>
-                  {#if SHOP.barcode.on}
-                    <td data-l="바코드로 받을 캐시" onclick={e => e.stopPropagation()}>
-                      <NumBox id="eff-wbc-{w.w.start}" label="{md(w.w.start)} 주 바코드 캐시" size="sm" placeholder={eff.barcodeWant ? won(eff.barcodeWant) : '나머지 전부'}
-                        value={eff.weekBarcode[w.w.start] ?? 0} set={v => setWeekBc(w.w.start, v)} />
-                    </td>
-                  {/if}
-                  <td class="mono good" data-l="할인 받음">{discount(w) > 0 ? won(discount(w)) : '—'}</td>
-                  <td class="mono" data-l="판매">{w.route.sales}회</td>
-                  {#if out.credit}
-                    <td class="crd" data-l="크레딧">{#if w.credit?.buys.length}{w.credit.buys.map(b => `${b.item.name.replace('프라임 ', '')} ${b.n}`).join(' + ')}{:else if w.credit?.earned}<span class="dim">모으는 중 {won(w.credit.left)}</span>{:else}—{/if}</td>
-                  {/if}
-                  <td class="mono" data-l="낸 현금">{won(w.route.cost)}</td>
-                  <td class="mono bad lo" data-l="실제로 나감">{won(w.loss)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    {/if}
 
     <section class="route">
       <div class="rhead">
-        <h4>{out.mode === 'plan' ? `${md(cur.w.start)} 주에 이렇게 하면 돼요` : '이렇게 하면 돼요'}</h4>
-        <button class="altbtn" aria-expanded={altOpen} onclick={() => { altOpen = !altOpen; altMore = null }}>다른 루트 보기 {altOpen ? '▴' : '▾'}</button>
+        <h4>{out.mode === 'plan' ? '이번 주에 이렇게 하면 돼요' : '이렇게 하면 돼요'}</h4>
+        <button class="altbtn" aria-expanded={altOpen} onclick={() => { altOpen = !altOpen }}>다른 루트 보기 {altOpen ? '▴' : '▾'}</button>
       </div>
-      {#if curKind || eff.allRoute}
-        <p class="swapnote">
-          {#if eff.weekRoute[cur.w.start]}이 주는 <b>{out.labelOf(eff.weekRoute[cur.w.start])}</b>{ro(out.labelOf(eff.weekRoute[cur.w.start]))} 바꿔 계산했어요. <button class="link" onclick={() => setWeekRoute(cur.w.start, null)}>이 주 되돌리기</button>
-          {:else if eff.allRoute}모든 주를 <b>{out.labelOf(eff.allRoute)}</b>{ro(out.labelOf(eff.allRoute))} 바꿔 계산했어요. <button class="link" onclick={() => setAllRoute(null)}>모든 주 되돌리기</button>{/if}
-        </p>
+      {#if curKind}
+        <p class="swapnote"><b>{out.labelOf(curKind)}</b>{ro(out.labelOf(curKind))} 바꿔 계산했어요. <button class="link" onclick={() => setWeekRoute(cur.w.start, null)}>되돌리기</button></p>
       {/if}
       {#if altOpen}
         <div class="alts">
-          <p class="alt-h">회수율이 비슷한 다른 루트예요. 금액은 이 주만 본 어림값이고, 회수율은 크레딧 값을 친 것(괄호는 돈만)이에요.</p>
+          <p class="alt-h">회수율이 비슷한 다른 루트예요. 회수율은 크레딧 값을 친 것(괄호는 돈만)이에요.</p>
           <div class="alt-main now">
             <span class="alt-name"><b>지금{out.isBest(curIdx) && !alts.some(a => a.diff < 0) ? ' · 최저가' : ''}</b><small>{[...cur.route.lines.map(l => `${itemLabel(l.item)} ${countLabel(l.item, l.n)}`), ...(cur.route.gift ? [`선물식 ${won(cur.route.gift)}`] : []), ...(cur.route.market ? [`메소마켓 ${won(cur.route.market)}`] : [])].join(' · ')}</small></span>
             <span class="alt-num mono">{pct(cur.route.cost ? (cur.route.back + cur.route.creditEst) / cur.route.cost : 0)} <small>({pct(cur.route.cost ? cur.route.back / cur.route.cost : 0)})</small></span>
@@ -404,17 +315,8 @@
                 <span class="alt-num mono">{pct(a.rate)} <small>({pct(a.money)})</small></span>
                 <span class="alt-num mono" class:bad={a.diff > 0} class:good={a.diff < 0}>{signed(a.diff)}</span>
                 <span class="alt-num mono">판매 {a.sales}회</span>
-                <button class="btn sm" onclick={() => { setWeekRoute(cur.w.start, a.kind); altOpen = false }}>{out.weeks.length > 1 ? '이 주에 적용' : '적용'}</button>
+                <button class="btn sm" onclick={() => { setWeekRoute(cur.w.start, a.kind); altOpen = false }}>적용</button>
               </div>
-              {#if a.all}
-                <button class="link more" onclick={() => (altMore = altMore === a.kind ? null : a.kind)}>모든 주를 이렇게 하면 {altMore === a.kind ? '▴' : '▾'}</button>
-                {#if altMore === a.kind}
-                  <div class="alt-all">
-                    <span>{out.weeks.length}주 합계 <b class="mono" class:bad={a.all.diff > 0} class:good={a.all.diff < 0}>{signed(a.all.diff)}</b> · 판매 {a.all.salesNow}회 → <b class="mono">{a.all.sales}회</b></span>
-                    <button class="btn sm" onclick={() => { setAllRoute(a.kind); altOpen = false }}>모든 주에 적용</button>
-                  </div>
-                {/if}
-              {/if}
             </div>
           {/each}
         </div>
@@ -506,19 +408,6 @@
   .kcost { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: var(--color-tx3); }
   .kcost .box { width: 110px; }
   .routes .dim { color: var(--color-tx3); }
-  .vsp { display: block; margin-top: 2px; font-size: 11.5px; color: var(--color-tx3); }
-  .vs .vsp b { display: inline; font-size: 12px; font-weight: 600; color: var(--color-tx2); }
-  .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 10px; }
-  .split div { display: grid; gap: 1px; padding: 9px 12px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid var(--color-line); }
-  .split span { font-size: 12px; color: var(--color-tx3); }
-  .split small { font-size: 11px; }
-  .split b { font-size: 17px; font-weight: 700; color: var(--color-bad); }
-  .split em { font-style: normal; font-size: 12px; color: var(--color-tx2); }
-  .split .low b { color: var(--color-mint); }
-  .split .badge { font-style: normal; margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: var(--color-mint); background: color-mix(in oklab, var(--color-mint) 16%, transparent); }
-  .split .gap { font-weight: 500; font-size: 12.5px; color: var(--color-peach); }
-  .split .gap span { font-size: 12.5px; color: inherit; }
-  .ef-chip em.sp { color: var(--color-lav); }
   .answer > * { min-width: 0; }
   .answer {
     display: grid; gap: 16px; padding: 22px;
@@ -556,8 +445,6 @@
   .flow .up { color: var(--color-mint); }
   .dot { margin: 0 6px; color: var(--color-tx3); }
   .cr { font-size: 12px; color: var(--color-tx3); margin-left: 4px; }
-  .crd { font-size: 12px; color: var(--color-butter); }
-  .crd .dim { color: var(--color-tx3); }
 
   .chart { margin: 0; padding: 12px 14px; border-radius: var(--radius-md); background: var(--color-bg2); border: 1px solid var(--color-line); display: grid; gap: 6px; }
   .chart figcaption { font-size: 12.5px; font-weight: 600; color: var(--color-tx2); }
@@ -595,23 +482,7 @@
   .vs div b { font-size: 16px; color: var(--color-tx2); font-weight: 500; }
 
   h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-  h4 span { font-size: 11.5px; font-weight: 400; color: var(--color-tx3); margin-left: 6px; }
-  .note { margin: 0 0 10px; font-size: 12.5px; color: var(--color-tx2); background: var(--color-bg2); border-radius: 10px; padding: 10px 12px; line-height: 1.55; }
-  .note b { color: var(--color-tx); font-weight: 600; }
-  .tbl { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--color-line); }
-  table { width: 100%; min-width: 800px; border-collapse: collapse; font-size: 13px; }
-  th { font-weight: 500; font-size: 11.5px; color: var(--color-tx3); text-align: right; padding: 8px 10px; background: var(--color-bg2); white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; }
-  td { padding: 7px 10px; box-shadow: inset 0 1px 0 var(--color-line); text-align: right; white-space: nowrap; vertical-align: middle; }
-  .month td { background: var(--color-bg2); color: var(--color-tx3); font-size: 11.5px; padding: 5px 10px; white-space: normal; text-align: left; }
-  .month b { color: var(--color-tx2); font-weight: 600; }
-  .wk { cursor: pointer; transition: background .15s; }
-  .wk:hover td { background: color-mix(in oklab, var(--color-lav) 5%, transparent); }
-  .wk.sel td { background: color-mix(in oklab, var(--color-lav) 12%, transparent); }
-  .wk .d small { display: block; font-size: 10.5px; color: var(--color-lav); }
-  .parts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
   .ef-chip em { font-style: normal; font-size: 11px; color: var(--color-tx3); }
-  .wk :global(.nb) { width: 120px; margin-left: auto; }
   .good { color: var(--color-good); }
   .bad { color: var(--color-bad); }
 
@@ -625,40 +496,12 @@
   .usenote { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--color-tx2); }
   .usenote b { color: var(--color-tx); font-weight: 600; }
   .usenote .bad { color: var(--color-bad); }
-  td small.use { display: block; font-size: 10.5px; color: var(--color-tx3); font-family: var(--font-sans); }
 
-  /*
-   * 패드·폰: 주별 표를 주마다 카드로. 아홉 칸을 한 줄에 두면 화면을 넘어 '실제로 나감'이 잘린다.
-   *   9월 24일 주 · 이번 주              실제로 나감
-   *   충전 칩들
-   *   결제 | 할인 받음 | 판매 | 크레딧 | 낸 현금   (폰은 세 칸씩)
-   */
-  @media (max-width: 1032px) {
-    .tbl { border: 0; overflow: visible; }
-    table { min-width: 0; display: block; }
-    thead { display: none; }
-    tbody { display: grid; gap: 8px; }
-    tr { display: block; }
-    .month td { display: block; border-radius: 10px; padding: 8px 10px; box-shadow: none; }
-    .wk { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 10px; padding: 12px; border-radius: 12px; background: var(--color-bg2); border: 1px solid var(--color-line); }
-    .wk.sel { border-color: var(--color-lav); background: color-mix(in oklab, var(--color-lav) 12%, var(--color-bg2)); }
-    .wk td, .wk:hover td, .wk.sel td { padding: 0; box-shadow: none; background: none; text-align: left; white-space: normal; order: 4; }
-    .wk td[data-l]::before { content: attr(data-l); display: block; font-family: var(--font-sans); font-size: 10.5px; color: var(--color-tx3); }
-    .wk td.d { grid-column: span 4; order: 1; font-weight: 600; }
-    .wk .d small { display: inline; margin-left: 6px; }
-    .wk td.lo { grid-column: span 2; order: 2; text-align: right; font-size: 15px; }
-    .wk td.pt { grid-column: 1 / -1; order: 3; }
-    .parts { justify-content: flex-start; }
-    .wk :global(.nb) { margin-left: 0; }
-  }
   @media (max-width: 672px) {
     .answer { padding: 16px; }
     .big { font-size: 44px; }
     .route li { grid-template-columns: 26px 1fr; column-gap: 8px; }
     .answer :global(.ef-chip) { white-space: normal; flex-wrap: wrap; border-radius: 10px; }
-    .wk { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .wk td.d { grid-column: span 2; }
-    .wk td.lo { grid-column: span 1; }
   }
   /* 다른 루트 보기 */
   .link { appearance: none; border: 0; background: none; padding: 0; font: inherit; color: var(--color-lav); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
@@ -679,10 +522,7 @@
   .alt-num small { color: var(--color-tx3); }
   .alt .bad { color: var(--color-peach); }
   .alt .good { color: var(--color-mint); }
-  .alt .more { justify-self: start; font-size: 12px; }
-  .alt-all { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--color-tx2); padding: 6px 8px; border-radius: 8px; background: color-mix(in oklab, var(--color-lav) 6%, transparent); }
   .btn.sm { font-size: 12px; padding: 5px 10px; }
-  td.d small.swp { display: block; color: var(--color-lav); }
   @media (max-width: 672px) {
     .alt-main { grid-template-columns: 1fr auto; }
     .alt-main .alt-name { grid-column: 1 / -1; }

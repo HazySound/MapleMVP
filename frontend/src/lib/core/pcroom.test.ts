@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   anchor, applyCorrections, compare, mergeSaved, minutesOf, missing, notCounted, prune, restore,
 } from './pcroom'
-import { forecast } from './mvp'
+import { addDays, forecast } from './mvp'
 import { real } from '../../../test/private'
 
 // tests/test_pcroom.py와 같은 경우를 쓴다. 실제 인게임 툴팁(2026-09-24, 다이아)이 바탕이다.
@@ -250,5 +250,23 @@ describe('선물한 넥슨쇼핑 쿠폰(PC방이 섞인 주)', () => {
   })
   it('남는 것이 100원 단위가 아니면 막는다', () => {
     expect(notCounted(nine, shop, 877_350)).toBeNull()
+  })
+})
+
+/** 2026-10-16 사용자: 블랙에서 인게임이 수집보다 적어도 그만큼 이월로 쌓였으면 문제가 아니다 */
+describe('블랙 이월로 간 결제', () => {
+  const starts = Array.from({ length: 13 }, (_, i) => addDays('2026-07-09', i * 7))
+  const collected = [...Array(12).fill(200_000), 300_000]
+
+  it('기준을 넘긴 몫만큼 적으면 경고가 아니라 안내다', () => {
+    const g = compare([...Array(12).fill(200_000), 100_000], collected, starts, [], [], true).at(-1)!
+    expect(g.warn).toBe('')
+    expect(g.info).toContain('200,000원은 MVP 실적 대신 이월로 쌓였어요')
+  })
+
+  it('넘긴 몫보다 더 적으면 지금처럼 확인해 보라고 한다', () => {
+    const g = compare([...Array(12).fill(200_000), 50_000], collected, starts, [], [], true).at(-1)!
+    expect(g.warn).toContain('인게임이 수집보다 250,000원 적어요')
+    expect(g.info).toBeUndefined()
   })
 })

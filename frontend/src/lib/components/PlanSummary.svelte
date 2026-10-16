@@ -27,7 +27,7 @@
   const autoFirst = $derived(r && !r.error && r.auto && r.auto.firstAt != null ? r.timeline[r.auto.firstAt] ?? null : null)
   const later = $derived(!!(r && !r.error && r.auto && r.auto.firstAt != null && (r.firstAt == null || r.firstAt > r.auto.firstAt)))
   /** 0원으로 고정한 주(자동 계산이 그 주를 못 쓴다) */
-  const zeros = $derived(r && !r.error ? r.timeline.filter(w => w.fixed && w.amount === 0 && w.counts && !w.skipped) : [])
+  const zeros = $derived(r && !r.error ? r.timeline.filter(w => w.fixed && w.amount === 0 && w.counts) : [])
   const last = $derived(r?.timeline.at(-1))
   const reachedWeek = $derived(r?.reached != null ? r.timeline[r.reached] : null)
   const scope = $derived(planner.selected.length ? `선택한 ${planner.selected.length}주` : '모든 주')
@@ -182,14 +182,11 @@
     {/if}
 
     <div class="stats">
-      <!-- 이번 주에 결제할 수 있으면 이번 주 기준(인게임 '○○ 등급까지'와 같은 값). 목표 주가 뒤면 그사이 13주에서 빠지는 결제만큼 더 든다.
-           이번 주 결제를 막았으면 이번 주엔 달성할 수 없으니 목표 주 기준 -->
+      <!-- 이번 주에 결제할 수 있으면 이번 주 기준(인게임 '○○ 등급까지'와 같은 값). 목표 주가 뒤면 그사이 13주에서 빠지는 결제만큼 더 든다 -->
       <!-- 유지·낮춤 계획은 '필요한 금액'·'균등 분배'가 늘 0이라 뜻이 없다. 유지 결제 횟수와 가장 큰 한 번을 보여 준다 -->
       {#if mode !== 'reach' && k}
         <div class="st"><span>결제하는 주</span><b class="mono">{r.timeline.filter(w => w.offset > 0 && w.amount > 0).length}<small>주 · 고정 포함</small></b></div>
         <div class="st"><span>가장 큰 한 번</span><b class="mono">{won(Math.max(0, ...r.timeline.filter(w => w.offset > 0).map(w => w.amount)))}</b></div>
-      {:else if p.skipThisWeek}
-        <div class="st"><span>앞으로 필요한 금액</span><b class="mono" use:countup={r.required}>0</b></div>
       {:else}
         <div class="st"><span>이번 주 기준 필요한 금액</span><b class="mono" use:countup={nowNeed}>0</b>
           {#if r.required !== nowNeed}<em>목표 주({mdy(r.timeline.find(w => w.start <= p.date && p.date <= w.end)?.start ?? p.date, ref)}) 기준은 {won(r.required)}원{r.required > nowNeed ? ` (그사이 13주에서 ${won(r.required - nowNeed)}원이 빠져요)` : ''}</em>{/if}

@@ -176,13 +176,13 @@ describe('목표 계획', () => {
     const last13 = [0, 100_000, 100_000, 300_000, 100_000, 100_000, 100_000, 400_000, 100_000, 100_000, 100_000, 975_000, 20_000]
     const fixed = { 0: 0, 1: 0 }
     for (const keep of [{ every: 4, weeks: 8 }, null]) {
-      const p = plan(last13, BLACK, 1, fixed, false, 1000, keep, 50_000)
+      const p = plan(last13, BLACK, 1, fixed, 1000, keep, 50_000)
       expect(p.timeline[0].sum).toBe(2_495_000)
       expect(p.timeline[0].tier?.key).toBe('black')
       expect(p.timeline[1].tier?.key).toBe('black')
     }
     // 이월이 없으면 그대로 레드
-    expect(plan(last13, BLACK, 1, fixed, false, 1000, null, 0).timeline[0].tier?.key).toBe('red')
+    expect(plan(last13, BLACK, 1, fixed, 1000, null, 0).timeline[0].tier?.key).toBe('red')
   })
   describe('달성 뒤 유지', () => {
     // 지난 13주에 90만, 다음 주에 블랙을 찍고 유지
@@ -195,32 +195,32 @@ describe('목표 계획', () => {
       if (p.keep!.per > 0) {
         const pays = p.timeline.filter(w => w.keepPay).map(w => w.offset)
         const fixed = Object.fromEntries([[1, p.timeline[1].amount], ...pays.map(o => [o, p.keep!.per - unit])])
-        const q = plan(last13, BLACK, 1, fixed, true, unit, { every, weeks: 26 }, carry)
+        const q = plan(last13, BLACK, 1, { ...fixed, 0: 0 }, unit, { every, weeks: 26 }, carry)
         expect(q.timeline.slice(1).some(w => w.sum < BLACK.th)).toBe(true)
       }
     }
 
     it('어떤 주기·단위든 유지 기간 내내 블랙이고 더 줄일 수 없다', () => {
       for (const unit of [1000, 50_000]) for (let every = 1; every <= 12; every++)
-        tight(plan(last13, BLACK, 1, {}, true, unit, { every, weeks: 26 }), unit, 0, every)
+        tight(plan(last13, BLACK, 1, { 0: 0 }, unit, { every, weeks: 26 }), unit, 0, every)
     })
 
     it('기준을 넘긴 결제는 이월로만 가서(9/24 수정) 매주 유지는 250만/13쯤 든다', () => {
       // 버그 기간처럼 합계와 이월에 두 번 들면 절반으로 줄어 보인다. 고친 규칙에서는 그렇지 않다
-      const p = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 })
+      const p = plan(last13, BLACK, 1, { 0: 0 }, 1000, { every: 1, weeks: 26 })
       expect(p.keep!.per).toBeGreaterThanOrEqual(185_000)
       expect(p.keep!.per).toBeLessThanOrEqual(200_000)
     })
 
     it('유지 계획의 13주 합계에는 기준을 넘긴 몫이 들지 않는다', () => {
-      const p = plan(last13, BLACK, 1, { 1: 2_000_000 }, true, 1000, { every: 1, weeks: 26 })
+      const p = plan(last13, BLACK, 1, { 0: 0, 1: 2_000_000 }, 1000, { every: 1, weeks: 26 })
       // 1주 뒤 90만 + 200만 = 290만이지만 넘긴 40만은 이월로 가서 합계는 250만
       expect(p.timeline[1].sum).toBe(BLACK.th)
     })
 
     it('지금 가진 이월이 있으면 그만큼 덜 낸다', () => {
-      const a = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 }, 0)
-      const b = plan(last13, BLACK, 1, {}, true, 1000, { every: 1, weeks: 26 }, 1_000_000)
+      const a = plan(last13, BLACK, 1, { 0: 0 }, 1000, { every: 1, weeks: 26 }, 0)
+      const b = plan(last13, BLACK, 1, { 0: 0 }, 1000, { every: 1, weeks: 26 }, 1_000_000)
       expect(b.planned).toBeLessThan(a.planned)
       tight(b, 1000, 1_000_000, 1)
     })
@@ -228,8 +228,8 @@ describe('목표 계획', () => {
     it('목표일까지는 균등 분배 그대로, 유지는 그 뒤에 따로 (앞에 몰아 넣지 않는다)', () => {
       // 사용자 캡처: 이번 주까지 963,670, 7주 뒤(11/12 주) 블랙, 매주 26주 유지
       const now13 = [30_000, 0, 0, 0, 49_800, 0, 99_000, 0, 100_600, 10_000, 0, 69_600, 604_670]
-      const off = plan(now13, BLACK, 7, {}, true, 1000)
-      const on = plan(now13, BLACK, 7, {}, true, 1000, { every: 1, weeks: 26 })
+      const off = plan(now13, BLACK, 7, { 0: 0 }, 1000)
+      const on = plan(now13, BLACK, 7, { 0: 0 }, 1000, { every: 1, weeks: 26 })
       for (let o = 1; o <= 7; o++) expect(on.timeline[o].amount).toBe(off.timeline[o].amount)
       expect(on.keep!.per).toBeGreaterThan(150_000)
       expect(on.keep!.per).toBeLessThan(200_000)
@@ -237,7 +237,7 @@ describe('목표 계획', () => {
     })
 
     it('유지를 끄면 이월 없이 예전 그대로', () => {
-      const p = plan(last13, BLACK, 1, {}, true, 1000, null, 5_000_000)
+      const p = plan(last13, BLACK, 1, { 0: 0 }, 1000, null, 5_000_000)
       expect(p.timeline[1].amount).toBe(1_600_000)
       expect(p.keep).toBeNull()
     })
@@ -245,7 +245,7 @@ describe('목표 계획', () => {
     it('고정 금액 때문에 못 지키는 주를 알려 준다', () => {
       const fixed: Record<number, number> = { 1: 1_600_000 }
       for (let o = 2; o <= 27; o++) fixed[o] = 0
-      const p = plan(last13, BLACK, 1, fixed, true, 1000, { every: 1, weeks: 26 })
+      const p = plan(last13, BLACK, 1, { ...fixed, 0: 0 }, 1000, { every: 1, weeks: 26 })
       expect(p.keep!.blocked[0].offset).toBe(7)
       expect(p.keep!.blocked[0].missing).toBe(900_000)
     })
@@ -263,7 +263,7 @@ describe('목표 계획', () => {
       // 2026-10-05 사용자: 골드(879,670) 유지인데 매주 5만씩 내라고 해서 다이아가 됐다
       const GOLD = TIERS.find(t => t.key === 'gold')!
       const gold13 = [30_000, 26_420, 0, 2_100, 0, 40_000, 20_000, 0, 29_800, 39_800, 0, 467_850, 223_700]
-      const p = plan(gold13, GOLD, 0, {}, true, 50_000, { every: 1, weeks: 26, asNeeded: true })
+      const p = plan(gold13, GOLD, 0, { 0: 0 }, 50_000, { every: 1, weeks: 26, asNeeded: true })
       expect(p.keep!.asNeeded).toBe(true)
       expect(p.timeline.slice(1, 6).some(w => w.amount === 0)).toBe(true)   // 옛 결제만으로 되는 주는 안 낸다
       for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(GOLD.th)
@@ -276,7 +276,7 @@ describe('목표 계획', () => {
     it('블랙은 위가 없어 매주 같은 금액으로 고르게 낸다 (큰 결제가 빠지는 주에 몰리지 않는다)', () => {
       // 2026-10-05 사용자: 0, 0, 150만처럼 몰렸다. 넘친 몫은 이월로 쌓였다가 모자라는 목요일에 채워진다
       const lumpy = [0, 0, 1_500_000, 0, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 200_000, 200_000]
-      const p = plan(lumpy, BLACK, 0, {}, true, 10_000, { every: 1, weeks: 12, asNeeded: true })
+      const p = plan(lumpy, BLACK, 0, { 0: 0 }, 10_000, { every: 1, weeks: 12, asNeeded: true })
       const pays = p.timeline.slice(1).map(w => w.amount)
       for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(BLACK.th)
       expect(Math.max(...pays)).toBeLessThan(1_500_000)
@@ -286,7 +286,7 @@ describe('목표 계획', () => {
     })
 
     it('같은 등급: 날짜와 상관없이 지금부터 유지, 달성 금액은 0', () => {
-      const p = plan(last13, BLACK, 0, {}, false, 1000, { every: 1, weeks: 12 })
+      const p = plan(last13, BLACK, 0, {}, 1000, { every: 1, weeks: 12 })
       expect(p.required).toBe(0)
       for (const w of p.timeline) expect(w.sum).toBeGreaterThanOrEqual(BLACK.th)
       expect(p.keep!.per).toBeGreaterThan(0)
@@ -296,12 +296,12 @@ describe('목표 계획', () => {
     it('더 낮은 등급: 내려가는 주 전까지는 블랙, 그 주부터 레드 기준', () => {
       const RED = TIERS.find(t => t.key === 'red')!
       const until = 4
-      const p = plan(last13, RED, 0, {}, false, 1000, { every: 1, weeks: 12 }, 0, { th: BLACK.th, until })
+      const p = plan(last13, RED, 0, {}, 1000, { every: 1, weeks: 12 }, 0, { th: BLACK.th, until })
       expect(p.hold).toEqual({ th: BLACK.th, until })
       for (let o = 0; o < until; o++) expect(p.timeline[o].sum).toBeGreaterThanOrEqual(BLACK.th)
       for (let o = until; o <= 12; o++) expect(p.timeline[o].sum).toBeGreaterThanOrEqual(RED.th)
       // 레드로 내려간 뒤에는 블랙을 지킬 때보다 덜 낸다
-      const black = plan(last13, BLACK, 0, {}, false, 1000, { every: 1, weeks: 12 })
+      const black = plan(last13, BLACK, 0, {}, 1000, { every: 1, weeks: 12 })
       expect(p.planned).toBeLessThan(black.planned)
       expect(p.keep!.blocked).toEqual([])
       // 내려간 뒤 유지 금액은 블랙 때보다 적다
@@ -312,7 +312,7 @@ describe('목표 계획', () => {
       const RED = TIERS.find(t => t.key === 'red')!
       const fixed: Record<number, number> = {}
       for (let o = 1; o <= 12; o++) fixed[o] = 0
-      const p = plan(last13, RED, 0, fixed, true, 1000, { every: 1, weeks: 12 }, 0, { th: BLACK.th, until: 2 })
+      const p = plan(last13, RED, 0, { ...fixed, 0: 0 }, 1000, { every: 1, weeks: 12 }, 0, { th: BLACK.th, until: 2 })
       expect(p.keep!.blocked.length).toBeGreaterThan(0)
       // 첫 끊기는 주는 블랙 기준인 1주 뒤(20만 빠져 240만 < 250만)
       expect(p.keep!.blocked[0].offset).toBe(1)
@@ -359,20 +359,5 @@ describe('목표 계획', () => {
     expect(p.weeksCount).toBe(13)
     expect(p.timeline[0].counts).toBe(false)
     expect(p.fixedSum).toBe(0)
-  })
-
-  it('이번 주를 건너뛸 수 있다', () => {
-    const last13 = [...Array(12).fill(0), 100_000]
-    let p = plan(last13, BLACK, 3, { 0: 500_000 }, true)
-    expect(p.weeksCount).toBe(3)
-    expect(p.fixedSum).toBe(0)
-    expect(p.equalPer).toBe(800_000)
-    expect(p.autoPer).toBe(800_000)
-    expect(p.timeline[0].amount).toBe(0)
-    expect(p.timeline[0].skipped).toBe(true)
-    expect(p.timeline[0].sum).toBe(100_000)
-    p = plan(last13, BLACK, 0, {}, true)
-    expect(p.weeksCount).toBe(0)
-    expect(p.shortfall).toBe(2_400_000)
   })
 })

@@ -82,10 +82,10 @@
           <span class="wk">
             <b>{w.offset === 0 ? '이번 주' : `${w.offset}주 뒤`}</b>
             <span class="mono">{md(w.start)} – {md(w.end)}</span>
-            {#if w.offset === 0 && r.spentThisWeek}<em>이미 {won(r.spentThisWeek)}원 결제</em>{/if}
+            {#if w.offset === 0 && r.spentThisWeek}<em>이미 {won(r.spentThisWeek)}원 냄 · {w.amount ? `${won(w.amount)}원 더` : '목표 채움'}</em>{/if}
             {#if short.has(w.offset)}<em class="miss">{tierName(d.tiers, goalAt(w))} 기준에 {won(short.get(w.offset)!)}원 모자라요</em>{/if}
-            {#if w.fixed && w.amount === 0 && !w.skipped}<em class="zero">0원 고정</em>{/if}
-            {#if w.skipped}<em>추가 결제 없음으로 설정됨</em>{:else if w.keep}{#if w.keepPay}<em class="kp">{w.amount || w.fixed ? '유지 결제' : '결제 없이 유지'}</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{#if goal}{@const g = goalAt(w)}{@const up = tierRank(w.thu) >= tierRank(g)}<em class="thu" class:down={!up}>{up
+            {#if w.fixed && w.amount === 0}<em class="zero">0원 고정</em>{/if}
+            {#if w.keep}{#if w.keepPay}<em class="kp">{w.amount || w.fixed ? '유지 결제' : '결제 없이 유지'}</em>{:else if !w.fixed}<em>결제 없는 주</em>{/if}{#if w.carryUsed}<em class="cy">이월 +{won(w.carryUsed)}</em>{/if}{#if goal}{@const g = goalAt(w)}{@const up = tierRank(w.thu) >= tierRank(g)}<em class="thu" class:down={!up}>{up
                 ? (r.mode === 'hold' && tierRank(w.tier) > tierRank(g)
                   ? `지금 결제가 남아 ${tierName(d.tiers, w.tier)} · ${tierName(d.tiers, g)} 기준은 넘어요`
                   : `목요일에도 ${tierName(d.tiers, g)} 유지${w.keepPay ? ' · 다음 주를 위한 결제' : ''}`)
@@ -93,19 +93,17 @@
           </span>
           <span class="num">
             <input class="amt mono" class:locked={w.fixed} class:zero={w.fixed && w.amount === 0} type="text" inputmode="numeric" disabled={!w.counts}
-              value={editing === w.start ? draft : w.amount.toLocaleString('ko-KR')}
-              onfocus={e => { begin(w.start, w.fixed ? w.amount : 0); e.currentTarget.select() }}
+              value={editing === w.start ? draft : w.goal.toLocaleString('ko-KR')}
+              onfocus={e => { begin(w.start, w.fixed ? w.goal : 0); e.currentTarget.select() }}
               oninput={e => (draft = e.currentTarget.value)}
               onblur={() => commit(w.start)}
               onkeydown={e => e.key === 'Enter' && e.currentTarget.blur()}
-              placeholder={won(w.amount)} aria-label="{md(w.start)} 주 결제 금액" />
+              placeholder={won(w.goal)} aria-label="{md(w.start)} 주 결제 금액" />
           </span>
           <span>
-            <button class="lock" class:locked={w.fixed} disabled={!w.counts} onclick={() => toggleLock(w.start, w.amount)}
+            <button class="lock" class:locked={w.fixed} disabled={!w.counts} onclick={() => toggleLock(w.start, w.goal)}
               use:tip={w.fixed ? '자동 분배로 되돌리기' : '이 금액으로 고정'}>
-              {#if w.skipped}
-                제외
-              {:else if w.fixed}
+              {#if w.fixed}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>고정
               {:else}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>자동

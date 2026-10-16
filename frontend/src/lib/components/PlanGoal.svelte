@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../store.svelte'
-  import { KEEP_DEFAULT, planner, setDate, setHoldCur, setKeep, setSkipThisWeek, setTarget, setUnit } from '../plan.svelte'
+  import { KEEP_DEFAULT, planner, setDate, setHoldCur, setKeep, setTarget, setUnit } from '../plan.svelte'
   import { TIER_COLOR, TIER_INK_VAR, TIER_VAR, addDays, eul, eun, iga, md, mdw, ro, spotlight, won } from '../format'
 
   const d = $derived(app.data!)
@@ -67,15 +67,6 @@
     </select>
   </label>
 
-  <label class="toggle" for="skip-week">
-    <input id="skip-week" type="checkbox" checked={p.skipThisWeek} onchange={e => setSkipThisWeek(e.currentTarget.checked, d.thisWeek)} />
-    <span class="sw" aria-hidden="true"></span>
-    <span class="tx">
-      <b>이번 주는 더 결제하지 않음</b>
-      <small>{r && !r.error ? `이미 결제한 ${won(r.spentThisWeek)}원만 반영하고, 다음 주부터 나눠요` : '다음 주부터 나눠요'}</small>
-    </span>
-  </label>
-
   <!-- 유지 계획(keep·hold)에서는 유지가 곧 계획이라 끌 수 없다. 스위치는 켜진 채로 보여만 준다 -->
   <label class="toggle" for="keep-on" class:held={mode !== 'reach'}>
     <input id="keep-on" type="checkbox" checked={keep.on || mode !== 'reach'} disabled={mode !== 'reach'} onchange={e => setKeep({ on: e.currentTarget.checked })} />
@@ -109,8 +100,7 @@
       <div><span>실제로 {tierName}{iga(tierName)} 되는 주</span><b class="mono">{firstWeek ? `${mdw(firstWeek.start, d.thisWeek)}부터` : r && !r.error ? '유지 기간 안에는 안 돼요' : '-'}</b></div>
     {/if}
     {#if r && !r.error}
-      {#if mode === 'reach'}<div><span>결제를 나눌 주</span><b>{r.weeksCount}주{#if p.skipThisWeek} <em>(이번 주 제외)</em>{/if}{#if r.timeline.some(w => !w.counts && !w.skipped)} <em>(그 전 결제는 목표일 전에 빠져요)</em>{/if}</b></div>{/if}
-      <div><span>이번 주 이미 결제</span><b class="mono">{won(r.spentThisWeek)}원</b></div>
+      {#if mode === 'reach'}<div><span>결제를 나눌 주</span><b>{r.weeksCount}주{#if r.timeline.some(w => !w.counts)} <em>(그 전 결제는 목표일 전에 빠져요)</em>{/if}</b></div>{/if}
     {/if}
   </div>
   {#if (keep.on || mode !== 'reach') && (d.carry > 0 || p.target === 'black')}

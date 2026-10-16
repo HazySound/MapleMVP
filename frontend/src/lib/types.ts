@@ -1,4 +1,4 @@
-import type { buildState, makePlan, simulate } from './core/engine'
+import type { Done, Frozen, buildState, makePlan, simulate } from './core/engine'
 import type { Row as CoreRow, TierKey as CoreTierKey } from './core/mvp'
 
 export type TierKey = CoreTierKey
@@ -110,12 +110,20 @@ export interface HistoryPage {
 
 /** 목표 계획 입력. fixed는 주 시작일(목) → 직접 정한 결제 금액 */
 export interface PlanInput {
-  target: TierKey; date: string; fixed: Record<string, number>; skipThisWeek: boolean
+  target: TierKey; date: string; fixed: Record<string, number>
   /** 달성 뒤에도 등급 유지: 몇 주마다 결제할지, 목표 주 뒤 몇 주 동안 */
   keep?: { on: boolean; every: number; weeks: number }
   /** 자동으로 나누는 금액의 단위(원). 없으면 1,000원 */
   unit?: number
   /** 지금보다 낮은 등급으로 낮출 때 지금 등급을 date가 든 주까지 지킨다. 없거나 false면 바로 낮춘다 */
   holdCur?: boolean
+  /**
+   * 세워 둔 계획: 주 시작일 → 그 주 목표 금액(이번 주는 이미 낸 금액 포함). from은 그때의 이번 주.
+   * 결제해도 다시 나누지 않고 낸 만큼 이번 주 목표에서 뺀다. 목요일이 지나면 지난 주를 판정해 history로 옮긴다.
+   * ack: 이번 주 초과분 중 '그대로 두기'를 고른 금액. over: 지난 주들에서 넘겨받은, 아직 정하지 않은 초과분
+   */
+  frozen?: Frozen
+  /** 지난 주 결과(오래된 주 → 최근 주). 목표·낸 금액·그 주가 끝났을 때 등급 */
+  history?: Done[]
 }
 

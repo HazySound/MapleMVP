@@ -204,7 +204,6 @@ export interface PlanWeek {
   amount: number
   fixed: boolean
   counts: boolean
-  skipped: boolean
   sum: number
   tier: Tier | null
   drop: number
@@ -285,7 +284,7 @@ export interface PlanResult {
  * 이월로만 가고(CARRY_FIX), 목요일 갱신에서 모자라면 꺼내 그 주 금액으로 채운다.
  */
 export function plan(last13: number[], target: Tier, t: number, fixed: Record<number, number>,
-                     skipThisWeek = false, unit = 1000, keep: KeepOpt | null = null, carry = 0,
+                     unit = 1000, keep: KeepOpt | null = null, carry = 0,
                      hold: HoldOpt | null = null): PlanResult {
   // 주마다 지켜야 할 기준. 지금 등급이 목표보다 높으면 내려가는 주 전까지는 지금 등급 기준이다
   const thAt = (o: number) => (hold && o < hold.until ? hold.th : target.th)
@@ -293,7 +292,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
   const split = hold ? hold.until : Infinity
   const first = Math.max(0, t - (WINDOW - 1))      // 목표 주의 13주 안에 드는 첫 계획 주
   const weeks: number[] = []
-  for (let o = first; o <= t; o++) if (!(skipThisWeek && o === 0)) weeks.push(o)
+  for (let o = first; o <= t; o++) weeks.push(o)
   const end = keep ? t + keep.weeks : t
   const pays = keep ? Array.from({ length: Math.floor(keep.weeks / keep.every) }, (_, k) => t + (k + 1) * keep.every) : []
 
@@ -465,7 +464,7 @@ export function plan(last13: number[], target: Tier, t: number, fixed: Record<nu
     timeline.push({
       offset: o, amount: amounts[o] ?? 0, fixed: o in fx,
       counts: isKeep ? pays.includes(o) || o in fx : weeks.includes(o),
-      skipped: skipThisWeek && o === 0, sum: s, tier: shown ? shown.tiers[o] : tierOf(s), drop,
+      sum: s, tier: shown ? shown.tiers[o] : tierOf(s), drop,
       keep: isKeep, keepPay: pays.includes(o), carryUsed: sim?.used[o] ?? 0, thu: shown ? shown.thu[o] : null,
     })
   }

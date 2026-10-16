@@ -1,19 +1,19 @@
 <script lang="ts">
-  /** 1. 얼마나 결제할까 — 목표 계획이 있으면 그대로, 없으면 금액 한 번 */
+  /** 1. 얼마나 결제할까 — 목표 계획이 있으면 이번 주에 더 낼 금액, 없으면 금액 한 번 */
   import NumBox from './NumBox.svelte'
   import { app } from '../store.svelte'
-  import { planner } from '../plan.svelte'
-  import { eff, planWeeks, saveEff } from '../eff.svelte'
+  import { planner, weekNow } from '../plan.svelte'
+  import { eff, saveEff } from '../eff.svelte'
   import { TIER_INK_VAR, won } from '../format'
 
   const d = $derived(app.data!)
-  const pw = $derived(planWeeks(d, planner.result))
-  const usePlan = $derived(!!pw && eff.usePlan)
+  const planOk = $derived(!!planner.result && !planner.result.error)
+  const usePlan = $derived(planOk && eff.usePlan)
+  const n = $derived(planOk ? weekNow() : null)
   const tier = $derived(planner.input ? d.tiers.find(t => t.key === planner.input!.target) : null)
   const sum13 = $derived(d.weeks.reduce((a, w) => a + w.amount, 0))
   const curName = $derived(d.tiers.find(t => t.key === d.current)?.name ?? '등급 없음')
   const md = (iso: string) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`
-  const same = $derived(pw && pw.every(w => w.amount === pw[0].amount))
 
   /** 지금보다 높은 등급까지 지금 당장 더 필요한 금액 */
   const quick = $derived(d.tiers.filter(t => d.needNow[t.key] > 0).map(t => ({ key: t.key, name: t.name, v: d.needNow[t.key] })))
@@ -24,23 +24,23 @@
 <article class="card">
   <h3 class="card-title"><span class="n">1</span>얼마나 결제할까</h3>
 
-  {#if pw}
+  {#if planOk}
     <div class="ef-seg mode" role="group" aria-label="결제 금액 정하는 방법">
       <button aria-pressed={usePlan} onclick={() => { eff.usePlan = true; saveEff() }}>목표 계획대로</button>
       <button aria-pressed={!usePlan} onclick={() => { eff.usePlan = false; saveEff() }}>금액 직접</button>
     </div>
   {/if}
 
-  {#if usePlan && pw && tier}
+  {#if usePlan && n && tier}
     <div class="plan" style="--ink:{TIER_INK_VAR[tier.key]}">
-      <span class="from">목표 계획에서 가져옴</span>
+      <span class="from">목표 계획에서 가져옴 · 이번 주만</span>
       <span class="goal">{#if planner.result?.mode === 'keep'}<b>{tier.name}</b> 유지{:else if planner.result?.mode === 'hold'}<b>{tier.name}</b> {md(planner.input!.date)}부터 유지{:else}<b>{tier.name}</b> {md(planner.input!.date)}까지{/if}</span>
       <span class="amt">
-        {#if same}매주 <b class="mono">{won(pw[0].amount)}원</b> · {pw.length}주{:else}{pw.length}주에 나눠서{/if}
-        · 합계 <b class="mono">{won(pw.reduce((a, w) => a + w.amount, 0))}원</b>
+        이번 주 목표 <b class="mono">{won(n.goal)}원</b> · 낸 금액 <b class="mono">{won(n.paid)}원</b>
+        → {#if n.left}더 낼 금액 <b class="mono">{won(n.left)}원</b>{:else}더 낼 금액 없음{/if}
       </span>
     </div>
-    <p class="ef-hint">주별 금액과 충전 조합은 맨 아래 결론의 주별 표에 나와요. 금액을 바꾸려면 목표 계획 탭에서.</p>
+    <p class="ef-hint">다음 주 금액은 목요일에 다음 주로 넘어가면 여기서 계산해요. 금액을 바꾸려면 목표 계획 탭에서.</p>
   {:else}
     {#if quick.length}
       <div class="quick">
@@ -54,7 +54,7 @@
     <div class="ef-field">
       <label for="eff-amount">결제할 금액</label>
       <NumBox id="eff-amount" label="결제할 금액" unit="원" placeholder="예: 300,000" value={eff.amount} set={v => { eff.amount = v; saveEff() }} />
-      <span class="ef-hint">지금 13주 합계 {won(sum13)}원({curName}) 기준이에요.{#if !pw} 목표 계획을 세우면 주마다 나눠서 계산해요. <button class="link" onclick={() => (app.view = 'plan')}>목표 계획 세우기</button>{/if}</span>
+      <span class="ef-hint">지금 13주 합계 {won(sum13)}원({curName}) 기준이에요.{#if !planOk} 목표 계획을 세우면 이번 주에 낼 금액으로 계산해요. <button class="link" onclick={() => (app.view = 'plan')}>목표 계획 세우기</button>{/if}</span>
     </div>
   {/if}
 </article>

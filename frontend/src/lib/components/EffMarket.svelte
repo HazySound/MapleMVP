@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * 3. 시세 — 엄 시세(와 그 판매 수수료), 메소마켓은 직접.
-   * 경매장 수수료는 계획을 따를 때만 '자동'(주마다 사는 순간 오를 등급)이 있고,
+   * 경매장 수수료는 계획을 따를 때만 '자동'(사는 순간 오를 등급)이 있고,
    * 금액을 직접 정할 때는 사용자가 3%·5% 중에 고른다.
    */
   import NumBox from './NumBox.svelte'
@@ -49,8 +49,8 @@
         <button aria-pressed={eff.feeOverride === 0.05} onclick={() => setFee(0.05)}>5%</button>
       </div>
       <span class="ef-hint">
-        {#if eff.feeOverride == null}<b>자동</b> · 주마다 사는 순간 오를 등급으로 정해요. 이번 주는 {tierName} → {Math.round(auto * 100)}%
-        {:else}<b>직접 정함</b> · 모든 주를 {Math.round(eff.feeOverride * 100)}%로 계산해요{/if}
+        {#if eff.feeOverride == null}<b>자동</b> · 사는 순간 오를 등급으로 정해요. 이번 주는 {tierName} → {Math.round(auto * 100)}%
+        {:else}<b>직접 정함</b> · {Math.round(eff.feeOverride * 100)}%로 계산해요{/if}
       </span>
     {:else}
       <div class="ef-seg" role="group" aria-label="경매장 수수료">

@@ -30,6 +30,13 @@ export interface Base {
   last13: number[]          // 보정까지 더한 금액 (13주)
   /** 그 주 목요일 갱신에서 꺼내 쓴 이월 (13주). 그 금액이 그 주 사용 금액으로 채워진다 */
   used13: number[]
+  /**
+   * 주마다 목표 계획에 낸 것으로 치는 금액(13주): 구매내역 + 보정. 블랙인 주에서 인게임이 수집보다 적으면(기준을 넘긴 몫이
+   * 이월로만 갔다) 이월에 쌓였으니 구매한 금액 그대로 낸 것으로 친다(2026-10-16 사용자: 이월은 마일리지처럼 쌓여 있다)
+   */
+  paid13: number[]
+  /** 그 주가 끝났을 때(이번 주는 지금) 등급 (13주) */
+  tier13: (Tier | null)[]
   carry: number
   weekStartTier: Tier | null
   current: Tier | null
@@ -67,15 +74,19 @@ export function buildBase(rows: Row[], saved: Record<string, number> = {},
   // PC방 반영액은 구매내역에 안 잡혀서, 사용자가 확인해 준 값을 여기서 더한다
   const amounts = applyCorrections(purchases, allStarts, saved)
   // 이월은 구매내역만으로는 13주 밖 PC방만큼 어긋날 수 있다. 인게임에서 본 값이 있으면 그걸 믿는다
-  const { tier: weekStartTier, carry, weeks, used } = replay(amounts, fixedOf(allStarts, saved), allStarts,
+  const { tier: weekStartTier, carry, weeks, used, held } = replay(amounts, fixedOf(allStarts, saved), allStarts,
                                                              { anchor: anchorOf(allStarts, saved) })
   const last13 = weeks.slice(-WINDOW)
+  const tiers = weeks.map((_, k) => grade(weeks.slice(Math.max(0, k - WINDOW + 1), k + 1).reduce((a, x) => a + x, 0), held[k]).tier)
+  const paid = amounts.map((a, k) => Math.max(0, tiers[k] === BLACK && a < purchases[k] ? purchases[k] : a))
   return {
     today, thisWeek,
     starts: allStarts.slice(-WINDOW),
     purchases: purchases.slice(-WINDOW),
     last13, carry, weekStartTier,
     used13: used.slice(-WINDOW),
+    paid13: paid.slice(-WINDOW),
+    tier13: tiers.slice(-WINDOW),
     current: tierNow(last13, carry),
     saved, rows,
   }
@@ -404,10 +415,15 @@ export type PlanMode = 'reach' | 'keep' | 'hold'
  * holdCur: 낮춰서 유지할 때 지금 등급을 dateIso가 든 주까지 지킨다(그다음 주부터 목표 등급). 끄면 바로 낮춘다.
  * 2026-10-12 문의: '이 날짜부터 골드'를 '그때 골드가 된다'로 읽었다. 기준이 바뀌는 날일 뿐이고, 옛 결제가 남은 동안은 위 등급으로 보인다.
  * 그래서 기본은 바로 낮추고, 실제로 목표 등급이 되는 주(firstAt)와 결제 없이 내려가는 흐름(decay)을 같이 낸다
+ *
+ * fixed·pins의 이번 주 금액은 그 주 전체 목표(이미 낸 금액 포함)다. 이미 낸 만큼(paid13)을 빼고 남은 금액만 더 낸다.
+ * 전에는 이번 주 고정 금액이 '추가분'이라, 고정한 뒤 결제하면 그 금액이 두 번 잡혔다.
+ * pins: 세워 둔 계획의 주별 금액(사용자가 정한 고정이 아니다). 계산에서는 고정처럼 묶지만 화면에는 자동으로 보인다.
+ * 계획을 세운 뒤 결제해도 목표가 다시 나뉘지 않게 한다(2026-10-16 사용자: 목표는 세운 그대로, 낸 만큼 이번 주 목표에서 빠지게)
  */
 export function makePlan(b: Base, target: TierKey, dateIso: string,
-                         fixed: Record<string, number>, skipThisWeek: boolean, keep: KeepOpt | null = null, unit = 1000,
-                         holdCur = false) {
+                         fixed: Record<string, number>, keep: KeepOpt | null = null, unit = 1000,
+                         holdCur = false, pins: Record<string, number> = {}) {
   const tAt = Math.round((Date.parse(weekStart(dateIso)) - Date.parse(b.thisWeek)) / (7 * 864e5))
   const tier = TIERS.find(x => x.key === target)!
   // 지금 등급 이하를 고르면 '달성'할 것이 없다. 전에는 날짜까지 손 놓고 기준에 턱걸이하는 계획이 나왔다.
@@ -418,16 +434,22 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
   if (useDate && tAt < 0) return { error: '목표 날짜는 오늘 이후여야 해요.' }
   const t = mode === 'reach' ? tAt : 0
   const hold = mode === 'hold' && holdCur ? { th: b.current!.th, until: tAt + 1 } : null
+  const paid = b.paid13[b.paid13.length - 1]
+  const offsetOf = (iso: string) => Math.round((Date.parse(iso) - Date.parse(b.thisWeek)) / (7 * 864e5))
   const toOffsets = (f: Record<string, number>) => {
     const out: Record<number, number> = {}
-    for (const [k, v] of Object.entries(f)) out[Math.round((Date.parse(k) - Date.parse(b.thisWeek)) / (7 * 864e5))] = Number(v)
+    for (const [k, v] of Object.entries(f)) {
+      const o = offsetOf(k)
+      out[o] = o === 0 ? Math.max(0, Number(v) - paid) : Number(v)
+    }
     return out
   }
   // 유지를 켜면 지금 이월도 주마다 따라간다. 안 켜도 등급 칸은 이월로 채워 매긴다
   // 유지·내려가기 계획은 결제 주마다 모자라는 만큼만 낸다. 같은 금액을 매주 내면 옛 결제가 남은 앞쪽 주에서 한 단계 위로 올라간다
   const k = keep && mode !== 'reach' ? { ...keep, asNeeded: true } : keep
-  const run = (f: Record<string, number>, tg: Tier, h: typeof hold) => planCalc(b.last13, tg, t, toOffsets(f), skipThisWeek, unit, k, b.carry, h)
-  const p = run(fixed, tier, hold)
+  const run = (f: Record<string, number>, tg: Tier, h: typeof hold) => planCalc(b.last13, tg, t, toOffsets(f), unit, k, b.carry, h)
+  const own = new Set(Object.keys(fixed).map(offsetOf))
+  const p = Object.keys(pins).length ? asAuto(run({ ...pins, ...fixed }, tier, hold), own, hold) : run(fixed, tier, hold)
   const rank = (x: Tier | null) => (x ? TIERS.indexOf(x) : -1)
   /** 그 계획에서 목표 등급이 실제로 되는(낮출 때는 목표 등급까지 내려오는) 첫 주. 달성은 목표 등급 이상이 되는 첫 주 */
   const firstAt = (q: ReturnType<typeof planCalc>) => {
@@ -438,7 +460,7 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
   // 고정한 금액이 있으면 '모두 자동으로 짰다면'을 같이 낸다. 고정 때문에 더 내거나 목표 등급이 늦어지는 걸 알려 준다
   const auto = Object.keys(fixed).length ? run({}, tier, hold) : null
   // 낮출 때는 '지금 등급을 같은 기간 계속 지켰다면'의 금액을 같이 낸다(낮추면 얼마 아끼는지). 고정 없이 견준다
-  const stay = mode === 'hold' ? planCalc(b.last13, b.current!, 0, {}, skipThisWeek, unit, k, b.carry, null) : null
+  const stay = mode === 'hold' ? planCalc(b.last13, b.current!, 0, {}, unit, k, b.carry, null) : null
   // 결제를 더 안 하면 언제 몇 등급으로 내려가는지(목요일 갱신마다)
   const decay: { start: string; tier: TierKey | null }[] = []
   let prevTier: TierKey | null = key(b.current)
@@ -458,9 +480,68 @@ export function makePlan(b: Base, target: TierKey, dateIso: string,
     stay: stay && { planned: stay.planned, short: shortOf(stay) },
     timeline: p.timeline.map(w => {
       const start = addDays(b.thisWeek, w.offset * 7)
-      return { ...w, start, end: addDays(start, 6), tier: key(w.tier), thu: w.thu ? key(w.thu) : null }
+      // 그 주 목표. 이번 주는 이미 낸 금액까지 친 전체(정해 둔 금액이 있으면 그 금액, 아니면 낸 금액 + 더 낼 금액)
+      const goal = w.offset === 0 ? fixed[start] ?? pins[start] ?? paid + w.amount : w.amount
+      return { ...w, start, end: addDays(start, 6), tier: key(w.tier), thu: w.thu ? key(w.thu) : null, goal }
     }),
-    spentThisWeek: b.last13[b.last13.length - 1],
+    /** 이번 주에 이미 낸 금액(구매내역 + 보정, 블랙이면 이월로 간 몫 포함)과 그중 구매내역 */
+    spentThisWeek: paid,
+    boughtThisWeek: b.purchases[b.purchases.length - 1],
+  }
+}
+
+/** 세워 둔 계획. 주 시작일 → 그 주 목표 금액. from은 그때의 이번 주. ack: 이번 주 초과분 중 그대로 두기로 한 금액, over: 넘겨받은 초과분 */
+export interface Frozen { from: string; weeks: Record<string, number>; ack?: number; over?: number }
+export interface Done { start: string; goal: number; paid: number; tier: TierKey | null }
+
+/**
+ * 목요일이 지났다: 세워 둔 계획의 지난 주를 그 주에 낸 금액(paid13)과 견줘 history로 옮긴다.
+ * 못 채운 주가 있으면 frozen = null(남은 주에 다시 나눠야 한다. 반드시 반영, 2026-10-16 사용자).
+ * 더 낸 금액은 over로 넘겨 반영할지 사용자가 고르게 한다. 그대로 두기로 한 금액(ack)은 빼고 센다
+ */
+export function rollPlan(b: Base, f: Frozen, history: Done[], keepN = WINDOW): { frozen: Frozen | null; history: Done[] } {
+  const weeks = { ...f.weeks }
+  const hist = [...history]
+  let short = false, over = f.over ?? 0
+  for (const s of Object.keys(weeks).sort()) {
+    if (s >= b.thisWeek) continue
+    const goal = weeks[s]
+    delete weeks[s]
+    const i = b.starts.indexOf(s)
+    if (i < 0 || s < f.from) continue
+    const paid = b.paid13[i]
+    if (goal || paid) hist.push({ start: s, goal, paid, tier: key(b.tier13[i]) })
+    if (paid < goal) short = true
+    else over += Math.max(0, paid - goal - (s === f.from ? f.ack ?? 0 : 0))
+  }
+  return { frozen: short ? null : { from: b.thisWeek, weeks, ...(over ? { over } : {}) }, history: hist.slice(-keepN) }
+}
+
+/**
+ * 묶어 둔 금액(pins)은 계산에서 고정처럼 쓰였지만 사용자가 고정한 것이 아니다. 화면의 고정 표시와
+ * '정한 금액 · 자동 나눔' 숫자는 사용자가 고정한 주(own)로만 다시 센다
+ */
+function asAuto(p: ReturnType<typeof planCalc>, own: Set<number>, hold: { until: number } | null): ReturnType<typeof planCalc> {
+  const timeline = p.timeline.map(w => ({ ...w, fixed: own.has(w.offset) }))
+  const reach = timeline.filter(w => !w.keep && w.counts)
+  const free = reach.filter(w => !w.fixed)
+  // 이번 주는 이미 낸 만큼 빠져 다른 주와 금액이 다르다. 다음 주부터의 금액을 '매주' 금액으로 본다
+  const later = free.filter(w => w.offset > 0)
+  const max = (ws: typeof timeline) => Math.max(0, ...ws.map(w => w.amount))
+  const pays = timeline.filter(w => w.keepPay && !w.fixed)
+  const split = hold ? hold.until : Infinity
+  return {
+    ...p,
+    timeline,
+    fixedSum: reach.filter(w => w.fixed).reduce((a, w) => a + w.amount, 0),
+    autoCount: free.length,
+    autoPer: max(later.length ? later : free),
+    keep: p.keep && {
+      ...p.keep,
+      per: max(pays.filter(w => w.offset < split)),
+      perAfter: hold ? max(pays.filter(w => w.offset >= split)) : max(pays.filter(w => w.offset < split)),
+      count: p.keep.asNeeded ? pays.filter(w => w.amount > 0).length : pays.length,
+    },
   }
 }
 

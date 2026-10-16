@@ -20,6 +20,7 @@
   import PlanGoal from './lib/components/PlanGoal.svelte'
   import PlanSummary from './lib/components/PlanSummary.svelte'
   import PlanTable from './lib/components/PlanTable.svelte'
+  import PlanWeekNow from './lib/components/PlanWeekNow.svelte'
   import QnaView from './lib/components/QnaView.svelte'
   import ResizeHandles from './lib/components/ResizeHandles.svelte'
   import Simulator from './lib/components/Simulator.svelte'
@@ -62,7 +63,7 @@
           <!-- 목표 카드는 이 영역 안에서만 따라 내려오고, 차트 앞에서 멈춘다 -->
           <div class="c12 plan-top">
             <div class="side"><PlanGoal /></div>
-            <div class="main"><PlanSummary /><PlanTable /></div>
+            <div class="main"><PlanWeekNow /><PlanSummary /><PlanTable /></div>
           </div>
           <div class="c12"><PlanChart /></div>
         </div>

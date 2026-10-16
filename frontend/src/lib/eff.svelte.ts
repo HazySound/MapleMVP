@@ -143,8 +143,6 @@ interface Saved {
   keep: RouteSet
   /** 주 시작일 → 그 주에만 바꿔 끼운 루트 종류 */
   weekRoute: Record<string, RouteKind>
-  /** 모든 주에 건 루트 종류. 주마다 바꾼 것이 있으면 그것이 먼저다 */
-  allRoute: RouteKind | null
 }
 
 function fresh(): Saved {
@@ -156,7 +154,7 @@ function fresh(): Saved {
     um: 0, umFee: 5, mk: 0, gift: 0, giftUnit: 10_000, giftMin: 10_000, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
-    weekRoute: {}, allRoute: null,
+    weekRoute: {},
   }
 }
 
@@ -376,8 +374,7 @@ export function tierAfter(d: State, amount: number): TierKey | null {
   return t
 }
 
-/** split: 유지를 켰으면 달성하는 주와 유지하는 주를 나눈 값 */
-export interface Summary { loss: number; sales: number; split: { reach: { loss: number; sales: number }; keep: { loss: number; sales: number } } | null }
+export interface Summary { loss: number; sales: number }
 
 export interface EffOut {
   mode: 'plan' | 'amount'
@@ -421,7 +418,6 @@ export interface EffOut {
 /**
  * 바꿔 끼울 루트 후보 하나. 금액은 그 주만 본 어림값이다(크레딧은 쌓이는 만큼 값으로 친다. 실제로 큐브를 사서 파는 건 주를 이어 센다).
  * rate: 크레딧 값까지 친 회수율, money: 돈만 친 회수율. diff: 지금 그 주 루트보다 더 나가는 돈(음수면 덜).
- * all: 모든 주를 이 방식으로 했을 때(합계 어림값과 판매 횟수, 지금 계획과의 차이). 한 주뿐이거나 판매 횟수 종류면 null
  */
 export interface RouteAlt {
   kind: RouteKind
@@ -434,7 +430,6 @@ export interface RouteAlt {
   diff: number
   sales: number
   current: boolean
-  all: { diff: number; sales: number; salesNow: number } | null
 }
 
 /**
@@ -447,17 +442,20 @@ export function keepStartsOf(plan: PlanResult | null): Set<string> | null {
   return new Set(plan.timeline.filter(w => w.keep || plan.mode !== 'reach').map(w => w.start))
 }
 
-/** 계획을 따를 수 있으면 계획대로, 아니면 정한 금액 한 번 */
+/**
+ * 목표 계획에서 이번 주에 더 낼 금액(목표 − 이미 낸 금액). 다 채웠으면 null.
+ * 다음 주부터는 그 주가 되면 본다(2026-10-16 사용자: 효율표는 이번 주만. 여러 주를 다 보여 주면 한눈에 안 들어온다)
+ */
 export function planWeeks(d: State, plan: PlanResult | null) {
-  if (!plan || plan.error) return null
-  const ws = plan.timeline.filter(w => w.amount > 0 && !w.skipped)
-  if (!ws.length) return null
-  const now = thisMonth()
-  return ws.map(w => ({ start: w.start, amount: w.amount, tier: w.tier as TierKey | null, month: w.offset === 0 ? now : w.start.slice(0, 7) }))
+  const w = plan && !plan.error ? plan.timeline[0] : null
+  if (!w || w.amount <= 0) return null
+  return [{ start: w.start, amount: w.amount, tier: w.tier as TierKey | null, month: thisMonth() }]
 }
 
 export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const pw = eff.usePlan ? planWeeks(d, plan) : null
+  // 계획을 따르는데 이번 주 목표를 다 채웠으면 더 낼 돈이 없다
+  if (eff.usePlan && plan && !plan.error && !pw) return null
   const mode = pw ? 'plan' : 'amount'
   const raw = pw ?? (eff.amount > 0 ? [{ start: d.thisWeek, amount: eff.amount, tier: tierAfter(d, eff.amount), month: thisMonth() }] : null)
   if (!raw || !eff.um) return null
@@ -550,7 +548,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     const n = Number(k.slice(6))
     return Number.isFinite(r.solved.lossAt[n]) ? r.solved.routeAt(n) : null
   }
-  const kinds = weeks.map(w => eff.weekRoute[w.start] ?? eff.allRoute ?? null)
+  const kinds = weeks.map(w => eff.weekRoute[w.start] ?? null)
   // 바꿔 끼운 주는 그 루트를, 나머지 주는 고른 루트를 그대로 넣고 크레딧은 주를 이어 다시 센다
   const swapped = kinds.map((k, i) => (k ? routeOf(k, i) : null))
   const sel = swapped.some(Boolean)
@@ -577,16 +575,12 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     const kindsTry: RouteKind[] = ['best', ...(eff.gift > 0 ? ['gift' as const] : []), ...(eff.mk > 0 ? ['mk' as const] : []),
       ...priced0.map(x => `item:${x.id}` as const),
       ...(now.sales > 1 ? [`sales:${now.sales - 1}` as const] : [])]
-    const nowAll = sel.weeks.reduce((a, p) => a + est(p.route), 0)
     const out: RouteAlt[] = []
     for (const k of kindsTry) {
       const r = routeOf(k, i)
       if (!r || out.some(a => same(a.route, r))) continue
-      const rs = k.startsWith('sales:') || weeks.length < 2 ? null : weeks.map((_, j) => routeOf(k, j))
-      const allOk = rs && rs.every(Boolean) ? rs as Route[] : null
       out.push({ kind: k, label: labelOf(k), what: whatOf(r), route: r, rate: rateOf(r), money: r.cost ? r.back / r.cost : 0,
-        diff: est(r) - est(now), sales: r.sales, current: same(r, now),
-        all: allOk ? { diff: allOk.reduce((a, x) => a + est(x), 0) - nowAll, sales: allOk.reduce((a, x) => a + x.sales, 0), salesNow: sel.sales } : null })
+        diff: est(r) - est(now), sales: r.sales, current: same(r, now) })
     }
     // 최저가 조합과 전부 플가는 회수율과 상관없이 늘 보인다(기준이 되는 두 루트, 2026-10-12 사용자). 나머지는 회수율이 비슷한 것만
     const fixedKinds: RouteKind[] = ['best', `item:${PG_ID}`]
@@ -602,12 +596,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
     const r = run(items, undefined, true, sink)
     if (!r) return null
     const p = pickAt(r, null, credit)
-    const part = (keep: boolean) => {
-      const ws = p.weeks.filter(w => keepStarts!.has(w.w.start) === keep)
-      return { loss: ws.reduce((a, w) => a + w.loss, 0), sales: ws.reduce((a, w) => a + w.route.sales, 0) }
-    }
-    const split = keepStarts && p.weeks.some(w => keepStarts.has(w.w.start)) ? { reach: part(false), keep: part(true) } : null
-    return { loss: p.loss, sales: p.sales, split }
+    return { loss: p.loss, sales: p.sales }
   }
   const priced = all.filter(x => x.price > 0)
   const onlyMk = { mk: eff.mk, gift: 0 }
@@ -630,12 +619,5 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
 export function setWeekRoute(start: string, k: RouteKind | null) {
   if (k) eff.weekRoute[start] = k
   else delete eff.weekRoute[start]
-  saveEff()
-}
-
-/** 모든 주에 같은 루트를 건다. 주마다 바꿔 둔 것은 지운다. null이면 되돌린다 */
-export function setAllRoute(k: RouteKind | null) {
-  eff.allRoute = k
-  eff.weekRoute = {}
   saveEff()
 }

@@ -226,6 +226,8 @@ export interface Gap {
   minutes: number
   note: string        // 확실히 잘못된 값
   warn: string        // 확인해 볼 값
+  /** 문제가 아니라 알려 주기만 하는 말(블랙 기준을 넘겨 이월로 간 결제 등) */
+  info?: string
   ok: boolean
   /** 화면에 나오지 않아 구할 수 없는 주. 0으로 보이지만 '0원'이라는 뜻이 아니다 */
   unknown: boolean
@@ -262,7 +264,17 @@ export function compare(nexon: number[], collected: number[], starts: string[],
     }
     if (gap < 0 && black) {
       // 블랙은 인게임이 더 적을 수 있다. 기준을 넘긴 결제는 이월로만 가고(9/17부터),
-      // 9/29에는 넥슨이 PC방 비정상 적립분을 주 금액에서 걷어냈다. 툴팁 금액을 그대로 믿는다
+      // 9/29에는 넥슨이 PC방 비정상 적립분을 주 금액에서 걷어냈다. 툴팁 금액을 그대로 믿는다.
+      // 그 주 결제로 기준을 넘긴 몫(앞 주들은 인게임 금액으로 센다. 13주 밖은 몰라 0으로 두니 작게 잡힌다)으로
+      // 모자람이 다 설명되면 이월에 쌓인 것이라 문제가 아니다(2026-10-16 사용자: 이월은 마일리지처럼 쌓여 있다)
+      const before = nexon.slice(Math.max(0, i - 12), i).reduce((a, x) => a + x, 0)
+      const toCarry = Math.min(collected[i], Math.max(0, before + collected[i] - BLACK_TH))
+      if (-gap <= toCarry) {
+        out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note, warn: '',
+                   info: `블랙 기준을 넘긴 ${(-gap).toLocaleString('ko-KR')}원은 MVP 실적 대신 이월로 쌓였어요. 목표 계획에서는 낸 금액으로 쳐요.`,
+                   ok: true, unknown: false })
+        continue
+      }
       out.push({ start: starts[i], nexon: nexon[i], collected: collected[i], amount: gap, minutes: 0, note,
                  warn: `인게임이 수집보다 ${(-gap).toLocaleString('ko-KR')}원 적어요. 블랙 기준을 넘겨 이월로 간 결제이거나 넥슨이 걷어낸 금액이에요.`,
                  ok: true, unknown: false })

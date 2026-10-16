@@ -104,7 +104,7 @@ describe('뒤늦게 가져온 결제 (넥슨쇼핑 쿠폰 등)', () => {
 })
 
 describe('목표 계획 계정 동기화', () => {
-  const plan = { target: 'black', date: '2026-12-30', fixed: { '2026-10-01': 50_000 }, skipThisWeek: false }
+  const plan = { target: 'black', date: '2026-12-30', fixed: { '2026-10-01': 50_000 } }
   const planIn = () => JSON.parse(mem.get('maplemvp.plan') ?? 'null')
 
   it('고치면 시각과 함께 계정에 올라갈 묶음에 들어간다', async () => {
