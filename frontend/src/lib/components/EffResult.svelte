@@ -5,6 +5,7 @@
    *   최적화 루트: 판매를 한 번 줄일 때 더 내는 돈이 '판매 1회 수고비' 이하인 한도에서 가장 적게 파는 조합
    *   횟수 정하기: 판매 n회까지
    * 계획을 따르면 이번 주에 더 낼 금액만 본다(2026-10-16 사용자).
+   * 이번 주 목표를 이미 채웠으면 이번 주에 결제한 금액의 결과를 보여 준다. 실제로 산 것을 직접 짜기에 적으면 최저가보다 얼마 더 잃었는지 나온다
    */
   import NumBox from './NumBox.svelte'
   import EffCombo from './EffCombo.svelte'
@@ -29,8 +30,8 @@
   let altOpen = $state(false)
   const alts = $derived(altOpen && out && pick ? out.alts(curIdx) : [] as RouteAlt[])
   const curKind = $derived(out?.kinds[curIdx] ?? null)
-  /** 계획을 따르는데 이번 주 목표를 이미 다 채웠다 */
-  const planDone = $derived(eff.usePlan && !!planner.result && !planner.result.error && !planner.result.timeline[0]?.amount)
+  /** 계획을 따르는데 이번 주 목표를 이미 다 채웠고 이번 주 결제도 없다 */
+  const planDone = $derived(eff.usePlan && !!planner.result && !planner.result.error && !planner.result.timeline[0]?.amount && !planner.result.boughtThisWeek)
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`
   const signed = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${won(Math.abs(Math.round(x)))}원`
   /**
@@ -48,6 +49,10 @@
     const set = eff.split && out.keepStarts?.has(cur.w.start) ? eff.keep : { want: eff.want, combo: eff.combo }
     return set.want === 'custom' && set.combo[GIFT_ID] != null
   })
+  /** 지금 보는 주의 구간 설정(달성·유지를 따로 정했으면 그 구간 것) */
+  const curSet = $derived(cur && out && eff.split && out.keepStarts?.has(cur.w.start) ? eff.keep : null)
+  /** 이번 주 결제 결과에서 '직접 짜기'로: 따로 정하고 있으면 그 구간을 바꾼다 */
+  const toCustom = () => { if (curSet) { curSet.want = 'custom'; saveEff() } else choose('custom') }
   /** 선물식으로 받은 현금(메소를 거치지 않는다) */
   const giftWon = (r: { gift: number }) => r.gift * eff.gift / 10_000
 
@@ -62,6 +67,7 @@
   const question = $derived.by(() => {
     if (!out) return ''
     const minus = out.use ? ` (구매용 ${won(out.use)}원 제외)` : ''
+    if (out.paid) return `이번 주에 결제한 ${won(out.target)}원 중 실제로 쓴 돈${minus}`
     if (out.mode === 'plan') return `이번 주 남은 목표 ${won(out.target)}원을 결제하면 실제로 나가는 돈${minus}`
     return `${won(out.target)}원 결제하면 실제로 나가는 돈${minus}`
   })
@@ -132,6 +138,9 @@
     </div>
   {:else if out && pick && cur}
     <p class="q">{question}</p>
+    {#if out.paid}
+      <p class="paidnote">이번 주 목표는 이미 채웠어요. 실제로 산 것과 다르면 <button class="link" onclick={toCustom}>직접 짜기</button>에 산 아이템과 개수를 적어 보세요. 그 루트의 회수율과 실제로 쓴 돈이 나와요.</p>
+    {/if}
 
     {#if canSplit}
       <label class="together" for="eff-split">
@@ -289,7 +298,7 @@
 
     <section class="route">
       <div class="rhead">
-        <h4>{out.mode === 'plan' ? '이번 주에 이렇게 하면 돼요' : '이렇게 하면 돼요'}</h4>
+        <h4>{out.paid ? '이번 주 결제 루트' : out.mode === 'plan' ? '이번 주에 이렇게 하면 돼요' : '이렇게 하면 돼요'}</h4>
         <button class="altbtn" aria-expanded={altOpen} onclick={() => { altOpen = !altOpen }}>다른 루트 보기 {altOpen ? '▴' : '▾'}</button>
       </div>
       {#if curKind}
@@ -420,6 +429,7 @@
   .empty b { font-size: 16px; }
   .empty span { font-size: 13px; color: var(--color-tx3); }
   .q { margin: 0; font-size: 14px; color: var(--color-tx2); }
+  .paidnote { margin: -4px 0 0; font-size: 12.5px; color: var(--color-tx3); }
 
   .routes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   @media (max-width: 1100px) { .routes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -378,6 +378,8 @@ export interface Summary { loss: number; sales: number }
 
 export interface EffOut {
   mode: 'plan' | 'amount'
+  /** 계획의 이번 주 목표를 다 채워, 이번 주에 이미 결제한 금액으로 본 결과 */
+  paid: boolean
   target: number
   /** 결제 중 구매용(실제로 쓸 아이템)으로 뺀 캐시. 효율은 target − use 기준이다 */
   use: number
@@ -443,13 +445,18 @@ export function keepStartsOf(plan: PlanResult | null): Set<string> | null {
 }
 
 /**
- * 목표 계획에서 이번 주에 더 낼 금액(목표 − 이미 낸 금액). 다 채웠으면 null.
+ * 목표 계획에서 이번 주에 더 낼 금액(목표 − 이미 낸 금액).
+ * 다 채웠으면 이번 주에 이미 결제한 금액(구매내역)으로 본다(paid). 실제로 산 것을 직접 짜기에 적어 최저가보다 얼마 더 잃었는지 견준다
+ * (2026-10-16 사용자). 결제도 없으면 null.
  * 다음 주부터는 그 주가 되면 본다(2026-10-16 사용자: 효율표는 이번 주만. 여러 주를 다 보여 주면 한눈에 안 들어온다)
  */
 export function planWeeks(d: State, plan: PlanResult | null) {
   const w = plan && !plan.error ? plan.timeline[0] : null
-  if (!w || w.amount <= 0) return null
-  return [{ start: w.start, amount: w.amount, tier: w.tier as TierKey | null, month: thisMonth() }]
+  if (!w) return null
+  const paid = w.amount <= 0
+  const amount = paid ? plan!.boughtThisWeek : w.amount
+  if (amount <= 0) return null
+  return [{ start: w.start, amount, tier: w.tier as TierKey | null, month: thisMonth(), paid }]
 }
 
 export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
@@ -457,7 +464,8 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   // 계획을 따르는데 이번 주 목표를 다 채웠으면 더 낼 돈이 없다
   if (eff.usePlan && plan && !plan.error && !pw) return null
   const mode = pw ? 'plan' : 'amount'
-  const raw = pw ?? (eff.amount > 0 ? [{ start: d.thisWeek, amount: eff.amount, tier: tierAfter(d, eff.amount), month: thisMonth() }] : null)
+  const paid = !!pw?.[0].paid
+  const raw = pw?.map(({ paid: _, ...w }) => w) ?? (eff.amount > 0 ? [{ start: d.thisWeek, amount: eff.amount, tier: tierAfter(d, eff.amount), month: thisMonth() }] : null)
   if (!raw || !eff.um) return null
   // 구매용(실제로 쓸 아이템)은 첫 결제 주부터 차례로 뺀다. 어느 주에 살지는 적지 않는다(이름·금액만, 2026-10-04 건의)
   let left = buyTotal()
@@ -602,7 +610,7 @@ export function computeEff(d: State, plan: PlanResult | null): EffOut | null {
   const onlyMk = { mk: eff.mk, gift: 0 }
   const wait = priced.filter(x => !x.days), fast = priced.filter(isShort), big = priced.filter(isBig)
   return {
-    mode, target: weeks.reduce((a, w) => a + w.amount, 0), use, useOver: left, weeks: res, curve, lo, hi, credit,
+    mode, paid, target: weeks.reduce((a, w) => a + w.amount, 0), use, useOver: left, weeks: res, curve, lo, hi, credit,
     best, knee: kp, count: cp, sel, custom, keepStarts, alts, kinds, labelOf,
     isBest: (i: number) => { const b = routeOf('best', i), n = sel.weeks[i]?.route; return !!b && !!n && same(b, n) },
     // 아이템 하나로만 하는 비교는 끝자리만 메소마켓으로 채운다. 선물식까지 넣으면 선물식이 나을 때 아이템을 안 사 '플가만'이 '전부 선물식'이 된다

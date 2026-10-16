@@ -37,7 +37,7 @@
       <span class="goal">{#if planner.result?.mode === 'keep'}<b>{tier.name}</b> 유지{:else if planner.result?.mode === 'hold'}<b>{tier.name}</b> {md(planner.input!.date)}부터 유지{:else}<b>{tier.name}</b> {md(planner.input!.date)}까지{/if}</span>
       <span class="amt">
         이번 주 목표 <b class="mono">{won(n.goal)}원</b> · 낸 금액 <b class="mono">{won(n.paid)}원</b>
-        → {#if n.left}더 낼 금액 <b class="mono">{won(n.left)}원</b>{:else}더 낼 금액 없음{/if}
+        → {#if n.left}더 낼 금액 <b class="mono">{won(n.left)}원</b>{:else}더 낼 금액 없음{#if n.bought}{' · '}아래는 이번 주 결제 {won(n.bought)}원의 결과{/if}{/if}
       </span>
     </div>
     <p class="ef-hint">다음 주 금액은 목요일에 다음 주로 넘어가면 여기서 계산해요. 금액을 바꾸려면 목표 계획 탭에서.</p>
