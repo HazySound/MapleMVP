@@ -121,8 +121,8 @@
       ctx.stroke()
     })
 
-    // 끝점
-    const ah = START + SWEEP * f2
+    // 끝점은 게이지 끝에. 이월 끝에 두면 차오를 때 이월만큼 게이지보다 앞서 달렸다(2026-10-19 사용자)
+    const ah = START + SWEEP * f1
     ctx.beginPath()
     ctx.arc(cx + Math.cos(ah) * R, cy + Math.sin(ah) * R, lw * 0.34, 0, Math.PI * 2)
     ctx.fillStyle = C.tx
@@ -138,7 +138,10 @@
     if (REDUCED) { Object.assign(g, to); draw(); return }
     const first = !filled
     filled = true
-    gsap.to(g, { ...to, duration: first ? 1.8 : 0.35, delay: first ? 0.4 : 0, ease: 'power3.out', overwrite: 'auto', onUpdate: draw })
+    const { carry, ...bar } = to
+    gsap.to(g, { ...bar, duration: first ? 1.8 : 0.35, delay: first ? 0.4 : 0, ease: 'power3.out', overwrite: 'auto', onUpdate: draw })
+    // 이월은 게이지가 거의 찬 뒤에 이어서 붙인다
+    gsap.to(g, { carry, duration: first ? 0.6 : 0.35, delay: first ? 1.3 : 0, ease: 'power2.out', overwrite: 'auto', onUpdate: draw })
   })
 
   // PC방 접속분은 구매내역에 안 잡혀서, 맞추기 전까지는 인게임 숫자와 다르다.
