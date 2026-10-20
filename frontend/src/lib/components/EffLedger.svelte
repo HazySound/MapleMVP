@@ -5,7 +5,7 @@
    */
   import { app, getBase } from '../store.svelte'
   import { planner, weekNow } from '../plan.svelte'
-  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, payOptions, removeCharge, saveEff, setMkMeso, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
+  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, payOptions, removeCharge, setMkMeso, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
   import NumBox from './NumBox.svelte'
   import { tip } from '../tip'
   import { tick } from 'svelte'
@@ -55,14 +55,9 @@
     await tick()
     ;(document.getElementById(`rate-${key}`) as HTMLInputElement | null)?.focus()
   }
-  /** 이번 주는 위 설정(3·4번) 자체를 고친다. 이번 주 시세는 볼 때마다 설정에서 다시 떠 두기 때문이다. 지난 주는 그 주 시세만 */
+  /** 그 주 결산 시세만 고친다. 이번 주도 위 설정(추천 계산용)과 따로다(2026-10-20 사용자) */
   function setRate(k: 'giftRate' | 'mk' | 'um', v: number) {
-    if (isNow) {
-      if (k === 'giftRate') eff.gift = Math.round(v * 10_000)
-      else if (k === 'mk') eff.mk = v
-      else eff.um = v / (1 - (eff.umFee ?? 0) / 100)
-      saveEff()
-    } else setWeekRates(week, { [k]: v }, feeNow(tier))
+    setWeekRates(week, { [k]: v }, feeNow(tier))
   }
   /** 가격을 누르면 칸을 열고 바로 입력하게 한다. 포커스가 없으면 바깥을 눌러도 칸이 닫히지 않았다(2026-10-16 사용자) */
   async function openPrice(key: string) {
@@ -73,7 +68,6 @@
   const priceOf = (id: string) => L.snap.prices.items.find(x => x.id === id)?.price ?? 0
   /** 억 메소: 소수 둘째 자리까지 */
   const eok = (v: number) => v.toLocaleString('ko-KR', { maximumFractionDigits: 2 })
-  const when = (t: number) => { const x = new Date(t + 9 * 36e5).toISOString(); return `${Number(x.slice(5, 7))}/${Number(x.slice(8, 10))}` }
 </script>
 
 <article class="card ledger" id="eff-ledger" use:spotlight>
@@ -92,12 +86,20 @@
       <div><span>돌려받은 돈</span><b class="mono up">{won(L.back)}</b>{#if L.creditWon}<em>크레딧{L.creditTracked ? '샵 판 돈' : ' 추정'} {won(L.creditWon)}원 포함</em>{/if}</div>
       <div class="loss"><span>실제로 쓴 돈</span><b class="mono">{won(L.loss)}</b><em>회수율 {rate.toFixed(1)}% · 판매 {L.sales}회</em></div>
     </div>
+    <!-- 결산 시세(그 주에 판 값)와 위 설정의 지금 시세를 견준 차이(2026-10-20 사용자) -->
+    {#if Math.round(L.vsNowSum)}
+      <p class="vsnow" class:gain={L.vsNowSum > 0} class:lose={L.vsNowSum < 0}
+        use:tip={L.vsNow.map(x => `${x.name} ${x.then - x.now > 0 ? '+' : '−'}${won(Math.abs(x.then - x.now))}원`).join(' · ')}>
+        지금 시세보다 <b class="mono">{L.vsNowSum > 0 ? '+' : '−'}{won(Math.abs(L.vsNowSum))}원</b> {L.vsNowSum > 0 ? '이득' : '손해'}
+        <em>판매 당시 시세 기준 회수 금액 − 현재 설정된 시세 기준 회수 금액</em>
+      </p>
+    {/if}
 
     <!-- 넓은 화면: 왼쪽 표(내용 폭만큼), 오른쪽 흐름 요약 · 충전 기록. 표만 카드 폭을 다 쓰면 양옆이 크게 비었다(2026-10-16 사용자) -->
     <div class="lower">
     <div class="left">
     <div class="tbl" role="table" aria-label="구매내역">
-      <div class="tr th" role="row"><span>아이템</span><span>서버</span><span class="c">용도</span><span class="r">캐시</span><span class="c">개수</span><span class="r">그 주 시세</span><span class="r">메소</span><span class="r">회수</span></div>
+      <div class="tr th" role="row"><span>아이템</span><span>서버</span><span class="c">용도</span><span class="r">캐시</span><span class="c">개수</span><span class="r">판매 당시 시세</span><span class="r">메소</span><span class="r">회수</span></div>
       {#each L.lines as l (l.key)}
         <div class="tr" role="row" class:off={l.use === 'none'}>
           <span class="nm">
@@ -130,7 +132,7 @@
           <span class="r mono" class:warn={l.noPrice}>
             {#if l.use === 'sell' && l.itemId && (l.noPrice || priceOpen === l.key)}
               <span class="pbox"><NumBox id="led-{l.key}" label="{l.name} 그 주 경매장 가격" size="sm" decimal unit="억" placeholder="가격" value={priceOf(l.itemId)}
-                set={v => { if (isNow) { eff.prices[l.itemId!] = v; saveEff() } else setWeekPrice(week, l.itemId!, v, feeNow(tier)) }} onblur={() => (priceOpen = null)} /></span>
+                set={v => setWeekPrice(week, l.itemId!, v, feeNow(tier))} onblur={() => (priceOpen = null)} /></span>
             {:else if l.use === 'sell' && l.itemId}
               <button class="pr" onclick={() => openPrice(l.key)} use:tip={'그 주 경매장 가격 · 눌러서 고치기'}>{priceOf(l.itemId)}억</button>
             {:else if l.use === 'sell'}<span use:tip={'가격표에 없는 이름이에요. 이번 주 4번에서 아이템을 추가하면 맞춰져요'}>가격표에 없음</span>
@@ -276,7 +278,7 @@
     {/if}
 
     <p class="hint">
-      {L.own ? `시세는 ${when(L.snap.at)}에 이 효율표에 넣어 둔 값이에요.` : '이 주에 떠 둔 시세가 없어 지금 시세로 셌어요.'}
+      {L.own ? '시세는 이 주 결산에 따로 둔 값이라 위 설정을 바꿔도 그대로예요. 점선 숫자를 눌러 실제로 판 값으로 고쳐요.' :'이 주에 떠 둔 시세가 없어 지금 시세로 셌어요.'}
       {L.flow ? '충전 비용은 충전 기록으로 셌어요.' : '충전 기록이 없어 충전 비용은 그 주 결제수단으로 그 달 처음 한도에서 했다고 보고 센 값이에요.'} 용도는 구매내역 이름으로 짐작했으니 다르면 고쳐 주세요(산 서버는 구매번호로 알아요).
     </p>
     </div>
@@ -313,6 +315,10 @@
   .nums span { display: block; font-size: 11.5px; color: var(--color-tx3); }
   .nums b { font-size: 18px; font-weight: 700; }
   .nums b.up { color: var(--color-mint); }
+  .vsnow { margin: 10px 2px 0; font-size: 13px; color: var(--color-tx2); width: fit-content; cursor: default; }
+  .vsnow.gain b { color: var(--color-mint); }
+  .vsnow.lose b { color: var(--color-bad); }
+  .vsnow em { font-style: normal; font-size: 11.5px; color: var(--color-tx3); margin-left: 6px; }
   .nums .loss b { color: var(--color-peach); }
   .nums em { display: block; margin-top: 2px; font-style: normal; font-size: 11px; color: var(--color-tx3); }
   /*

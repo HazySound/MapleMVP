@@ -61,7 +61,8 @@
     const fee = feeNow(d.current)
     const r = out?.mode === 'plan' ? out.sel.weeks[0] : null
     const planned = r ? { label: WANT_NAME[eff.want], what: whatOf(r.route), pay: r.route.pay, cost: r.route.cost, back: r.route.back + (r.credit?.back ?? 0), loss: r.loss } : undefined
-    untrack(() => keepSnap(fee, planned))
+    const rows = getBase()?.rows ?? []
+    untrack(() => keepSnap(fee, planned, rows))
   })
 
   /**

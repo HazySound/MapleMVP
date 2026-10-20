@@ -696,10 +696,23 @@ export function snapNow(fee: number, planned?: Snap['planned']): Snap {
   }
 }
 
-/** 이번 주 시세를 떠 둔다. 바뀐 게 있을 때만 저장한다. 26주 넘은 것은 지운다 */
-export function keepSnap(fee: number, planned?: Snap['planned']) {
+/**
+ * 이번 주 시세를 떠 둔다. 바뀐 게 있을 때만 저장한다. 26주 넘은 것은 지운다.
+ * 결산 시세는 위 설정과 따로다: 그 주에 산 아이템 가격과, 산 게 있는 주의 메소·선물식·메소마켓·수수료는 처음 떠 둔 값(또는 결산에서 고친 값)을 지키고
+ * 비어 있을 때만 지금 설정으로 채운다. 설정을 바꿀 때마다 덮어써 주 초에 판 가격을 지킬 수 없었다(2026-10-20 사용자)
+ */
+export function keepSnap(fee: number, planned: Snap['planned'] | undefined, rows: Row[]) {
   const w = weekNow(), old = eff.snaps[w]
   const s = snapNow(fee, planned ?? old?.planned)
+  if (old) {
+    const bought = rowsOf(rows, w)
+    const ids = new Set(groupRows(bought, eff.tags, catalog(), true).map(l => l.itemId).filter(Boolean))
+    s.prices.items = [
+      ...old.prices.items.filter(i => ids.has(i.id)),
+      ...s.prices.items.filter(i => !ids.has(i.id) || !old.prices.items.some(o => o.id === i.id)),
+    ]
+    if (bought.length) for (const k of ['um', 'mk', 'giftRate', 'fee', 'creditPer'] as const) if (old.prices[k]) s.prices[k] = old.prices[k]
+  }
   if (old && JSON.stringify({ ...old, at: 0 }) === JSON.stringify({ ...s, at: 0 })) return
   eff.snaps[w] = s
   const cut = addDays(w, -7 * 26)
@@ -750,7 +763,13 @@ export function ledgerOf(rows: Row[], week: string, fee: number, tier: TierKey |
   const cw = tracked ? creditFlow(rows, weekNow()).weeks[week] ?? null : null
   const buys = tracked ? eff.creditBuys[week] ?? [] : []
   const creditSale = tracked ? buys.reduce((a, b) => a + b.n * b.price, 0) * (1 - s.prices.fee) * s.prices.um : undefined
-  return { ...settle(lines, s.prices, cost, mk, creditSale), credit: cw, creditBuys: buys, creditTracked: tracked, funding, flow: f ?? null, snap: s, own: !!own, all, charges, chargeWon, estimated: !recs.length, shop }
+  const st = settle(lines, s.prices, cost, mk, creditSale)
+  // 지금 설정 시세로 다시 센 회수와 견준다(판 것만, 크레딧 빼고). 수수료는 그 주 것 그대로 둬 시세 차이만 본다(2026-10-20 사용자)
+  const nowP = { ...snapNow(fee).prices, fee: s.prices.fee }
+  const alt = own ? settle(lines, nowP, cost, mk).lines : st.lines
+  const vsNow = st.lines.map((l, i) => ({ name: l.name, use: l.use, then: l.back, now: alt[i].back }))
+    .filter(x => x.use !== 'none' && Math.abs(x.then - x.now) >= 1)
+  return { ...st, vsNow, vsNowSum: vsNow.reduce((a, x) => a + x.then - x.now, 0), credit: cw, creditBuys: buys, creditTracked: tracked, funding, flow: f ?? null, snap: s, own: !!own, all, charges, chargeWon, estimated: !recs.length, shop }
 }
 
 /** 결산에서 그 주 선물식(캐시 1원당 원) · 메소마켓(1억당 메포) · 억당 받은 돈(엄 수수료 뺀 것)을 고친다 */
