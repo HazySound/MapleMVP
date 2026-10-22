@@ -538,6 +538,23 @@ export function rollPlan(b: Base, f: Frozen, history: Done[], keepN = WINDOW): {
 }
 
 /**
+ * 지난 기록의 낸 금액·등급을 지금 자료로 다시 센다(13주 안의 주만). 구매내역·인게임 맞추기를 안 한 채 주가 넘으면 그때 자료로
+ * 미달이 찍혀, 나중에 동기화해도 그대로였다(2026-10-22 사용자). 바뀐 게 없으면 null
+ */
+export function refreshHistory(b: Base, history: Done[]): Done[] | null {
+  let changed = false
+  const next = history.map(h => {
+    const i = b.starts.indexOf(h.start)
+    if (i < 0) return h
+    const paid = b.paid13[i], tier = key(b.tier13[i])
+    if (paid === h.paid && tier === h.tier) return h
+    changed = true
+    return { ...h, paid, tier }
+  })
+  return changed ? next : null
+}
+
+/**
  * 묶어 둔 금액(pins)은 계산에서 고정처럼 쓰였지만 사용자가 고정한 것이 아니다. 화면의 고정 표시와
  * '정한 금액 · 자동 나눔' 숫자는 사용자가 고정한 주(own)로만 다시 센다
  */

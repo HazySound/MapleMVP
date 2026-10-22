@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { basisOf, buildBase, buildState, makePlan, needRecheck, placeMoved, rollPlan, simulate } from './engine'
+import { basisOf, buildBase, buildState, makePlan, needRecheck, placeMoved, refreshHistory, rollPlan, simulate } from './engine'
 import { addDays, type Row } from './mvp'
 import { writeWeeks } from './pcroom'
 
@@ -311,6 +311,15 @@ describe('세워 둔 계획', () => {
     it('더 낸 금액은 넘겨서 고르게 한다. 그대로 두기로 한 몫은 빼고', () => {
       expect(rollPlan(paidBy(30_000), frozen, []).frozen!.over).toBe(30_000)
       expect(rollPlan(paidBy(30_000), { ...frozen, ack: 10_000 }, []).frozen!.over).toBe(20_000)
+    })
+
+    it('동기화 전에 넘어가 미달로 찍힌 기록은 지난 주 구매내역이 들어오면 지금 자료로 다시 센다', () => {
+      // 2026-10-22 사용자: 지난 주를 다 채웠는데 구매내역·인게임 맞추기를 안 한 채 넘어가 미달로 남았다
+      const stale = rollPlan(buildBase(rows, SAVED, NEXT), frozen, [])
+      expect(stale.history[0].paid).toBeLessThan(stale.history[0].goal)
+      const h = refreshHistory(paidBy(0), stale.history)!
+      expect(h[0]).toEqual({ ...stale.history[0], paid: pins['2026-09-24'], tier: expect.anything() })
+      expect(refreshHistory(paidBy(0), h)).toBeNull()
     })
   })
 })
