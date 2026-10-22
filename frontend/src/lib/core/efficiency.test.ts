@@ -8,7 +8,7 @@ const ctx = (over: Partial<FundCtx> = {}): FundCtx => ({
   held: { cash: 0, won: 0 }, limits: { nexon: 200_000 }, cards: [nx], barcode: null, ...over,
 })
 const karma: Sellable = { id: 'karma', name: '플래티넘 카르마의 가위', set: 1, cash: 5900, price: 3 }
-const potential: Sellable = { id: 'potential', name: '잠재옵션 전승 스크롤', set: 1, cash: 99000, price: 49 }
+const potential: Sellable = { id: 'potential', name: '잠재능력 전승 스크롤', set: 1, cash: 99000, price: 49 }
 
 describe('할인 칸', () => {
   it('100 이하는 할인율, 넘으면 1만원권이나 5만원권 가격', () => {
@@ -617,7 +617,7 @@ describe('메이플 크레딧', () => {
   })
 
   it('크레딧은 캐시템과 메포에 똑같이 붙으니 둘 사이 순서를 바꾸지 않는다', () => {
-    const scroll: Sellable = { id: 'potential', name: '잠재옵션 전승 스크롤', set: 1, cash: 99_000, price: 45 }
+    const scroll: Sellable = { id: 'potential', name: '잠재능력 전승 스크롤', set: 1, cash: 99_000, price: 45 }
     const base = { target: 99_000, costOf: (c: number) => c, fee: 0.03, um: 1500, mk: 2250, items: [scroll], exact: true }
     expect(solve(base)!.best.lines).toEqual([])
     expect(solve({ ...base, creditPer: creditWonPer([prime, add], 0.03, 1500) })!.best.lines).toEqual([])

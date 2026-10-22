@@ -7,7 +7,7 @@
   ],
   "items": [
     { "id": "karma", "name": "플래티넘 카르마의 가위", "set": 1, "cash": 5900 },
-    { "id": "potential", "name": "잠재옵션 전승 스크롤", "set": 1, "cash": 99000, "days": 30 },
+    { "id": "potential", "name": "잠재능력 전승 스크롤", "set": 1, "cash": 99000, "days": 30 },
     { "id": "additional", "name": "추가옵션 전승 스크롤", "set": 1, "cash": 49000, "days": 30 },
     { "id": "wonder1", "name": "위습의 원더베리", "set": 1, "bundle": true, "cash": 5400, "days": 7 },
     { "id": "wonder11", "name": "위습의 원더베리", "set": 11, "cash": 54000, "days": 7 },
