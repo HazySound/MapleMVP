@@ -23,6 +23,9 @@
   const pick = $derived(out?.sel ?? null)
   const curIdx = $derived(pick ? Math.min(sel, pick.weeks.length - 1) : 0)
   const cur = $derived(pick ? pick.weeks[curIdx] : null)
+  /** 이 주에 쓸 캐시와 그중 가진 캐시 */
+  const need = $derived(cur ? cur.route.pay + cur.w.use : 0)
+  const held = $derived(cur ? cur.funding.parts.filter(q => q.held).reduce((a, q) => a + q.cash, 0) : 0)
 
   /**
    * 회수율이 비슷한 다른 루트(2026-10-12 사용자). 이번 주에 바꿔 끼운다
@@ -326,7 +329,8 @@
       {/if}
       <ol>
         <li>
-          <div class="t">캐시 {won(cur.route.pay + cur.w.use)} 충전 → 현금 {won(cur.funding.cost)}원</div>
+          <!-- 가진 캐시는 새로 내는 돈이 아니라 그 캐시를 산 값이다. '충전 → 현금'이면 지금 낼 돈으로 읽힌다(2026-11-01 문의) -->
+          <div class="t">{#if held}가진 캐시 {won(held)} 사용{#if need > held}{' '}+ {won(need - held)} 충전{/if}{:else}캐시 {won(need)} 충전{/if} → 사용한 현금 {won(cur.funding.cost)}원</div>
           <div class="chips">{#each cur.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}</span>{/each}</div>
           {#if cur.w.use}<div class="dd">이 중 <b>{won(cur.w.use)}캐시는 구매용</b>(실제로 쓸 아이템)이에요. 아래 MVP작은 나머지 {won(cur.route.pay)}캐시로만 짰어요. 구매용도 캐시샵 결제라 MVP 금액({won(cur.route.pay + cur.w.use)}원 전부)과 크레딧에 들어가요.</div>{/if}
           {#if cur.funding.spare}<div class="dd">끝자리 때문에 한 권 더 사서 <b>{won(cur.funding.spare.cash)}캐시가 남아요</b>. 다음 주에 먼저 쓰고, 그 값은 다음 주에 세요.</div>{/if}

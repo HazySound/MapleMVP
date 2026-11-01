@@ -344,6 +344,12 @@ export function updateMethod(id: string, x: Omit<PayMethod, 'id' | 'on'>) {
 export function removeMethod(id: string) {
   eff.methods = eff.methods.filter(m => m.id !== id)
   delete eff.leftNow[id]
+  // 이번 주 충전 칸에 적은 것도 같이 지운다. 안 지우면 칸은 사라지고 잔액에만 남는다(2026-11-01 문의). 지난 주 결산 기록은 둔다
+  const w = weekNow()
+  if (eff.charges[w]) {
+    eff.charges[w] = eff.charges[w].filter(c => c.key !== id)
+    if (!eff.charges[w].length) delete eff.charges[w]
+  }
   saveEff()
 }
 
@@ -929,6 +935,19 @@ export function cashFlow(rows: Row[], thisWeek: string) {
   return { first, weeks, left: last?.left ?? 0, leftWon: last?.leftWon ?? 0 }
 }
 
+/** 2번 칸에서 '지금 캐시 잔액'을 게임 값으로 고친다. 충전·구매 기록은 그대로 두고 흐름의 시작값을 맞춘다 */
+export function setCashNow(rows: Row[], thisWeek: string, v: number) {
+  // 기록보다 더 쓴 주가 있으면 시작값을 올린 만큼 다 남지 않아서 몇 번 맞춘다
+  for (let i = 0; i < 5; i++) {
+    const left = cashFlow(rows, thisWeek)?.left ?? eff.balance
+    if (Math.abs(Math.round(v) - left) < 1) break
+    const next = Math.max(0, eff.balance + Math.round(v) - left)
+    if (next === eff.balance) break
+    eff.balance = next
+  }
+  saveEff()
+}
+
 /** 이번 달 이번 주 전까지 그 결제수단으로 충전한 금액: 기록 밖 + 지난 주 기록 */
 export const beforeThisWeek = (key: string) => (eff.outside[key] ?? 0)
   + Object.entries(eff.charges).filter(([w]) => w < weekNow()).flatMap(([, cs]) => cs)
@@ -939,22 +958,29 @@ export function setBefore(key: string, v: number) {
   setOutside(key, Math.max(0, Math.round(v) - (beforeThisWeek(key) - (eff.outside[key] ?? 0))))
 }
 
-/** 이번 주에 그 결제수단으로 충전한(할) 캐시 */
-export const weekCharged = (key: string) => (eff.charges[weekNow()] ?? []).filter(c => c.key === key).reduce((a, c) => a + c.cash, 0)
+/** 이번 주에 그 결제수단으로 이번 달 한도로 충전한(할) 캐시. 달이 바뀌는 주에 지난 달 충전은 따로 센다(2026-11-01 문의) */
+export const weekCharged = (key: string) => (eff.charges[weekNow()] ?? []).filter(c => c.key === key && c.month === thisMonth()).reduce((a, c) => a + c.cash, 0)
 
-/** 이번 주 충전을 정한다(그 결제수단 기록을 한 줄로). 할인율은 지금 설정 값 */
+/** 이번 주에 그 결제수단으로 지난 달 한도로 충전한 것: 달 → 캐시 */
+export function weekChargedBefore(key: string): [string, number][] {
+  const by: Record<string, number> = {}
+  for (const c of eff.charges[weekNow()] ?? []) if (c.key === key && c.month !== thisMonth() && c.cash > 0) by[c.month] = (by[c.month] ?? 0) + c.cash
+  return Object.entries(by).sort()
+}
+
+/** 이번 주 충전을 정한다(그 결제수단의 이번 달 기록을 한 줄로). 지난 달 한도로 한 충전은 그대로 둔다. 할인율은 지금 설정 값 */
 export function setWeekCharge(key: string, v: number) {
   const w = weekNow()
-  eff.charges[w] = (eff.charges[w] ?? []).filter(c => c.key !== key)
+  eff.charges[w] = (eff.charges[w] ?? []).filter(c => c.key !== key || c.month !== thisMonth())
   if (!eff.charges[w].length) delete eff.charges[w]
   if (v > 0) addCharge(w, { key, cash: Math.round(v) })
   else saveEff()
 }
 
-/** 설정의 할인율을 바꾸면 이번 주 충전 기록의 할인율도 따라간다 */
+/** 설정의 할인율을 바꾸면 이번 주 충전 기록(이번 달 것)의 할인율도 따라간다 */
 export function syncWeekOff(key: string) {
   const o = payOptions().find(p => p.key === key)
-  for (const c of eff.charges[weekNow()] ?? []) if (o && c.key === key) c.off = o.off
+  for (const c of eff.charges[weekNow()] ?? []) if (o && c.key === key && c.month === thisMonth()) c.off = o.off
   saveEff()
 }
 

@@ -5,7 +5,7 @@
    * 남은 한도 안에서 추천한다(그래서 넥슨카드 '그 달 마지막 20만원에만 쓰기'는 없앴다, 2026-10-16 사용자)
    */
   import NumBox from './NumBox.svelte'
-  import { SHOP, addMethod, beforeThisWeek, cashFlow, eff, setBefore, setWeekCharge, syncWeekOff, weekCharged, PLAIN_KEY, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
+  import { SHOP, addMethod, beforeThisWeek, cashFlow, eff, setBefore, setCashNow, setWeekCharge, syncWeekOff, weekCharged, weekChargedBefore, PLAIN_KEY, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
   import { app, getBase } from '../store.svelte'
   import { md, spotlight } from '../format'
   import { tip } from '../tip'
@@ -54,6 +54,8 @@
   }
   /** 충전 기록이 있으면 캐시 잔액은 기록으로 센다. 설정 칸은 기록을 시작한 주의 처음 잔액이 된다 */
   const flow = $derived(app.data ? cashFlow(getBase()?.rows ?? [], app.data.thisWeek) : null)
+  /** 지금 잔액 칸에 마지막으로 적은 값. 기록보다 적게 적어 그대로 못 맞췄을 때 알린다 */
+  let cashWant = $state<number | null>(null)
   /** '이번 달 이미 충전'은 라벨로 보이고, 누르면 칸이 열렸다가 Enter·칸을 벗어나면 다시 라벨로(2026-10-16 사용자) */
   let editBefore = $state<string | null>(null)
   function startBefore(key: string) {
@@ -74,10 +76,13 @@
   <h3 class="card-title"><span class="n">2</span>캐시는 얼마에</h3>
 
   <div class="ef-field">
-    <label for="eff-balance">{flow ? `${md(flow.first)} 주 시작 때 캐시 잔액` : '캐시 잔액'}</label>
-    <NumBox id="eff-balance" label="캐시 잔액" unit="캐시" placeholder="없으면 비움" value={eff.balance} set={v => { eff.balance = v; saveEff() }} />
+    <label for="eff-balance">{flow ? '지금 캐시 잔액' : '캐시 잔액'}</label>
+    <!-- 충전 기록이 있으면 칸은 지금 잔액. 고치면 기록을 시작한 주의 처음 잔액을 거꾸로 맞춘다(2026-11-01 문의: 처음 잔액 칸이라 헷갈림) -->
+    <NumBox id="eff-balance" label="캐시 잔액" unit="캐시" placeholder={flow ? '0' : '없으면 비움'} value={flow ? flow.left : eff.balance}
+      set={v => { if (flow && app.data) { setCashNow(getBase()?.rows ?? [], app.data.thisWeek, v); cashWant = v } else { eff.balance = v; saveEff() } }} />
     {#if flow}
-      <span class="ef-hint">지금 잔액 <b>{won(flow.left)}캐시</b> = 이 값 + 충전 기록 − 구매내역. 충전을 기록한 첫 주가 시작될 때 잔액만 맞추면 그다음은 저절로 세요.</span>
+      <span class="ef-hint">{md(flow.first)} 주 시작 잔액 {won(eff.balance)} + 충전 기록 − 구매내역으로 저절로 세요. 게임 안 잔액과 다르면 여기서 고쳐 주세요. <b>이번 주 충전</b>에 적은 금액도 이미 충전한 것으로 들어가요.</span>
+      {#if cashWant != null && flow.left > cashWant}<span class="ef-hint warn">적은 {won(cashWant)}캐시보다 충전 기록이 많아서 더 줄일 수 없어요. 이번 주 충전에 적은 것 중 아직 안 한 충전이 있으면 지워 주세요.</span>{/if}
     {:else}
       <span class="ef-hint">{eff.balance ? '잔액부터 먼저 써요. 이미 충전한 돈이라 1:1로 계산해요.' : '넥슨 캐시 잔액이 있으면 넣어 주세요. 먼저 써요.'} 아래 결산에 충전을 기록하면 잔액은 저절로 세요.</span>
     {/if}
@@ -89,6 +94,10 @@
     <div class="row head"><span></span><span>상품권 (월 20만)</span><span>할인</span><span>이번 주 충전</span></div>
     {#snippet weekBox(key: string, name: string, on: boolean)}
       <NumBox id="eff-week-{key}" label="{name} 이번 주 충전" size="sm" placeholder="0" value={weekCharged(key)} set={v => setWeekCharge(key, v)} disabled={!on} />
+      <!-- 달이 바뀌는 주: 칸은 이번 달 한도 충전만. 지난 달 한도로 한 충전은 따로 보여 준다(2026-11-01 문의) -->
+      {#each weekChargedBefore(key) as [m, n] (m)}
+        <span class="prev" use:tip={'이번 주에 지난 달 한도로 충전한 금액이에요. 잔액·결산에는 들어가고, 이번 달 한도에는 안 들어가요.'}>+ {Number(m.slice(5))}월에 충전한 {won(n)}</span>
+      {/each}
     {/snippet}
     {#each eff.cards as c, i (c.key)}
       {@const used = beforeThisWeek(c.key) + weekCharged(c.key)}
@@ -150,7 +159,7 @@
         </span>
         <NumBox id="eff-pm-val-{m.id}" label="{m.name} {md.name}" size="sm" decimal placeholder={md.ph} unit={md.unit}
           value={m.val} set={v => { m.val = v; syncWeekOff(m.id) }} disabled={!m.on} />
-        {@render weekBox(m.id, m.name, m.on)}
+        <span class="wk">{@render weekBox(m.id, m.name, m.on)}</span>
       </div>
       {/if}
     {/snippet}
@@ -199,6 +208,8 @@
 
 <style>
   .card { display: grid; gap: 12px; align-content: start; }
+  .warn { color: var(--color-peach); }
+  .prev { justify-self: end; font-size: 11px; color: var(--color-tx3); font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 2px; }
   .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 7px; background: var(--color-panel3); font-family: var(--font-mono); font-size: 11px; color: var(--color-lav); }
   .or { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--color-tx3); }
   .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--color-line); }

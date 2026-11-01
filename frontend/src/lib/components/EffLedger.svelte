@@ -5,7 +5,7 @@
    */
   import { app, getBase } from '../store.svelte'
   import { planner, weekNow } from '../plan.svelte'
-  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, payOptions, removeCharge, setMkMeso, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
+  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, payOptions, removeCharge, setMkMeso, thisMonth, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
   import NumBox from './NumBox.svelte'
   import { tip } from '../tip'
   import { tick } from 'svelte'
@@ -42,6 +42,8 @@
   const serverName = (c: string | null) => !c ? '—' : SERVERS[c] ?? eff.serverNames[c] ?? `서버 ${c}`
   const charges = $derived(eff.charges[week] ?? [])
   const opts = $derived(payOptions())
+  /** 이번 주 기록 중 2번 칸 '이번 주 충전'에 안 보이는 것: 지난 달 한도로 한 충전, 지운 결제수단 기록. 이것만 여기서 고친다(2026-11-01 문의) */
+  const odd = $derived(isNow ? charges.filter(c => c.month !== thisMonth() || !opts.some(o => o.key === c.key)) : charges)
   let priceOpen = $state<string | null>(null)
   /** 크레딧당 가장 효율 좋은 크레딧샵 물건(모였다는 안내에 쓴다) */
   const bestCb = $derived([...creditItems()].filter(x => x.price > 0).sort((a, b) => b.price / b.credits - a.price / a.credits)[0] ?? null)
@@ -219,7 +221,7 @@
     <!-- 흐름: 충전(방식 · 든 현금) → 넣은 캐시 → 얻은 메소 → 판 돈 → 총 회수 → 회수율. 충전도 이 목록 안에서 본다(2026-10-16 사용자) -->
     <section class="flow" aria-label="흐름">
       <div class="fl gh"><span>충전{L.estimated ? ' · 기록이 없어 계산값' : ''}</span>
-        {#if !isNow}<button class="link sm" onclick={() => (chEdit = !chEdit)}>{chEdit ? '닫기' : charges.length ? '고치기' : '적기'}</button>{/if}
+        {#if !isNow || odd.length}<button class="link sm" onclick={() => (chEdit = !chEdit)}>{chEdit ? '닫기' : charges.length ? '고치기' : '적기'}</button>{/if}
       </div>
       {#each L.charges as c, i (i)}
         <div class="fl sub"><span>{c.name}{c.off ? ` · ${c.off}% 할인` : ''}</span><b class="mono">{won(c.cash)}캐시 → {won(c.won)}원</b></div>
@@ -228,23 +230,24 @@
       <div class="fl"><span>충전에 든 현금</span><b class="mono">{won(L.chargeWon)}원</b>
         {#if Math.abs(L.chargeWon - L.cost) >= 1}<em>회수율은 작에 쓴 몫 {won(L.cost)}원으로 셉니다{L.none ? ` (회수 없음 ${won(L.none)}캐시 뺌)` : ''}</em>{/if}
       </div>
-      {#if isNow}<em class="note">이번 주 충전은 위 2번 칸의 '이번 주 충전'에서 적어요.</em>{/if}
-      {#if chEdit && !isNow}
+      {#if isNow}<em class="note">이번 주 충전은 위 2번 칸의 '이번 주 충전'에서 적어요.{#if odd.length}{' '}지난 달 한도로 한 충전과 지운 결제수단 기록은 '고치기'에서 고쳐요.{/if}</em>{/if}
+      {#if chEdit && (!isNow || odd.length)}
         <div class="chedit">
-          {#each charges as c (c.id)}
+          {#each odd as c (c.id)}
             <div class="ch-row">
               <select aria-label="결제수단" value={c.key} onchange={e => updateCharge(week, c.id, { key: e.currentTarget.value })}>
                 {#each opts as o (o.key)}<option value={o.key}>{o.name}</option>{/each}
+                {#if !opts.some(o => o.key === c.key)}<option value={c.key}>{c.name} (지운 결제수단)</option>{/if}
               </select>
               <NumBox id="ch-off-{c.id}" label="할인율" size="sm" decimal unit="%" placeholder="0" value={c.off} set={v => updateCharge(week, c.id, { off: v })} />
               <NumBox id="ch-cash-{c.id}" label="충전한 캐시" size="sm" unit="캐시" placeholder="충전한 캐시" value={c.cash} set={v => updateCharge(week, c.id, { cash: v })} />
               <button class="x" onclick={() => removeCharge(week, c.id)} aria-label="이 충전 지우기">×</button>
             </div>
           {/each}
-          <div class="ch-acts">
+          {#if !isNow}<div class="ch-acts">
             <button class="btn" onclick={() => addCharge(week)}>+ 충전 추가</button>
             {#if !charges.length && L.funding}<button class="btn" onclick={() => fillCharges(week, L.funding!.parts)}>계산값대로 충전했어요</button>{/if}
-          </div>
+          </div>{/if}
         </div>
       {/if}
       {#if L.flow}
@@ -362,7 +365,7 @@
   .row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; font-size: 13px; color: var(--color-tx2); }
   .row .lab { font-size: 11.5px; color: var(--color-tx3); min-width: 52px; }
   .row small { color: var(--color-tx3); }
-  .ch-row { display: grid; grid-template-columns: minmax(0, 1.2fr) 90px minmax(0, 1fr) 28px; gap: 8px; align-items: center; font-size: 13px; }
+  .ch-row { display: grid; grid-template-columns: minmax(0, 1fr) 68px minmax(0, 1.3fr) 20px; gap: 8px; align-items: center; font-size: 13px; }
   .ch-row .x { appearance: none; border: 0; background: none; cursor: pointer; font-size: 16px; color: var(--color-tx3); }
   .ch-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .hint { margin: 0; font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
