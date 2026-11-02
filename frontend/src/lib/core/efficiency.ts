@@ -723,6 +723,7 @@ export function planAll(p: Plan): WeekResult[] | null {
       if (q.held) { st.held.cash -= q.cash; st.held.won -= q.won }
       if (q.key && q.key in L) L[q.key] -= q.cash
       if (q.key === LAST_KEY) H.nexon -= q.cash
+      // 포인트 충전은 넥슨카드 한도가 남아야 되지만 한도를 깎지 않는다(2026-11-02 사용자)
       if (q.key === PT_KEY) st.points -= q.cash
       if (q.key === HD_KEY) { H.left -= q.cash; st.points += q.point ?? 0 }
     }

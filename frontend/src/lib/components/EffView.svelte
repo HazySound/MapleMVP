@@ -51,6 +51,15 @@
   const tier = $derived(cur ? cur.w.tier : pw ? pw[0].tier : tierAfter(d, eff.amount))
   const fee = $derived(cur ? cur.w.fee : eff.feeOverride ?? feeOf(tier))
   const used = $derived(new Set(cur?.route.lines.map(l => l.item.id) ?? []))
+  /**
+   * 보고 있는 주의 충전 기록으로 센 캐시 1당 현금(할인율을 충전 금액으로 가중 평균). 아이템 회수율에 충전 할인을 넣는다.
+   * 그 주에 충전한 것만 보고, 충전 기록이 없으면 0 → 1:1(2026-11-02 사용자: 주마다 그 주 충전 기준, 충전 안 한 금액은 안 봄)
+   */
+  const perCash = $derived.by(() => {
+    const cs = (eff.charges[week] ?? []).filter(c => c.cash > 0)
+    const cash = cs.reduce((a, c) => a + c.cash, 0)
+    return cash > 0 ? cs.reduce((a, c) => a + c.cash * (1 - c.off / 100), 0) / cash : 0
+  })
 
   /**
    * 이번 주 시세와 짠 루트를 떠 둔다. 지난 주 결산은 이 값으로 센다(그 주에 효율표를 한 번도 안 열었으면 지금 시세로)
@@ -98,7 +107,7 @@
   <div class="c4"><EffAmount /></div>
   <div class="c4 wide"><EffCash /></div>
   <div class="c4"><EffMarket {tier} {mode} /></div>
-  <div class="c12"><EffItems {fee} {used} /></div>
+  <div class="c12"><EffItems {fee} {used} {perCash} /></div>
   <div class="c12"><EffCredit {out} {fee} /></div>
   <!-- 주 옮기기. 주를 바꿔도 버튼이 움직이지 않게 폭을 고정하고, 내려가면 화면 위에 붙어 따라온다(2026-10-16 사용자) -->
   <div class="c12 navbar">

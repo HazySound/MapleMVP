@@ -37,10 +37,20 @@
   $effect(() => () => commit())
 
   function oninput(e: Event) {
-    const raw = (e.currentTarget as HTMLInputElement).value
+    const el = e.currentTarget as HTMLInputElement
+    const raw = el.value
     let clean = decimal ? raw.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : raw.replace(/[^\d]/g, '')
     const n = Number(clean) || 0
+    // 쉼표를 다시 붙이면 칸 값이 통째로 바뀌어 커서가 맨 뒤로 간다. 커서 앞 숫자 개수를 세어 같은 자리로 돌린다(2026-11-02 사용자: 가운데를 고치면 커서가 끝으로 튐)
+    const keep = decimal ? /[\d.]/g : /\d/g
+    const before = (raw.slice(0, el.selectionStart ?? raw.length).match(keep) ?? []).length
     text = !clean ? '' : decimal ? comma(clean) : n.toLocaleString('ko-KR')
+    el.value = text
+    let pos = 0
+    for (let k = 0; pos < text.length && k < before; pos++) if (/[\d.]/.test(text[pos])) k++
+    // 앞에 붙는 0을 지웠으면 숫자 개수가 줄어 끝을 넘지 않게
+    pos = Math.min(pos, text.length)
+    el.setSelectionRange(pos, pos)
     pending = n
   }
   function onkeydown(e: KeyboardEvent) {

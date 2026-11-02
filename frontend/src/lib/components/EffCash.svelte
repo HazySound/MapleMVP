@@ -54,9 +54,13 @@
   }
   /** 충전 기록이 있으면 캐시 잔액은 기록으로 센다. 설정 칸은 기록을 시작한 주의 처음 잔액이 된다 */
   const flow = $derived(app.data ? cashFlow(getBase()?.rows ?? [], app.data.thisWeek) : null)
-  /** 현대카드: 이번 주 전까지 이번 달 적립(최대 2만 P), 지금 포인트, 포인트 충전 조건인 넥슨카드 남은 한도 */
-  const hdBefore = $derived(Math.min(HD_MONTHLY, beforeThisWeek(HD_KEY)) * HD_RATE)
-  const hdFull = $derived(beforeThisWeek(HD_KEY) + weekCharged(HD_KEY) >= HD_MONTHLY)
+  /**
+   * 현대카드: 이번 주 충전까지 넣은 이번 달 적립(최대 2만 P), 지금 포인트, 포인트 충전 조건인 넥슨카드 남은 한도.
+   * 한도 라벨은 이번 주 충전을 적는 대로 같이 오르내리고, 주가 넘어가면 지난 주 기록으로 굳는다(2026-11-02 사용자)
+   */
+  const hdUsed = $derived(beforeThisWeek(HD_KEY) + weekCharged(HD_KEY))
+  const hdPts = $derived(Math.min(HD_MONTHLY, hdUsed) * HD_RATE)
+  const hdFull = $derived(hdUsed >= HD_MONTHLY)
   const pts = $derived(app.data ? pointFlow(app.data.thisWeek).left : eff.ptBalance)
   const nexonLeft = $derived(leftNowCalc().nexon ?? 0)
   /** 지금 잔액 칸에 마지막으로 적은 값. 기록보다 적게 적어 그대로 못 맞췄을 때 알린다 */
@@ -67,6 +71,8 @@
     editBefore = key
     queueMicrotask(() => (document.getElementById(`eff-before-${key}`) as HTMLInputElement | null)?.focus())
   }
+  /** 이번 주에 더 적을 수 있는 금액. 상품권은 월 20만에서 이번 주 전 충전을 뺀 만큼, 나머지는 한도 없음 */
+  const cap = (key: string) => eff.cards.some(c => c.key === key) ? Math.max(0, MONTHLY - beforeThisWeek(key)) : Infinity
   function close() { adding = false; editing = null; form = blank() }
   function submit(e: Event) {
     e.preventDefault()
@@ -98,7 +104,7 @@
   <div class="pay">
     <div class="row head"><span></span><span>상품권 (월 20만)</span><span>할인</span><span>이번 주 충전</span></div>
     {#snippet weekBox(key: string, name: string, on: boolean)}
-      <NumBox id="eff-week-{key}" label="{name} 이번 주 충전" size="sm" placeholder="0" value={weekCharged(key)} set={v => setWeekCharge(key, v)} disabled={!on} />
+      <NumBox id="eff-week-{key}" label="{name} 이번 주 충전" size="sm" placeholder="0" value={weekCharged(key)} set={v => setWeekCharge(key, Math.min(v, cap(key)))} disabled={!on} />
       <!-- 달이 바뀌는 주: 칸은 이번 달 한도 충전만. 지난 달 한도로 한 충전은 따로 보여 준다(2026-11-01 문의) -->
       {#each weekChargedBefore(key) as [m, n] (m)}
         <span class="prev" use:tip={'이번 주에 지난 달 한도로 충전한 금액이에요. 잔액·결산에는 들어가고, 이번 달 한도에는 안 들어가요.'}>+ {Number(m.slice(5))}월에 충전한 {won(n)}</span>
@@ -113,15 +119,18 @@
           value={c.disc} set={v => { eff.cards[i].disc = v; syncWeekOff(c.key) }} disabled={!c.on} />
         <span class="wk">
           {@render weekBox(c.key, c.name, c.on)}
-          <!-- 한도 라벨: '이미 충전 / 20만'. 한도(20만)는 고정이고, 앞의 이미 충전(이번 달 이번 주 전까지)만 눌러서 고친다(2026-10-16 사용자) -->
+          <!--
+            한도 라벨: '이번 달 충전 / 20만'. 앞 숫자는 이번 주 충전까지 넣은 이번 달 합계라 이번 주 충전을 고치면 같이 바뀐다(2026-11-02 사용자).
+            한도(20만)는 고정. 앞 숫자를 눌러 고치면 이번 주 충전은 그대로 두고 이번 주 전 몫을 맞춘다
+          -->
           <span class="lim" class:full={used >= MONTHLY}>
             <span class="mh">월 한도</span>
             <span class="nm2">
             {#if editBefore === c.key}
-              <span class="bx"><NumBox id="eff-before-{c.key}" label="{c.name} 이번 달 이번 주 전까지 충전한 금액" size="sm" placeholder="0"
-                value={beforeThisWeek(c.key)} set={v => setBefore(c.key, v)} onblur={() => (editBefore = null)} /></span>
+              <span class="bx"><NumBox id="eff-before-{c.key}" label="{c.name} 이번 달 충전 합계" size="sm" placeholder="0"
+                value={used} set={v => setBefore(c.key, v - weekCharged(c.key))} onblur={() => (editBefore = null)} /></span>
             {:else}
-              <button class="lbl" onclick={() => startBefore(c.key)} disabled={!c.on} use:tip={'이번 달 이번 주 전까지 충전한 금액 고치기'}>{won(beforeThisWeek(c.key))}</button>
+              <button class="lbl" onclick={() => startBefore(c.key)} disabled={!c.on} use:tip={weekCharged(c.key) ? `이번 주 전 ${won(beforeThisWeek(c.key))} + 이번 주 ${won(weekCharged(c.key))}. 눌러서 이번 달 합계 고치기` : '이번 달 충전 합계 고치기'}>{won(used)}</button>
             {/if}
             <span>/ {won(MONTHLY)}<span class="wu">원</span></span>
             </span>
@@ -145,10 +154,10 @@
           <span class="mh">이번 달 적립</span>
           <span class="nm2">
           {#if editBefore === HD_KEY}
-            <span class="bx"><NumBox id="eff-before-{HD_KEY}" label="이번 달 이번 주 전까지 현대카드로 쌓인 포인트" size="sm" unit="P" placeholder="0"
-              value={hdBefore} set={v => setBefore(HD_KEY, Math.min(v, HD_MONTHLY * HD_RATE) / HD_RATE)} onblur={() => (editBefore = null)} /></span>
+            <span class="bx"><NumBox id="eff-before-{HD_KEY}" label="이번 달 현대카드로 쌓인 포인트" size="sm" unit="P" placeholder="0"
+              value={hdPts} set={v => setBefore(HD_KEY, Math.min(v, HD_MONTHLY * HD_RATE) / HD_RATE - weekCharged(HD_KEY))} onblur={() => (editBefore = null)} /></span>
           {:else}
-            <button class="lbl" onclick={() => startBefore(HD_KEY)} disabled={!eff.hdOn} use:tip={'이번 달 이번 주 전까지 쌓인 포인트 고치기'}>{won(hdBefore)}</button>
+            <button class="lbl" onclick={() => startBefore(HD_KEY)} disabled={!eff.hdOn} use:tip={'이번 주 충전까지 넣은 이번 달 적립. 눌러서 고치기'}>{won(hdPts)}</button>
           {/if}
           <span>/ {won(HD_MONTHLY * HD_RATE)}<span class="wu">P</span></span>
           </span>
@@ -247,7 +256,7 @@
     </div>
   </div>
 
-  <p class="ef-hint"><b>이번 주 충전</b>에 이번 주에 충전했거나 할 금액을 적으면 그대로 계산해요(아래 결산의 이번 주 충전 기록과 같아요). 적은 충전으로 모자라는 캐시만 남은 한도 안에서 할인이 큰 것부터 추천해요. 상품권은 <b>5만원권</b> 단위로, 달마다 <b>20만</b>까지예요. 상품권의 이번 주 충전 아래 <b>월 한도 ○ / 200,000원</b>은 이번 달 이번 주 전까지 충전한 금액과 한도예요. 밑줄 친 앞 숫자를 눌러 고쳐요(지난 주 결산에 적은 충전은 저절로 더해져요). {#if eff.plainOn}한 권보다 작은 끝자리는 {bc.on ? '바코드나 ' : ''}<b>일반 충전(1:1)으로 딱 맞춰요.</b>{:else}일반 충전을 꺼 두면 끝자리도 할인 수단으로 한 권 더 사서 남는 캐시를 다음에 써요.{/if} 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요.</p>
+  <p class="ef-hint"><b>이번 주 충전</b>에 이번 주에 충전했거나 할 금액을 적으면 그대로 계산해요(아래 결산의 이번 주 충전 기록과 같아요). 적은 충전으로 모자라는 캐시만 남은 한도 안에서 할인이 큰 것부터 추천해요. 상품권은 <b>5만원권</b> 단위로, 달마다 <b>20만</b>까지예요. 상품권의 이번 주 충전 아래 <b>월 한도 ○ / 200,000원</b>은 이번 주 충전까지 넣은 이번 달 충전 합계예요. 이번 주 충전만 적으면 저절로 따라 바뀌고, 주가 넘어가면 그대로 굳어요. 사이트 밖에서 미리 충전한 게 있을 때만 밑줄 친 앞 숫자를 눌러 고쳐요. {#if eff.plainOn}한 권보다 작은 끝자리는 {bc.on ? '바코드나 ' : ''}<b>일반 충전(1:1)으로 딱 맞춰요.</b>{:else}일반 충전을 꺼 두면 끝자리도 할인 수단으로 한 권 더 사서 남는 캐시를 다음에 써요.{/if} 넥슨팩 쿠폰처럼 할인받아 충전하는 방법이 있으면 <b>직접 추가</b>해 주세요.</p>
 </article>
 
 <style>

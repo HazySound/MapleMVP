@@ -19,7 +19,8 @@
   import { eul, won, spotlight } from '../format'
   import { tip } from '../tip'
 
-  let { fee, used }: { fee: number; used: Set<string> } = $props()
+  /** perCash: 그 주 충전 기록으로 센 캐시 1당 현금(충전 할인 반영). 충전 기록이 없으면 0 → 1:1로 본다 */
+  let { fee, used, perCash = 0 }: { fee: number; used: Set<string>; perCash?: number } = $props()
 
   const items = $derived(shopItems())
   const pgItem = $derived(items.find(x => x.id === PG_ID)!)
@@ -116,8 +117,12 @@
   /** 주당 최대 구매(회전율). 0이나 비우면 제한 없음 */
   const setCap = (id: string, v: number) => { if (v > 0) eff.caps[id] = Math.round(v); else delete eff.caps[id]; saveEff() }
   const fx = (v: number) => (Math.round(v * 100) / 100).toFixed(2)
-  /** 플가의 회수율. 효율 e인 아이템의 회수율은 그 e배다(캐시 1원어치를 팔아 받는 돈) */
-  const pgRate = $derived(pg && eff.um ? pg * (1 - fee) * umNet() / pgItem.cash : 0)
+  /**
+   * 플가의 회수율. 효율 e인 아이템의 회수율은 그 e배다(캐시 1원어치를 팔아 받는 돈 ÷ 그 캐시에 든 현금).
+   * 충전 할인을 넣어 아래 결과 회수율과 같은 잣대로 본다(2026-11-02 사용자: 할인이 안 들어가 결과와 차이가 컸다). 크레딧은 안 넣는다
+   */
+  const won1 = $derived(perCash > 0 ? perCash : 1)
+  const pgRate = $derived(pg && eff.um ? pg * (1 - fee) * umNet() / (pgItem.cash * won1) : 0)
   const VIEWS = { ratio: '플가 몇 개', price: '플가 가격으로', rate: '회수율' } as const
   const head = $derived(({ ratio: '플가 대비', price: '플가로 치면', rate: '회수율' } as const)[eff.pgView])
   const pct = (e: number) => pgRate ? `${(e * pgRate * 100).toFixed(1)}%` : '—'
@@ -184,7 +189,7 @@
         <span><i class="down"></i>플가보다 손해</span>
         <span><em class="buy">구매</em>지금 고른 루트에서 사는 아이템</span>
         <label class="hide"><input type="checkbox" bind:checked={eff.hideLoss} onchange={saveEff} />플가보다 손해인 것 숨기기{#if lossCount} ({lossCount}){/if}</label>
-        <label class="view" use:tip={'회수율: 수수료 빼고 받는 메소를 엄 시세로 바꾼 돈 ÷ 캐시가'}>
+        <label class="view" use:tip={`회수율: 수수료 빼고 받는 메소를 엄 시세로 바꾼 돈 ÷ 그 캐시를 충전하는 데 든 현금(${perCash > 0 ? `이 주 충전 기록 평균 1캐시당 ${perCash.toFixed(3)}원` : '1:1'}). 크레딧은 빼요`}>
           효율 보기
           <select bind:value={eff.pgView} onchange={saveEff}>
             {#each Object.entries(VIEWS) as [k, t] (k)}<option value={k}>{t}</option>{/each}
@@ -362,7 +367,7 @@
       {/if}
     </div>
   </div>
-  <p class="ef-hint">흐린 숫자가 기준이에요. 경매장에서 확인한 실제 가격을 넣으면(기준보다 높아도, 낮아도) 그 값으로 계산하고, 칸을 벗어나면 효율 순으로 다시 줄 서요. 비워 둔 아이템은 계산에서 빠져요. 효율 칸에 마우스를 올리면 다른 보기 값도 나와요. 목록에서 뺀 아이템은 계산에서도 빠져요.</p>
+  <p class="ef-hint">흐린 숫자가 기준이에요. 경매장에서 확인한 실제 가격을 넣으면(기준보다 높아도, 낮아도) 그 값으로 계산하고, 칸을 벗어나면 효율 순으로 다시 줄 서요. 비워 둔 아이템은 계산에서 빠져요. 효율 칸에 마우스를 올리면 다른 보기 값도 나와요.{#if eff.pgView === 'rate'}{' '}회수율은 충전 할인을 넣은 값이에요({perCash > 0 ? `이 주 충전 기록 평균 1캐시당 ${perCash.toFixed(3)}원` : '이 주 충전 기록이 없어 1:1'}). 크레딧은 빼서 아래 결과 회수율보다 낮아요.{/if} 목록에서 뺀 아이템은 계산에서도 빠져요.</p>
   {:else}
   <!-- 구매용: 실제로 쓸 아이템. 결제액에는 들지만 팔지 않으니 회수가 없다. 표 규칙(폰에서 카드로 접히는 것)을 안 타게 표 대신 목록으로 -->
   <div class="buytab">
