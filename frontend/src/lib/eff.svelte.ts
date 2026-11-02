@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { CREDIT_RATE, MONTHLY, PG_ID, rateOf, creditWonPer, feeOf, fund, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type Route, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { CREDIT_RATE, HD_KEY, HD_MONTHLY, HD_RATE, PT_KEY, MONTHLY, PG_ID, rateOf, creditWonPer, feeOf, fund, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type Route, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 import { groupRows, settle, type Prices, type Use } from './core/ledger'
@@ -168,6 +168,14 @@ interface Saved {
   /** 끝에 남는 크레딧을 털지 않고 모아 둘지 */
   creditKeep: boolean
   /**
+   * 넥슨 현대카드: 결제를 추천할지(hdOn), 포인트를 쓸지(ptOn). 포인트는 크레딧처럼 ptFrom 주 시작 포인트(ptBalance) +
+   * 현대카드 결제로 쌓인 것 − 포인트로 충전한 것으로 저절로 센다(2026-11-02 사용자)
+   */
+  hdOn: boolean
+  ptOn: boolean
+  ptBalance: number
+  ptFrom: string
+  /**
    * 판매 1회 수고비. 최적화 루트는 한 번 덜 팔 때 이보다 더 내야 하면 줄이지 않는다.
    * 기본값을 1,000원에서 2,000원으로 바꾸며 이름도 바꿨다. 옛 이름에 남은 1,000원은 버리고 새 기본값에서 시작한다
    */
@@ -193,6 +201,7 @@ function fresh(): Saved {
     barcodeOn: true, barcodeWant: null, weekBarcode: {},
     um: 0, umFee: 5, mk: 0, gift: 0, giftUnit: 10_000, giftMin: 10_000, at: {}, prices: {}, feeOverride: null, want: 'best', salesN: 10, pgView: 'ratio', picked: [...DEFAULT_PICK], listNews: false, custom: [], buys: [], buysWeek: weekNow(), tags: {}, snaps: {}, serverNames: {}, charges: {}, outside: {}, mkMeso: {}, creditBuys: {}, creditFrom: weekNow(), hideLoss: false,
     creditOn: true, creditBalance: 0, creditPrices: { prime: 6, primeadd: 16 }, creditCustom: [], creditKeep: false, sellCost: 2000, minRate: 0,
+    hdOn: false, ptOn: false, ptBalance: 0, ptFrom: weekNow(),
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
     weekRoute: {},
   }
@@ -540,7 +549,7 @@ export function computeEff(d: State, plan: PlanResult | null, rows: Row[] = []):
                sink: { mk: number; gift: number } = { mk: eff.mk, gift: eff.gift }) => {
     const input = {
       weeks, balance: bal.cash, balanceWon: bal.won, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: null, on: m.on, unit: m.unit })),
-      leftNow: leftNowCalc(), thisMonth: thisMonth(),
+      leftNow: leftNowCalc(), thisMonth: thisMonth(), hyundai: hdIn(d.thisWeek),
       barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: $state.snapshot(eff.weekBarcode),
       um: umNet(), mk: sink.mk, gift: giftOf(sink.gift), items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn, nexonLast: false,
     }
@@ -824,6 +833,8 @@ export function payOptions() {
   return [
     ...eff.cards.map(c => ({ key: c.key, name: c.name, off: pct(rateOf(c.disc)), limit: true })),
     ...eff.methods.map(m => ({ key: m.id, name: m.name, off: pct(plainRateOf(m.mode, m.val)), limit: false })),
+    { key: HD_KEY, name: '넥슨 현대카드', off: 0, limit: false },
+    { key: PT_KEY, name: '현대카드 포인트', off: 100, limit: false },
     { key: PLAIN_KEY, name: '일반 충전', off: 0, limit: false },
   ]
 }
@@ -1051,3 +1062,49 @@ export function removeCreditBuy(week: string, id: string) {
 }
 
 type Pick2<T, K extends keyof T> = { [P in K]: T[P] }
+
+// ---- 넥슨 현대카드 포인트 ----
+// 현대카드 결제(HD_KEY)와 포인트로 한 충전(PT_KEY, 할인 100% = 현금 0원)은 충전 기록에 적는다. 포인트는 결제하는 순간 쌓인다고 본다
+
+export interface PointWeek { start: number; earned: number; used: number; left: number }
+
+/** ptFrom 주부터 이번 주까지: 시작 + 현대카드로 쌓인 것 − 포인트로 충전한 것 = 남은 것. 쌓이는 건 달마다 2만 P까지 */
+export function pointFlow(thisWeek: string) {
+  // 달 한도는 기록 밖(이번 달 기록 시작 전 결제)과 ptFrom 전 기록까지 차례로 센다
+  const got: Record<string, number> = { [thisMonth()]: (eff.outside[HD_KEY] ?? 0) * HD_RATE }
+  const byWeek: Record<string, { earned: number; used: number }> = {}
+  for (const w of Object.keys(eff.charges).sort()) {
+    const x = byWeek[w] = { earned: 0, used: 0 }
+    for (const c of eff.charges[w]) {
+      if (c.key === HD_KEY) {
+        const e = Math.max(0, Math.min(c.cash * HD_RATE, HD_MONTHLY * HD_RATE - (got[c.month] ?? 0)))
+        got[c.month] = (got[c.month] ?? 0) + e
+        x.earned += e
+      } else if (c.key === PT_KEY) x.used += c.cash
+    }
+  }
+  const weeks: Record<string, PointWeek> = {}
+  let bal = eff.ptBalance
+  for (let w = eff.ptFrom; w <= thisWeek; w = addDays(w, 7)) {
+    const start = bal, { earned, used } = byWeek[w] ?? { earned: 0, used: 0 }
+    bal = start + earned - used
+    weeks[w] = { start, earned, used, left: bal }
+  }
+  return { weeks, left: bal }
+}
+
+/** 2번 칸에서 '지금 포인트'를 카드사 값으로 고친다. 기록은 그대로 두고 흐름의 시작값을 맞춘다 */
+export function setPointNow(thisWeek: string, v: number) {
+  eff.ptBalance += Math.round(v) - pointFlow(thisWeek).left
+  saveEff()
+}
+
+/** 계산에 넘길 현대카드 사정. 둘 다 꺼 두면 null */
+function hdIn(thisWeek: string) {
+  if (!eff.hdOn && !eff.ptOn) return null
+  return {
+    left: eff.hdOn ? Math.max(0, HD_MONTHLY - chargedThisMonth(HD_KEY)) : null,
+    points: eff.ptOn ? Math.max(0, pointFlow(thisWeek).left) : 0,
+    nexonLeft: leftNowCalc().nexon ?? 0,
+  }
+}

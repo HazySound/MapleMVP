@@ -12,7 +12,7 @@
   import { app } from '../store.svelte'
   import { planner } from '../plan.svelte'
   import { eff, effWeek, planWeeks, saveEff, setWeekRoute, umNet, type EffOut, type RouteAlt, type RouteSet, type Want } from '../eff.svelte'
-  import { GIFT_ID, PG_ID, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
+  import { GIFT_ID, HD_KEY, LAST_KEY, PG_ID, PT_KEY, countLabel, itemLabel, unitName, type Part } from '../core/efficiency'
   import { eul, eun, ro, spotlight } from '../format'
   import { won } from '../format'
 
@@ -26,6 +26,9 @@
   /** 이 주에 쓸 캐시와 그중 가진 캐시 */
   const need = $derived(cur ? cur.route.pay + cur.w.use : 0)
   const held = $derived(cur ? cur.funding.parts.filter(q => q.held).reduce((a, q) => a + q.cash, 0) : 0)
+  /** 현대카드 포인트 충전·현대카드 결제 줄. 포인트 충전은 넥슨카드 한도가 남아야 되고 한 번에 그 한도까지다(2026-11-02 사용자) */
+  const ptPart = $derived(cur?.funding.parts.find(q => q.key === PT_KEY) ?? null)
+  const hdPart = $derived(cur?.funding.parts.find(q => q.key === HD_KEY) ?? null)
 
   /**
    * 회수율이 비슷한 다른 루트(2026-10-12 사용자). 이번 주에 바꿔 끼운다
@@ -330,8 +333,10 @@
       <ol>
         <li>
           <!-- 가진 캐시는 새로 내는 돈이 아니라 그 캐시를 산 값이다. '충전 → 현금'이면 지금 낼 돈으로 읽힌다(2026-11-01 문의) -->
-          <div class="t">{#if held}가진 캐시 {won(held)} 사용{#if need > held}{' '}+ {won(need - held)} 충전{/if}{:else}캐시 {won(need)} 충전{/if} → 사용한 현금 {won(cur.funding.cost)}원</div>
-          <div class="chips">{#each cur.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}</span>{/each}</div>
+          <div class="t">{#if held || ptPart}{[held ? `가진 캐시 ${won(held)}` : '', ptPart ? `현대카드 포인트 ${won(ptPart.cash)}` : ''].filter(Boolean).join(' · ')} 사용{#if need > held + (ptPart?.cash ?? 0)}{' '}+ {won(need - held - (ptPart?.cash ?? 0))} 충전{/if}{:else}캐시 {won(need)} 충전{/if} → 사용한 현금 {won(cur.funding.cost)}원</div>
+          <div class="chips">{#each cur.funding.parts as q, qi (qi)}<span class="ef-chip">{q.name} <b>{won(q.cash)}</b>{#if cardDetail(q)}<em>{cardDetail(q)}</em>{/if}{#if !q.held} → {won(q.won)}원{/if}{#if q.point}<em class="pt">+{won(q.point)} P</em>{/if}</span>{/each}</div>
+          {#if ptPart}<div class="dd">현대카드 포인트 충전은 넥슨카드 한도가 남아 있어야 돼요.{#if cur.funding.parts.some(q => q.key === LAST_KEY)}{' '}<b>넥슨카드보다 포인트 충전을 먼저 하세요.</b> 넥슨카드로 한도를 다 쓰면 포인트 충전이 안 돼요.{/if}</div>{/if}
+          {#if hdPart?.point}<div class="dd">현대카드 결제로 포인트 <b>{won(hdPart.point)} P</b>가 쌓여요. 결제를 2번 칸에 적으면 다음 계산부터 0원 캐시로 써요.</div>{/if}
           {#if cur.w.use}<div class="dd">이 중 <b>{won(cur.w.use)}캐시는 구매용</b>(실제로 쓸 아이템)이에요. 아래 MVP작은 나머지 {won(cur.route.pay)}캐시로만 짰어요. 구매용도 캐시샵 결제라 MVP 금액({won(cur.route.pay + cur.w.use)}원 전부)과 크레딧에 들어가요.</div>{/if}
           {#if cur.funding.spare}<div class="dd">끝자리 때문에 한 권 더 사서 <b>{won(cur.funding.spare.cash)}캐시가 남아요</b>. 다음 주에 먼저 쓰고, 그 값은 다음 주에 세요.</div>{/if}
         </li>
@@ -490,11 +495,14 @@
 
   h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
   .ef-chip em { font-style: normal; font-size: 11px; color: var(--color-tx3); }
+  .ef-chip em.pt { color: var(--color-mint); }
   .good { color: var(--color-good); }
   .bad { color: var(--color-bad); }
 
   .route ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: s; }
   .route li { display: grid; grid-template-columns: 30px 1fr; column-gap: 10px; row-gap: 4px; }
+  /* 설명 줄이 셋 넘게 붙어도(현대카드 안내 둘) 번호 칸으로 내려가지 않게 */
+  .route li > * { grid-column: 2; }
   .route li::before { counter-increment: s; content: counter(s); grid-row: span 3; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--color-panel3); font-family: var(--font-mono); font-size: 12px; color: var(--color-lav); }
   .route .t { font-size: 13.5px; font-weight: 600; }
   .route .chips { display: flex; flex-wrap: wrap; gap: 4px; }

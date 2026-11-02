@@ -5,11 +5,11 @@
    * 남은 한도 안에서 추천한다(그래서 넥슨카드 '그 달 마지막 20만원에만 쓰기'는 없앴다, 2026-10-16 사용자)
    */
   import NumBox from './NumBox.svelte'
-  import { SHOP, addMethod, beforeThisWeek, cashFlow, eff, setBefore, setCashNow, setWeekCharge, syncWeekOff, weekCharged, weekChargedBefore, PLAIN_KEY, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
+  import { SHOP, addMethod, beforeThisWeek, cashFlow, eff, leftNowCalc, pointFlow, setPointNow, setBefore, setCashNow, setWeekCharge, syncWeekOff, weekCharged, weekChargedBefore, PLAIN_KEY, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
   import { app, getBase } from '../store.svelte'
   import { md, spotlight } from '../format'
   import { tip } from '../tip'
-  import { MONTHLY, plainRateOf, rateOf, unitName, type PlainMode } from '../core/efficiency'
+  import { HD_KEY, HD_MONTHLY, HD_RATE, MONTHLY, PT_KEY, plainRateOf, rateOf, unitName, type PlainMode } from '../core/efficiency'
   import { won } from '../format'
 
   const month = Number(thisMonth().slice(5))
@@ -54,6 +54,11 @@
   }
   /** 충전 기록이 있으면 캐시 잔액은 기록으로 센다. 설정 칸은 기록을 시작한 주의 처음 잔액이 된다 */
   const flow = $derived(app.data ? cashFlow(getBase()?.rows ?? [], app.data.thisWeek) : null)
+  /** 현대카드: 이번 주 전까지 이번 달 적립(최대 2만 P), 지금 포인트, 포인트 충전 조건인 넥슨카드 남은 한도 */
+  const hdBefore = $derived(Math.min(HD_MONTHLY, beforeThisWeek(HD_KEY)) * HD_RATE)
+  const hdFull = $derived(beforeThisWeek(HD_KEY) + weekCharged(HD_KEY) >= HD_MONTHLY)
+  const pts = $derived(app.data ? pointFlow(app.data.thisWeek).left : eff.ptBalance)
+  const nexonLeft = $derived(leftNowCalc().nexon ?? 0)
   /** 지금 잔액 칸에 마지막으로 적은 값. 기록보다 적게 적어 그대로 못 맞췄을 때 알린다 */
   let cashWant = $state<number | null>(null)
   /** '이번 달 이미 충전'은 라벨로 보이고, 누르면 칸이 열렸다가 Enter·칸을 벗어나면 다시 라벨로(2026-10-16 사용자) */
@@ -124,6 +129,45 @@
         </span>
       </div>
     {/each}
+
+    <!--
+      넥슨 현대카드(2026-11-02 사용자, 시안 A). 결제는 1:1이라 할인 수단 뒤에 일반 충전 몫을 대신하고, 월 20만 원까지 10%가 포인트로 쌓인다(적립률 고정).
+      포인트는 0원 캐시. 넥슨카드 한도가 남아 있어야 충전되고 한 번에 그 한도까지다(넥슨카드 한도는 안 줄어든다)
+    -->
+    <div class="row head sub"><span></span><span>넥슨 현대카드</span><span>적립 · 포인트</span><span>이번 주 충전</span></div>
+    <div class="row" class:off={!eff.hdOn}>
+      <input type="checkbox" id="eff-hd" bind:checked={eff.hdOn} onchange={saveEff} />
+      <label for="eff-hd">현대카드 결제<small>1:1 결제 · 월 20만 원까지 10% 적립</small></label>
+      <span class="nolimit">10%</span>
+      <span class="wk">
+        {@render weekBox(HD_KEY, '현대카드 결제', eff.hdOn)}
+        <span class="lim" class:full={hdFull}>
+          <span class="mh">이번 달 적립</span>
+          <span class="nm2">
+          {#if editBefore === HD_KEY}
+            <span class="bx"><NumBox id="eff-before-{HD_KEY}" label="이번 달 이번 주 전까지 현대카드로 쌓인 포인트" size="sm" unit="P" placeholder="0"
+              value={hdBefore} set={v => setBefore(HD_KEY, Math.min(v, HD_MONTHLY * HD_RATE) / HD_RATE)} onblur={() => (editBefore = null)} /></span>
+          {:else}
+            <button class="lbl" onclick={() => startBefore(HD_KEY)} disabled={!eff.hdOn} use:tip={'이번 달 이번 주 전까지 쌓인 포인트 고치기'}>{won(hdBefore)}</button>
+          {/if}
+          <span>/ {won(HD_MONTHLY * HD_RATE)}<span class="wu">P</span></span>
+          </span>
+        </span>
+      </span>
+    </div>
+    <div class="row" class:off={!eff.ptOn}>
+      <input type="checkbox" id="eff-pt" bind:checked={eff.ptOn} onchange={saveEff} />
+      <label for="eff-pt">포인트로 충전<small>옆 칸은 지금 포인트 · 현금 0원</small></label>
+      <NumBox id="eff-pt-now" label="지금 현대카드 포인트" size="sm" unit="P" placeholder="0" value={pts}
+        set={v => { if (app.data) setPointNow(app.data.thisWeek, v) }} disabled={!eff.ptOn} />
+      <span class="wk">
+        {@render weekBox(PT_KEY, '포인트로 충전', eff.ptOn)}
+        {#if nexonLeft <= 0}<span class="lim full">넥슨카드 한도가 없어 이번 달엔 못 써요</span>{/if}
+      </span>
+    </div>
+    {#if eff.ptOn}
+      <p class="ef-hint pt">현대카드 포인트로 넥슨캐시를 사려면 <b>넥슨카드 월 한도가 남아 있어야</b> 해요. 넥슨카드 한도는 줄지 않아요. 넥슨카드도 이번 달 한도까지 충전할 거면 <b>포인트 충전을 먼저</b> 하세요.</p>
+    {/if}
 
     <!-- 직접 추가한 결제수단(넥슨팩 쿠폰 등). 할인이 큰 것부터 상품권과 섞어 쓴다 -->
     {#snippet methodForm()}
@@ -209,6 +253,7 @@
 <style>
   .card { display: grid; gap: 12px; align-content: start; }
   .warn { color: var(--color-peach); }
+  .ef-hint.pt { margin: 0 0 0 26px; }
   .prev { justify-self: end; font-size: 11px; color: var(--color-tx3); font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 2px; }
   .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 7px; background: var(--color-panel3); font-family: var(--font-mono); font-size: 11px; color: var(--color-lav); }
   .or { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--color-tx3); }

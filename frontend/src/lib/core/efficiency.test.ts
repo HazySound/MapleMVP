@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GIFT_ID, balancePoint, creditWonPer, fund, minPrice, pickAt, planAll, plainRateOf, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
+import { GIFT_ID, HD_KEY, PT_KEY, balancePoint, creditWonPer, fund, minPrice, pickAt, planAll, plainRateOf, rateOf, solve, spendCredits, type CreditItem, type FundCtx, type Sellable } from './efficiency'
 
 const near = (a: number, b: number, eps = 0.5) => expect(Math.abs(a - b)).toBeLessThanOrEqual(eps)
 
@@ -748,3 +748,52 @@ describe('선물식과 크레딧', () => {
   })
 })
 
+
+describe('넥슨 현대카드', () => {
+  const cul = { key: 'culture', name: '컬쳐랜드', rate: 0.94 }
+  it('포인트는 0원으로 먼저, 현대카드는 상품권 뒤 일반 충전 몫을 적립 한도까지 대신한다', () => {
+    const f = fund(300_000, ctx({ held: { cash: 70_000, won: 70_000 }, cards: [cul], limits: { culture: 100_000 }, points: 58_050, hyundai: 80_000 }))
+    expect(f.parts.map(p => [p.name, p.cash, p.won])).toEqual([
+      ['가진 캐시', 70_000, 70_000], ['현대카드 포인트', 58_000, 0], ['컬쳐랜드', 100_000, 94_000], ['넥슨 현대카드', 72_000, 72_000],
+    ])
+    expect(f.parts[3].point).toBeCloseTo(7_200)
+    expect(f.cost).toBeCloseTo(70_000 + 94_000 + 72_000)
+    // 적립 한도를 넘는 몫은 일반 충전
+    const g = fund(100_000, ctx({ cards: [], hyundai: 30_000 }))
+    expect(g.parts.map(p => [p.name, p.cash])).toEqual([['넥슨 현대카드', 30_000], ['일반 충전', 70_000]])
+  })
+  const plan = (nexonLeft: number, points = 50_000) => planAll({
+    weeks: [
+      { start: '2026-11-05', amount: 150_000, tier: 'gold', month: '2026-11' },
+      { start: '2026-11-12', amount: 150_000, tier: 'gold', month: '2026-11' },
+    ],
+    balance: 0,
+    cards: [{ key: 'nexon', name: '넥슨카드', disc: 10, on: true }],
+    leftNow: { nexon: nexonLeft }, thisMonth: '2026-11', nexonLast: false,
+    barcode: { on: false, bonus: 0.05, cap: 500_000 }, barcodeOn: false, barcodeWant: null, weekBarcode: {},
+    um: 1500, mk: 2300, items: [karma], fee: null, exact: true,
+    hyundai: { left: 200_000, points, nexonLeft },
+  })!
+  it('넥슨카드 한도가 없으면 포인트를 못 쓰고, 현대카드로 쌓인 포인트는 다음 주에 쓴다', () => {
+    const none = plan(0)
+    expect(none[0].ctx.points).toBe(0)
+    const res = plan(200_000)
+    const f0 = fund(res[0].solved.best.pay, res[0].ctx)
+    // 계획보다 1,000원 안쪽으로 넘긴 끝자리는 일반 충전 대신 현대카드
+    expect(f0.parts.map(p => [p.key, p.cash])).toEqual([[PT_KEY, 50_000], ['nexon', 100_000], ...(res[0].solved.best.pay > 150_000 ? [[HD_KEY, res[0].solved.best.pay - 150_000]] : [])])
+    // 첫 주: 포인트 5만 + 넥슨카드 10만. 둘째 주: 넥슨카드 남은 10만 + 현대카드
+    const f1 = fund(res[1].solved.best.pay, res[1].ctx)
+    expect(f1.parts.map(p => p.key)).toEqual(['nexon', HD_KEY])
+    // 첫 주 현대카드(끝자리)로 쌓인 포인트가 둘째 주로 넘어온다
+    expect(res[1].ctx.points).toBeCloseTo(f0.parts.find(p => p.key === HD_KEY)?.point ?? 0)
+    // 포인트 충전은 넥슨카드 한도를 깎지 않는다
+    expect(res[1].ctx.limits.nexon).toBe(100_000)
+  })
+  it('포인트가 넥슨카드보다 먼저라 넥슨카드 한도를 다 쓰는 주에도 쓴다', () => {
+    const res = plan(100_000, 30_000)
+    const f0 = fund(res[0].solved.best.pay, res[0].ctx)
+    expect(f0.parts.map(p => [p.key, p.cash])).toEqual([[PT_KEY, 30_000], ['nexon', 100_000], [HD_KEY, 20_000 + res[0].solved.best.pay - 150_000]])
+    // 둘째 주는 넥슨카드 한도가 0이라 첫 주 현대카드로 쌓인 포인트를 못 쓴다
+    expect(res[1].ctx.points).toBe(0)
+  })
+})

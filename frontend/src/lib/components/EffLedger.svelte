@@ -224,7 +224,7 @@
         {#if !isNow || odd.length}<button class="link sm" onclick={() => (chEdit = !chEdit)}>{chEdit ? '닫기' : charges.length ? '고치기' : '적기'}</button>{/if}
       </div>
       {#each L.charges as c, i (i)}
-        <div class="fl sub"><span>{c.name}{c.off ? ` · ${c.off}% 할인` : ''}</span><b class="mono">{won(c.cash)}캐시 → {won(c.won)}원</b></div>
+        <div class="fl sub"><span>{c.name}{c.off && c.off < 100 ? ` · ${c.off}% 할인` : ''}</span><b class="mono">{won(c.cash)}캐시 → {won(c.won)}원</b></div>
       {/each}
       {#if L.shop}<div class="fl sub"><span>넥슨쇼핑 쿠폰</span><b class="mono">{won(L.shop)}원</b></div>{/if}
       <div class="fl"><span>충전에 든 현금</span><b class="mono">{won(L.chargeWon)}원</b>
