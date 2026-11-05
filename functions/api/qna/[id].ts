@@ -6,7 +6,7 @@
  */
 import { type Ctx, json } from '../_lib'
 import {
-  admins, canSee, dropPosts, imagesOf, isOwner, listItem, loadPost, notify, watchers,
+  admins, canSee, dropPosts, imagesOf, isOwner, listItem, loadPost, notify, tellAdmin, watchers,
 } from '../_qna'
 import { LIMIT, tick, tooMany, whoSent } from '../_rate'
 import { viewer } from '../_viewer'
@@ -71,6 +71,7 @@ export async function onRequestPatch(ctx: Ctx): Promise<Response> {
   const db = ctx.env.DB
   await db.prepare("UPDATE post SET status = 'done', updated_at = ? WHERE id = ?").bind(Date.now(), p.id).run()
   await notify(db, [...await admins(db), ...await watchers(db, p, v.uid)].filter(u => u !== v.uid), p.id, 'done')
+  if (!v.admin) await tellAdmin(ctx.env, 'done', p.id, p.title)
   return json({ status: 'done' })
 }
 

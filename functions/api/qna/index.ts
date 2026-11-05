@@ -10,7 +10,7 @@
 import { type Ctx, json } from '../_lib'
 import {
   KINDS, MAX_BODY, MAX_DIAG, MAX_TITLE, NEED_SHOT, POST_SQL, type PostRow, TOPICS,
-  admins, attach, clean, listItem, notify,
+  admins, attach, clean, listItem, notify, tellAdmin,
 } from '../_qna'
 import { LIMIT, tick, tooMany, whoSent } from '../_rate'
 import { viewer } from '../_viewer'
@@ -95,6 +95,9 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
     .bind(v.uid, kind, topic, title, body, diag, secret, now, now).first<{ id: number }>()
   const id = r!.id
   await attach(db, v.uid, images, id, null)
-  if (kind !== 'notice') await notify(db, (await admins(db)).filter(u => u !== v.uid), id, 'new')
+  if (kind !== 'notice') {
+    await notify(db, (await admins(db)).filter(u => u !== v.uid), id, 'new')
+    if (!v.admin) await tellAdmin(ctx.env, 'new', id, title, body)
+  }
   return json({ id })
 }

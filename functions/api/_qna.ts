@@ -149,6 +149,24 @@ export async function notify(db: D1Database, uids: string[], postId: number, kin
   ]))
 }
 
+/**
+ * 관리자에게 가는 알림을 운영자 텔레그램으로도 보낸다(사이트에 안 들어가도 알게, 2026-11-05 사용자).
+ * 비밀값(TG_TOKEN·TG_CHAT)이 없으면 안 보내고, 보내다 실패해도 글쓰기는 그대로 둔다
+ */
+export async function tellAdmin(env: { TG_TOKEN?: string; TG_CHAT?: string }, kind: 'new' | 'more' | 'done',
+                                id: number, title: string, body = '') {
+  if (!env.TG_TOKEN || !env.TG_CHAT) return
+  const head = { new: '새 문의', more: '문의자 답글', done: '해결됨' }[kind]
+  const text = `[${head}] ${title}\n${body.slice(0, 300)}${body.length > 300 ? '…' : ''}\nhttps://maple-mvp.com/#qna/${id}`
+  try {
+    await fetch(`https://api.telegram.org/bot${env.TG_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: env.TG_CHAT, text, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(3000),
+    })
+  } catch { /* 알림이 안 가도 글은 올라가야 한다 */ }
+}
+
 export async function admins(db: D1Database): Promise<string[]> {
   const r = await db.prepare('SELECT uid FROM member WHERE admin = 1').all<{ uid: string }>()
   return r.results.map(x => x.uid)

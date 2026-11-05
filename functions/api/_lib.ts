@@ -16,6 +16,9 @@ export interface Env {
   SESSION_SECRET: string
   /** 로컬에서 카카오 없이 로그인해 보는 길(auth/dev). 운영에는 넣지 않는다 */
   DEV_LOGIN?: string
+  /** 운영자 텔레그램 알림(봇 토큰·대화방 번호). 없으면 안 보낸다 */
+  TG_TOKEN?: string
+  TG_CHAT?: string
 }
 
 export interface Ctx {

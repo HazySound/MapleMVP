@@ -6,7 +6,7 @@
  * 공지는 관리자만 덧붙이고, 덧붙이면 추천한 사람에게 '공지에 내용이 추가됐다'고 알린다.
  */
 import { type Ctx, json } from '../../_lib'
-import { MAX_BODY, admins, attach, canSee, clean, isOwner, loadPost, notify, watchers } from '../../_qna'
+import { MAX_BODY, admins, attach, canSee, clean, isOwner, loadPost, notify, tellAdmin, watchers } from '../../_qna'
 import { LIMIT, tick, tooMany } from '../../_rate'
 import { viewer } from '../../_viewer'
 
@@ -38,7 +38,10 @@ export async function onRequestPost(ctx: Ctx): Promise<Response> {
     .bind(now, p.id).run()
   if (p.kind === 'notice') { if (v.admin) await notify(db, await watchers(db, p, v.uid), p.id, 'update') }
   else if (answer) await notify(db, await watchers(db, p, v.uid), p.id, 'answer')
-  else if (v.uid === p.uid) await notify(db, (await admins(db)).filter(u => u !== v.uid), p.id, 'more')
+  else if (v.uid === p.uid) {
+    await notify(db, (await admins(db)).filter(u => u !== v.uid), p.id, 'more')
+    if (!v.admin) await tellAdmin(ctx.env, 'more', p.id, p.title, body)
+  }
   return json({ id: r!.id })
 }
 
