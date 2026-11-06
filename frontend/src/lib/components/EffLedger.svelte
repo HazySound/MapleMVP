@@ -5,13 +5,14 @@
    */
   import { app, getBase } from '../store.svelte'
   import { planner, weekNow } from '../plan.svelte'
-  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, payOptions, removeCharge, setMkMeso, thisMonth, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
+  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, overMonthly, payOptions, removeCharge, setMkMeso, thisMonth, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
   import NumBox from './NumBox.svelte'
   import { tip } from '../tip'
   import { tick } from 'svelte'
   import { SERVERS, SERVER_LIST, USES, partWhen, type Use } from '../core/ledger'
   import { addDays, eul, md, won, spotlight } from '../format'
   import type { TierKey } from '../types'
+  import { MONTHLY } from '../core/efficiency'
 
   let { week }: { week: string } = $props()
 
@@ -41,6 +42,8 @@
   }
   const serverName = (c: string | null) => !c ? '—' : SERVERS[c] ?? eff.serverNames[c] ?? `서버 ${c}`
   const charges = $derived(eff.charges[week] ?? [])
+  /** 이 주 기록이 들어간 결제수단 중 그 달 한도를 넘은 것(겹쳐 적었을 때 알린다, 2026-11-05 문의) */
+  const over = $derived(overMonthly().filter(o => o.weeks.includes(week)))
   const opts = $derived(payOptions())
   /** 이번 주 기록 중 2번 칸 '이번 주 충전'에 안 보이는 것: 지난 달 한도로 한 충전, 지운 결제수단 기록. 이것만 여기서 고친다(2026-11-01 문의) */
   const odd = $derived(isNow ? charges.filter(c => c.month !== thisMonth() || !opts.some(o => o.key === c.key)) : charges)
@@ -72,6 +75,46 @@
   const eok = (v: number) => v.toLocaleString('ko-KR', { maximumFractionDigits: 2 })
 </script>
 
+{#snippet charge()}
+    <div class="fl gh"><span>충전{L.estimated ? ' · 기록이 없어 계산값' : ''}</span>
+      {#if !isNow || odd.length}<button class="link sm" onclick={() => (chEdit = !chEdit)}>{chEdit ? '닫기' : charges.length ? '고치기' : '적기'}</button>{/if}
+    </div>
+    {#each L.charges as c, i (i)}
+      <div class="fl sub"><span>{c.name}{c.off && c.off < 100 ? ` · ${c.off}% 할인` : ''}</span><b class="mono">{won(c.cash)}캐시 → {won(c.won)}원</b></div>
+    {/each}
+    {#each over as o (o.key + o.month)}
+      <b class="warn">{o.name} {Number(o.month.slice(5))}월 충전 기록이 합쳐서 {won(o.cash)}캐시로 한 달 한도 {won(MONTHLY)}을 넘어요({o.weeks.map(w => `${md(w)} 주`).join(' · ')}). 같은 충전을 두 주에 겹쳐 적었는지 확인해 주세요.</b>
+    {/each}
+    {#if L.shop}<div class="fl sub"><span>넥슨쇼핑 쿠폰</span><b class="mono">{won(L.shop)}원</b></div>{/if}
+    <div class="fl"><span>충전에 든 현금</span><b class="mono">{won(L.chargeWon)}원</b>
+      {#if L.lines.length && Math.abs(L.chargeWon - L.cost) >= 1}<em>회수율은 작에 쓴 몫 {won(L.cost)}원으로 셉니다{L.none ? ` (회수 없음 ${won(L.none)}캐시 뺌)` : ''}</em>{/if}
+    </div>
+    {#if isNow}<em class="note">이번 주 충전은 위 2번 칸의 '이번 주 충전'에서 적어요.{#if odd.length}{' '}지난 달 한도로 한 충전과 지운 결제수단 기록은 '고치기'에서 고쳐요.{/if}</em>{/if}
+    {#if chEdit && (!isNow || odd.length)}
+      <div class="chedit">
+        {#each odd as c (c.id)}
+          <div class="ch-row">
+            <select aria-label="결제수단" value={c.key} onchange={e => updateCharge(week, c.id, { key: e.currentTarget.value })}>
+              {#each opts as o (o.key)}<option value={o.key}>{o.name}</option>{/each}
+              {#if !opts.some(o => o.key === c.key)}<option value={c.key}>{c.name} (지운 결제수단)</option>{/if}
+            </select>
+            <NumBox id="ch-off-{c.id}" label="할인율" size="sm" decimal unit="%" placeholder="0" value={c.off} set={v => updateCharge(week, c.id, { off: v })} />
+            <NumBox id="ch-cash-{c.id}" label="충전한 캐시" size="sm" unit="캐시" placeholder="충전한 캐시" value={c.cash} set={v => updateCharge(week, c.id, { cash: v })} />
+            <button class="x" onclick={() => removeCharge(week, c.id)} aria-label="이 충전 지우기">×</button>
+          </div>
+        {/each}
+        {#if !isNow}<div class="ch-acts">
+          <button class="btn" onclick={() => addCharge(week)}>+ 충전 추가</button>
+          {#if !charges.length && L.funding}<button class="btn" onclick={() => fillCharges(week, L.funding!.parts)}>계산값대로 충전했어요</button>{/if}
+        </div>{/if}
+      </div>
+    {/if}
+    {#if L.flow}
+      <em class="note">이 주 시작 잔액 {won(L.flow.start)}캐시 + 충전 {won(L.flow.charged)}캐시 − 구매 {won(L.flow.used)}캐시 = 다음 주로 {won(L.flow.left)}캐시(충전한 값 그대로 넘어가요)
+        {#if L.flow.short}<b class="warn">기록한 충전보다 {won(L.flow.short)}캐시 더 썼어요. 빠진 충전이 있으면 넣어 주세요.</b>{/if}</em>
+    {/if}
+{/snippet}
+
 <article class="card ledger" id="eff-ledger" use:spotlight>
   <h3 class="card-title">
     {md(week)} – {md(addDays(week, 6))} 결산
@@ -79,7 +122,8 @@
   </h3>
 
   {#if !L.lines.length}
-    <p class="none">이 주에는 구매내역이 없어요.</p>
+    <p class="none">이 주에는 구매내역이 없어요.{#if charges.length && !isNow}{' '}구매내역을 아직 안 불러왔으면 불러온 뒤 다시 봐 주세요. 적어 둔 충전 기록은 여기서 고칠 수 있어요.{/if}</p>
+    {#if charges.length && !isNow}<section class="flow solo" aria-label="충전 기록">{@render charge()}</section>{/if}
   {:else}
     <div class="nums">
       {#if goal}<div><span>계획 목표</span><b class="mono">{won(goal.goal)}</b><em>낸 금액 {won(goal.paid)}{goal.paid >= goal.goal ? ' · 달성' : ` · ${won(goal.goal - goal.paid)} 모자람`}</em></div>{/if}
@@ -220,40 +264,7 @@
     <div class="right">
     <!-- 흐름: 충전(방식 · 든 현금) → 넣은 캐시 → 얻은 메소 → 판 돈 → 총 회수 → 회수율. 충전도 이 목록 안에서 본다(2026-10-16 사용자) -->
     <section class="flow" aria-label="흐름">
-      <div class="fl gh"><span>충전{L.estimated ? ' · 기록이 없어 계산값' : ''}</span>
-        {#if !isNow || odd.length}<button class="link sm" onclick={() => (chEdit = !chEdit)}>{chEdit ? '닫기' : charges.length ? '고치기' : '적기'}</button>{/if}
-      </div>
-      {#each L.charges as c, i (i)}
-        <div class="fl sub"><span>{c.name}{c.off && c.off < 100 ? ` · ${c.off}% 할인` : ''}</span><b class="mono">{won(c.cash)}캐시 → {won(c.won)}원</b></div>
-      {/each}
-      {#if L.shop}<div class="fl sub"><span>넥슨쇼핑 쿠폰</span><b class="mono">{won(L.shop)}원</b></div>{/if}
-      <div class="fl"><span>충전에 든 현금</span><b class="mono">{won(L.chargeWon)}원</b>
-        {#if Math.abs(L.chargeWon - L.cost) >= 1}<em>회수율은 작에 쓴 몫 {won(L.cost)}원으로 셉니다{L.none ? ` (회수 없음 ${won(L.none)}캐시 뺌)` : ''}</em>{/if}
-      </div>
-      {#if isNow}<em class="note">이번 주 충전은 위 2번 칸의 '이번 주 충전'에서 적어요.{#if odd.length}{' '}지난 달 한도로 한 충전과 지운 결제수단 기록은 '고치기'에서 고쳐요.{/if}</em>{/if}
-      {#if chEdit && (!isNow || odd.length)}
-        <div class="chedit">
-          {#each odd as c (c.id)}
-            <div class="ch-row">
-              <select aria-label="결제수단" value={c.key} onchange={e => updateCharge(week, c.id, { key: e.currentTarget.value })}>
-                {#each opts as o (o.key)}<option value={o.key}>{o.name}</option>{/each}
-                {#if !opts.some(o => o.key === c.key)}<option value={c.key}>{c.name} (지운 결제수단)</option>{/if}
-              </select>
-              <NumBox id="ch-off-{c.id}" label="할인율" size="sm" decimal unit="%" placeholder="0" value={c.off} set={v => updateCharge(week, c.id, { off: v })} />
-              <NumBox id="ch-cash-{c.id}" label="충전한 캐시" size="sm" unit="캐시" placeholder="충전한 캐시" value={c.cash} set={v => updateCharge(week, c.id, { cash: v })} />
-              <button class="x" onclick={() => removeCharge(week, c.id)} aria-label="이 충전 지우기">×</button>
-            </div>
-          {/each}
-          {#if !isNow}<div class="ch-acts">
-            <button class="btn" onclick={() => addCharge(week)}>+ 충전 추가</button>
-            {#if !charges.length && L.funding}<button class="btn" onclick={() => fillCharges(week, L.funding!.parts)}>계산값대로 충전했어요</button>{/if}
-          </div>{/if}
-        </div>
-      {/if}
-      {#if L.flow}
-        <em class="note">이 주 시작 잔액 {won(L.flow.start)}캐시 + 충전 {won(L.flow.charged)}캐시 − 구매 {won(L.flow.used)}캐시 = 다음 주로 {won(L.flow.left)}캐시(충전한 값 그대로 넘어가요)
-          {#if L.flow.short}<b class="warn">기록한 충전보다 {won(L.flow.short)}캐시 더 썼어요. 빠진 충전이 있으면 넣어 주세요.</b>{/if}</em>
-      {/if}
+      {@render charge()}
 
       <div class="fl sep"><span>작에 넣은 캐시</span><b class="mono">{won(L.pay)}</b></div>
       {#if L.mesoSell + L.mesoMk}
@@ -313,6 +324,8 @@
   .fl.tot b { color: var(--color-mint); font-size: 15px; }
   .fl.loss b { color: var(--color-peach); font-size: 15px; }
   .none { margin: 0; font-size: 13px; color: var(--color-tx3); }
+  .flow.solo { margin-top: 12px; max-width: 520px; }
+  .flow > .warn { font-size: 12px; line-height: 1.5; margin: 4px 0; }
   .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
   .nums div { background: var(--color-bg2); border: 1px solid var(--color-line); border-radius: var(--radius-md); padding: 10px 12px; }
   .nums span { display: block; font-size: 11.5px; color: var(--color-tx3); }

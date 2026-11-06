@@ -5,7 +5,7 @@
    * 남은 한도 안에서 추천한다(그래서 넥슨카드 '그 달 마지막 20만원에만 쓰기'는 없앴다, 2026-10-16 사용자)
    */
   import NumBox from './NumBox.svelte'
-  import { SHOP, addMethod, beforeThisWeek, cashFlow, eff, leftNowCalc, pointFlow, setPointNow, setBefore, setCashNow, setWeekCharge, syncWeekOff, weekCharged, weekChargedBefore, PLAIN_KEY, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
+  import { SHOP, addMethod, beforeThisWeek, cashFlow, eff, leftNowCalc, overMonthly, pointFlow, setPointNow, setBefore, setCashNow, setWeekCharge, syncWeekOff, weekCharged, weekChargedBefore, PLAIN_KEY, removeMethod, saveEff, thisMonth, updateMethod, type PayMethod } from '../eff.svelte'
   import { app, getBase } from '../store.svelte'
   import { md, spotlight } from '../format'
   import { tip } from '../tip'
@@ -65,6 +65,8 @@
   const nexonLeft = $derived(leftNowCalc().nexon ?? 0)
   /** 지금 잔액 칸에 마지막으로 적은 값. 기록보다 적게 적어 그대로 못 맞췄을 때 알린다 */
   let cashWant = $state<number | null>(null)
+  /** 그 달 한도를 넘은 충전 기록(겹쳐 적은 것일 가능성이 크다) */
+  const overs = $derived(overMonthly())
   /** '이번 달 이미 충전'은 라벨로 보이고, 누르면 칸이 열렸다가 Enter·칸을 벗어나면 다시 라벨로(2026-10-16 사용자) */
   let editBefore = $state<string | null>(null)
   function startBefore(key: string) {
@@ -93,7 +95,7 @@
       set={v => { if (flow && app.data) { setCashNow(getBase()?.rows ?? [], app.data.thisWeek, v); cashWant = v } else { eff.balance = v; saveEff() } }} />
     {#if flow}
       <span class="ef-hint">{md(flow.first)} 주 시작 잔액 {won(eff.balance)} + 충전 기록 − 구매내역으로 저절로 세요. 게임 안 잔액과 다르면 여기서 고쳐 주세요. <b>이번 주 충전</b>에 적은 금액도 이미 충전한 것으로 들어가요.</span>
-      {#if cashWant != null && flow.left > cashWant}<span class="ef-hint warn">적은 {won(cashWant)}캐시보다 충전 기록이 많아서 더 줄일 수 없어요. 이번 주 충전에 적은 것 중 아직 안 한 충전이 있으면 지워 주세요.</span>{/if}
+      {#if cashWant != null && flow.left > cashWant}<span class="ef-hint warn">적은 {won(cashWant)}캐시보다 충전 기록이 많아서 더 줄일 수 없어요. 같은 충전을 두 주에 겹쳐 적었거나 아직 안 한 충전(이번 주 충전 포함)이 있는지 아래 결산에서 주를 넘겨 보며 확인해 주세요.{#if overs.length}{' '}{overs.map(o => `${o.weeks.map(w => `${md(w)} 주`).join('·')} ${o.name} ${Number(o.month.slice(5))}월 기록 ${won(o.cash)}`).join(', ')}이 한 달 한도를 넘어요.{/if}</span>{/if}
     {:else}
       <span class="ef-hint">{eff.balance ? '잔액부터 먼저 써요. 이미 충전한 돈이라 1:1로 계산해요.' : '넥슨 캐시 잔액이 있으면 넣어 주세요. 먼저 써요.'} 아래 결산에 충전을 기록하면 잔액은 저절로 세요.</span>
     {/if}

@@ -15,7 +15,7 @@
   import EffStyles from './EffStyles.svelte'
   import { app, getBase } from '../store.svelte'
   import { planner } from '../plan.svelte'
-  import { computeEff, eff, effWeek, feeNow, keepSnap, ledgerOf, planWeeks, tierAfter, weeksWithRows, whatOf } from '../eff.svelte'
+  import { computeEff, eff, effWeek, feeNow, keepSnap, ledgerOf, planWeeks, tierAfter, weeksWithRecords, whatOf } from '../eff.svelte'
   import { feeOf } from '../core/efficiency'
   import { REDUCED, addDays, md, mdy, won, spotlight } from '../format'
   import { untrack } from 'svelte'
@@ -23,12 +23,12 @@
 
   const d = $derived(app.data!)
 
-  // ---- 주 옮기기: 구매내역이 있는 지난 주들 · 이번 주 · 다음 주(계획이 있으면 미리 보기) ----
+  // ---- 주 옮기기: 구매내역이나 적어 둔 기록이 있는 지난 주들 · 이번 주 · 다음 주(계획이 있으면 미리 보기) ----
   const planOk = $derived(!!planner.result && !planner.result.error)
   const next = $derived(addDays(d.thisWeek, 7))
   const list = $derived([
     ...(planOk && eff.usePlan ? [next] : []), d.thisWeek,
-    ...weeksWithRows(getBase()?.rows ?? []).filter(w => w < d.thisWeek),
+    ...weeksWithRecords(getBase()?.rows ?? []).filter(w => w < d.thisWeek),
   ])
   const week = $derived(effWeek.sel && list.includes(effWeek.sel) ? effWeek.sel : d.thisWeek)
   const at = $derived(list.indexOf(week))

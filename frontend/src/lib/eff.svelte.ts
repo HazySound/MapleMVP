@@ -751,8 +751,34 @@ function fundOf(all: number, none: number, s: Snap, week: string, tier: TierKey 
 /** 그 주 구매내역 */
 export const rowsOf = (rows: Row[], week: string) => rows.filter(r => weekStart(r.date) === week)
 
-/** 구매내역이 있는 주(새 주부터) */
-export const weeksWithRows = (rows: Row[]) => [...new Set(rows.map(r => weekStart(r.date)))].sort().reverse()
+/**
+ * 구매내역이 있거나 결산에 적어 둔 것(충전 기록·크레딧샵 산 것·메소마켓 값)이 있는 주(새 주부터).
+ * 구매내역을 아직 안 불러온 주도 적어 둔 기록을 보고 고칠 수 있게 결산 목록에 남긴다(2026-11-05 사용자·문의)
+ */
+export const weeksWithRecords = (rows: Row[]) => [...new Set([
+  ...rows.map(r => weekStart(r.date)),
+  ...Object.keys(eff.charges).filter(w => eff.charges[w].length),
+  ...Object.keys(eff.creditBuys).filter(w => eff.creditBuys[w].length),
+  ...Object.keys(eff.mkMeso).map(k => k.split('|')[0]),
+])].sort().reverse()
+
+/**
+ * 상품권·넥슨카드 충전 기록이 그 달 한도(20만)를 넘는 것: 결제수단 · 달 · 합계 · 기록이 있는 주.
+ * 실제로는 넘게 충전할 수 없으니 같은 충전을 두 주에 겹쳐 적은 것일 가능성이 크다(2026-11-05 문의: 10.22 주와 10.29 주에 같은 충전)
+ */
+export function overMonthly() {
+  const m = new Map<string, { key: string; name: string; month: string; cash: number; weeks: string[] }>()
+  for (const [w, cs] of Object.entries(eff.charges)) for (const c of cs) {
+    const card = eff.cards.find(x => x.key === c.key)
+    if (!card || c.cash <= 0) continue
+    const k = `${c.key}|${c.month}`
+    const x = m.get(k) ?? { key: c.key, name: card.name, month: c.month, cash: c.month === thisMonth() ? eff.outside[c.key] ?? 0 : 0, weeks: [] }
+    x.cash += c.cash
+    if (!x.weeks.includes(w)) x.weeks.push(w)
+    m.set(k, x)
+  }
+  return [...m.values()].filter(x => x.cash > MONTHLY).map(x => ({ ...x, weeks: x.weeks.sort() }))
+}
 
 /** 한 주 결산. 그 주에 떠 둔 시세가 없으면 지금 시세로 센다(own=false) */
 export function ledgerOf(rows: Row[], week: string, fee: number, tier: TierKey | null) {
