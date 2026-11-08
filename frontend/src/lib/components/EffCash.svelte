@@ -168,9 +168,14 @@
     </div>
     <div class="row" class:off={!eff.ptOn}>
       <input type="checkbox" id="eff-pt" bind:checked={eff.ptOn} onchange={saveEff} />
-      <label for="eff-pt">포인트로 충전<small>옆 칸은 지금 포인트 · 현금 0원</small></label>
-      <NumBox id="eff-pt-now" label="지금 현대카드 포인트" size="sm" unit="P" placeholder="0" value={pts}
-        set={v => { if (app.data) setPointNow(app.data.thisWeek, v) }} disabled={!eff.ptOn} />
+      <label for="eff-pt">포인트로 충전<small>옆 숫자는 지금 포인트 · 현금 0원</small></label>
+      <!-- 지금 포인트는 기록으로 저절로 센다. 늘 열린 칸이면 이번 주 충전 칸과 헷갈려 라벨로 두고 눌러서 고친다(2026-11-08 문의) -->
+      {#if editBefore === 'ptnow'}
+        <NumBox id="eff-before-ptnow" label="지금 현대카드 포인트" size="sm" unit="P" placeholder="0" value={pts}
+          set={v => { if (app.data) setPointNow(app.data.thisWeek, v) }} onblur={() => (editBefore = null)} />
+      {:else}
+        <span class="nolimit"><button class="lbl" onclick={() => startBefore('ptnow')} disabled={!eff.ptOn} use:tip={'지금 남은 포인트(이번 주 포인트 충전을 뺀 값). 카드사 앱 값과 다르면 눌러서 고치기'}>{won(pts)} P</button></span>
+      {/if}
       <span class="wk">
         {@render weekBox(PT_KEY, '포인트로 충전', eff.ptOn)}
         {#if nexonLeft <= 0}<span class="lim full">넥슨카드 한도가 없어 이번 달엔 못 써요</span>{/if}

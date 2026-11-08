@@ -111,7 +111,8 @@ export interface Funding { cost: number; parts: Part[]; spare: { cash: number; w
 
 export interface FundCtx {
   /** 이미 충전해 둔 캐시와 그때 쓴 현금 */
-  held: { cash: number; won: number }
+  /** lots: 산 값이 다른 덩이들. 있으면 싼 것부터 쓴다 */
+  held: { cash: number; won: number; lots?: Lot[] }
   /** 이 결제에 쓸 수 있는 결제수단 한도(키 → 남은 금액). 한도 없는 것은 Infinity */
   limits: Record<string, number>
   /** 쓸 결제수단. 싼 것부터 */
@@ -126,19 +127,35 @@ export interface FundCtx {
   hyundai?: number
 }
 
+export interface Lot { cash: number; won: number }
+
+/** 가진 캐시 n을 싼 것부터 꺼내고 거기 든 현금을 돌려준다(덩이를 깎는다). 0원 캐시가 늘 먼저(2026-11-08 사용자) */
+export function takeLots(lots: Lot[], n: number): number {
+  lots.sort((a, b) => a.won / a.cash - b.won / b.cash)
+  let won = 0
+  while (n > 0 && lots.length) {
+    const h = lots[0], t = Math.min(n, h.cash), r = h.won / h.cash
+    won += t * r; h.cash -= t; h.won -= t * r; n -= t
+    if (h.cash <= 0.5) lots.shift()
+  }
+  return won
+}
+
 /** 캐시 c를 마련하는 데 드는 현금과 그 내역 */
 export function fund(c: number, x: FundCtx): Funding {
   const parts: Part[] = []
   let left = c, cost = 0
-  if (x.held.cash > 0 && left > 0) {
-    const use = Math.min(left, x.held.cash), r = x.held.won > 0 ? x.held.won / x.held.cash : 1
-    parts.push({ name: '가진 캐시', cash: use, won: use * r, held: true })
-    left -= use; cost += use * r
-  }
-  // 현대카드 포인트는 현금 0원으로 먼저 쓴다(포인트샵은 100P 단위). 이 주에 쌓이는 포인트는 다음 계산부터 쓴다
+  // 현대카드 포인트는 현금 0원이라 가장 먼저 쓴다(포인트샵은 100P 단위)
   if (x.points && left > 0) {
     const use = Math.min(left, Math.floor(x.points / U) * U)
     if (use > 0) { parts.push({ name: '현대카드 포인트', key: PT_KEY, cash: use, won: 0 }); left -= use }
+  }
+  // 가진 캐시는 싼 것부터. 덩이를 모르면 평균 값
+  if (x.held.cash > 0 && left > 0) {
+    const use = Math.min(left, x.held.cash)
+    const won = x.held.lots ? takeLots(x.held.lots.map(l => ({ ...l })), use) : use * (x.held.won > 0 ? x.held.won / x.held.cash : 1)
+    parts.push({ name: '가진 캐시', cash: use, won, held: true })
+    left -= use; cost += won
   }
   const used: Record<string, number> = {}
   const put = (k: Card, n: number) => {
@@ -594,6 +611,8 @@ export interface Plan {
   balance: number
   /** 잔액에 든 현금. 없으면 1:1(충전 기록으로 남은 캐시는 할인된 값으로 넘어온다) */
   balanceWon?: number
+  /** 가진 캐시를 산 값별 덩이로(있으면 싼 것부터 쓴다) */
+  balanceLots?: Lot[]
   cards: CardSetting[]
   /** 직접 추가한 결제수단 */
   methods?: MethodSetting[]
@@ -700,7 +719,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     }
   }
   /** 주를 지나며 바뀌는 것: 가진 캐시(처음 잔액 1:1에 끝자리로 남긴 캐시의 산 값이 더해진다), 달마다 남은 한도, 바코드 추가분 한도 */
-  interface St { held: { cash: number; won: number }; lim: typeof lim; capLeft: number; points: number; hd: Record<string, { left: number; nexon: number }> }
+  interface St { held: { cash: number; won: number; lots?: Lot[] }; lim: typeof lim; capLeft: number; points: number; hd: Record<string, { left: number; nexon: number }> }
   const h = p.hyundai
   const hdOf = (st: St, m: string) => st.hd[m] ??= m === p.thisMonth
     ? { left: h?.left ?? 0, nexon: h?.nexonLeft ?? 0 } : { left: h?.left != null ? HD_MONTHLY : 0, nexon: MONTHLY }
@@ -709,27 +728,28 @@ export function planAll(p: Plan): WeekResult[] | null {
     const w = p.weeks[wi]
     const want = w.start in p.weekBarcode ? p.weekBarcode[w.start] : p.barcodeWant
     return {
-      held: { ...st.held }, limits: { ...limOf(st, w.month), ...(last && !once ? { [LAST_KEY]: reserve[wi] } : {}) },
+      held: { ...st.held, lots: st.held.lots?.map(l => ({ ...l })) }, limits: { ...limOf(st, w.month), ...(last && !once ? { [LAST_KEY]: reserve[wi] } : {}) },
       cards: !last ? others : once ? [...others, last] : reserve[wi] ? [last, ...others] : others,
       barcode: p.barcode.on && p.barcodeOn ? { bonus: p.barcode.bonus, capLeft: st.capLeft, want } : null,
       spareOk,
-      ...(h ? { points: hdOf(st, w.month).nexon > 0 ? st.points : 0, hyundai: hdOf(st, w.month).left } : {}),
+      // 포인트는 추천에 넣지 않는다. 2번 칸 '포인트로 충전'에 적은 것만 0원 가진 캐시로 센다(2026-11-08 사용자)
+      ...(h ? { hyundai: hdOf(st, w.month).left } : {}),
     }
   }
   const spend = (st: St, wi: number, f: Funding) => {
     const L = limOf(st, p.weeks[wi].month), H = hdOf(st, p.weeks[wi].month)
     for (const q of f.parts) {
       if (q.bonus) st.capLeft -= q.bonus
-      if (q.held) { st.held.cash -= q.cash; st.held.won -= q.won }
+      if (q.held) { st.held.cash -= q.cash; st.held.won -= q.won; if (st.held.lots) takeLots(st.held.lots, q.cash) }
       if (q.key && q.key in L) L[q.key] -= q.cash
       if (q.key === LAST_KEY) H.nexon -= q.cash
       // 포인트 충전은 넥슨카드 한도가 남아야 되지만 한도를 깎지 않는다(2026-11-02 사용자)
       if (q.key === PT_KEY) st.points -= q.cash
       if (q.key === HD_KEY) { H.left -= q.cash; st.points += q.point ?? 0 }
     }
-    if (f.spare) { st.held.cash += f.spare.cash; st.held.won += f.spare.won }
+    if (f.spare) { st.held.cash += f.spare.cash; st.held.won += f.spare.won; st.held.lots?.push({ ...f.spare }) }
   }
-  const copy = (st: St): St => ({ held: { ...st.held }, lim: Object.fromEntries(Object.entries(st.lim).map(([m, x]) => [m, { ...x }])), capLeft: st.capLeft,
+  const copy = (st: St): St => ({ held: { ...st.held, lots: st.held.lots?.map(l => ({ ...l })) }, lim: Object.fromEntries(Object.entries(st.lim).map(([m, x]) => [m, { ...x }])), capLeft: st.capLeft,
     points: st.points, hd: Object.fromEntries(Object.entries(st.hd).map(([m, x]) => [m, { ...x }])) })
   /**
    * 이 주 끝자리를 한 권 더 사서 남기는 게 이득인지. 이 주부터 계획 끝까지 두 경우(남김 / 일반 충전으로 딱)를 따라가
@@ -755,7 +775,7 @@ export function planAll(p: Plan): WeekResult[] | null {
     return a.plain < b.plain && a.won < b.won - 0.5
   }
   const plainOn = p.plainOn ?? true
-  const st: St = { held: { cash: p.balance, won: p.balanceWon ?? p.balance }, lim, capLeft: p.barcode.cap, points: h?.points ?? 0, hd: {} }
+  const st: St = { held: { cash: p.balance, won: p.balanceWon ?? p.balance, lots: p.balanceLots?.map(l => ({ ...l })) }, lim, capLeft: p.barcode.cap, points: h?.points ?? 0, hd: {} }
   const out: WeekResult[] = []
   for (const [wi, w] of p.weeks.entries()) {
     // 끝자리: 일반 충전을 끄면 늘 할인 수단으로 한 권 더(한도가 없으면 그때만 일반 충전).

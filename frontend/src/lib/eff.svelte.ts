@@ -5,7 +5,7 @@
  * 나중에 계정으로 옮길 일이 생기면 이 한 덩어리만 올리면 된다.
  */
 import shop from './core/cashshop.json'
-import { CREDIT_RATE, HD_KEY, HD_MONTHLY, HD_RATE, PT_KEY, MONTHLY, PG_ID, rateOf, creditWonPer, feeOf, fund, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type Route, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
+import { CREDIT_RATE, HD_KEY, HD_MONTHLY, HD_RATE, PT_KEY, MONTHLY, PG_ID, rateOf, takeLots, creditWonPer, feeOf, fund, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type Route, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
 import { groupRows, settle, type Prices, type Use } from './core/ledger'
@@ -527,7 +527,7 @@ export const whatOf = (r: Route) => [
 export function computeEff(d: State, plan: PlanResult | null, rows: Row[] = []): EffOut | null {
   // 충전 기록이 있으면 캐시 잔액은 기록으로 센다(남은 캐시는 충전한 값 그대로)
   const flow = cashFlow(rows, d.thisWeek)
-  const bal = flow ? { cash: flow.left, won: flow.leftWon } : { cash: eff.balance, won: eff.balance }
+  const bal = flow ? { cash: flow.left, won: flow.leftWon, lots: flow.lots } : { cash: eff.balance, won: eff.balance, lots: undefined }
   const pw = eff.usePlan ? planWeeks(d, plan) : null
   // 계획을 따르는데 이번 주 목표를 다 채웠으면 더 낼 돈이 없다
   if (eff.usePlan && plan && !plan.error && !pw) return null
@@ -548,7 +548,7 @@ export function computeEff(d: State, plan: PlanResult | null, rows: Row[] = []):
   const run = (items: Sellable[], fixedFor?: (i: number) => Combo | undefined, bestOnly = false,
                sink: { mk: number; gift: number } = { mk: eff.mk, gift: eff.gift }) => {
     const input = {
-      weeks, balance: bal.cash, balanceWon: bal.won, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: null, on: m.on, unit: m.unit })),
+      weeks, balance: bal.cash, balanceWon: bal.won, balanceLots: bal.lots, cards: $state.snapshot(eff.cards), methods: eff.methods.map(m => ({ key: m.id, name: m.name, rate: plainRateOf(m.mode, m.val), monthly: null, on: m.on, unit: m.unit })),
       leftNow: leftNowCalc(), thisMonth: thisMonth(), hyundai: hdIn(d.thisWeek),
       barcode: SHOP.barcode, barcodeOn: eff.barcodeOn, barcodeWant: eff.barcodeWant, weekBarcode: $state.snapshot(eff.weekBarcode),
       um: umNet(), mk: sink.mk, gift: giftOf(sink.gift), items, fee, exact: mode === 'plan', credit, bestOnly, plainOn: eff.plainOn, nexonLast: false,
@@ -926,7 +926,7 @@ export interface WeekFlow {
   start: number
   charged: number
   chargedWon: number
-  /** 그 주 구매내역에 쓴 넥슨캐시와 거기 든 현금(먼저 충전한 것부터) */
+  /** 그 주 구매내역에 쓴 넥슨캐시와 거기 든 현금(싼 것부터) */
   used: number
   usedWon: number
   /** 기록한 충전보다 더 쓴 캐시(1:1로 셌다) */
@@ -957,19 +957,15 @@ export function cashFlow(rows: Row[], thisWeek: string) {
     const ch = (eff.charges[w] ?? []).filter(c => c.cash > 0)
     for (const c of ch) q.push({ cash: c.cash, won: c.cash * (1 - c.off / 100) })
     const used = spent.get(w) ?? 0
-    let need = used, won = 0
-    while (need > 0 && q.length) {
-      const h = q[0], t = Math.min(need, h.cash), r = h.won / h.cash
-      won += t * r; h.cash -= t; h.won -= t * r; need -= t
-      if (h.cash <= 0.5) q.shift()
-    }
+    // 가진 캐시는 싼 것부터 쓴다(포인트로 충전한 0원 캐시가 먼저, 2026-11-08 사용자)
+    const have = sum('cash'), won = takeLots(q, Math.min(used, have)), need = Math.max(0, used - have)
     weeks[w] = {
       start, charged: ch.reduce((a, c) => a + c.cash, 0), chargedWon: ch.reduce((a, c) => a + c.cash * (1 - c.off / 100), 0),
       used, usedWon: won + need, short: need, left: sum('cash'), leftWon: sum('won'),
     }
   }
   const last = weeks[thisWeek] ?? Object.values(weeks).at(-1)
-  return { first, weeks, left: last?.left ?? 0, leftWon: last?.leftWon ?? 0 }
+  return { first, weeks, left: last?.left ?? 0, leftWon: last?.leftWon ?? 0, lots: q.map(x => ({ ...x })) }
 }
 
 /** 2번 칸에서 '지금 캐시 잔액'을 게임 값으로 고친다. 충전·구매 기록은 그대로 두고 흐름의 시작값을 맞춘다 */

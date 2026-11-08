@@ -24,4 +24,15 @@ describe('현대카드 포인트 흐름', () => {
     expect([f.left, f.leftWon]).toEqual([150_000, 100_000])
     vi.useRealTimers()
   })
+  it('가진 캐시는 싼 것부터 쓴다: 포인트로 충전한 0원 캐시가 먼저 빠진다', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-06T03:00:00Z') })
+    const W = '2026-11-05'
+    // 잔액 10만(1:1) + 이번 주 포인트 충전 40,800(0원), 이번 주 구매 10만
+    Object.assign(eff, { charges: {}, outside: {}, ptBalance: 40_800, ptFrom: W, balance: 100_000 })
+    setWeekCharge(PT_KEY, 40_800)
+    const f = cashFlow([{ date: '2026-11-06', item: '테스트', price: 100_000 }], W)!
+    expect(f.weeks[W].usedWon).toBeCloseTo(59_200)
+    expect([f.left, f.leftWon]).toEqual([40_800, 40_800])
+    vi.useRealTimers()
+  })
 })
