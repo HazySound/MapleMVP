@@ -11,7 +11,7 @@
  */
 import type { Progress, Row } from '../types'
 import { APP_TAB, NEXON_USAGE_URL } from './bookmarklet'
-import { saveRows } from './api'
+import { saveRows, withdraw } from './api'
 
 /** 북마클릿이 도는 곳. 넥슨 결제내역 페이지와, 넥슨쇼핑 쿠폰을 읽는 넥슨쇼핑 구매내역 페이지 */
 const NEXON_ORIGINS = ['https://payment.nexon.com', 'https://shopping.nexon.com']
@@ -37,6 +37,30 @@ function parse(data: unknown): Row[] | null {
   return out
 }
 
+/**
+ * 청약철회해서 북마클릿이 뺀 결제(ver 3부터). 저장해 둔 같은 번호의 줄을 지우는 데 쓴다.
+ * on은 철회한 날이다. 보정값을 되돌릴지 가를 때 쓴다
+ */
+function parseWithdrawn(data: unknown): Row[] {
+  const list = (data as { withdrawn?: unknown } | null)?.withdrawn
+  if (!Array.isArray(list)) return []
+  const out: Row[] = []
+  for (const r of list) {
+    if (!r || typeof r !== 'object') continue
+    const { date, item, price, id, on } = r as Row
+    if (typeof id !== 'string' || !id || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    out.push({ date, item: typeof item === 'string' ? item : '', price: Number.isFinite(price) ? Math.round(price) : 0, id,
+               ...(typeof on === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(on) ? { on } : {}) })
+  }
+  return out
+}
+
+/** 받은 것을 저장한다. 철회한 결제는 새 줄을 넣은 뒤에 지운다 */
+function store(rows: Row[], data: unknown): void {
+  saveRows(rows)
+  withdraw(parseWithdrawn(data))
+}
+
 /** 넥슨 결제내역 페이지를 새 탭으로 연다. */
 export function openNexon(): Window | null {
   return window.open(NEXON_USAGE_URL, 'maplemvp-nexon')
@@ -54,21 +78,24 @@ export function claimTab(): void {
  * 북마클릿이 함께 보내는 넥슨쇼핑 진단 기록. 모양은 북마클릿이 정한다(bookmarklet.ts shopLog).
  * 예전 북마크(ver 없음)는 넥슨쇼핑을 읽지 않는다.
  */
-export interface ImportMeta { ver: number; shopLog: Record<string, unknown> | null; part: 'all' | 'shop' }
+export interface ImportMeta { ver: number; shopLog: Record<string, unknown> | null; part: 'all' | 'shop'
+                              /** 넥슨캐시 상태값별 건수와 철회로 뺀 건수(ver 3부터) */
+                              cashLog: Record<string, unknown> | null }
 
 function meta(data: unknown): ImportMeta {
-  const d = (data ?? {}) as { ver?: unknown; shopLog?: unknown; part?: unknown }
+  const d = (data ?? {}) as { ver?: unknown; shopLog?: unknown; part?: unknown; cashLog?: unknown }
   return {
     ver: typeof d.ver === 'number' ? d.ver : 1,
     // 넥슨쇼핑 페이지에서 쿠폰만 보낸 것
     part: d.part === 'shop' ? 'shop' : 'all',
     shopLog: d.shopLog && typeof d.shopLog === 'object' ? d.shopLog as Record<string, unknown> : null,
+    cashLog: d.cashLog && typeof d.cashLog === 'object' ? d.cashLog as Record<string, unknown> : null,
   }
 }
 
 export interface Incoming {
-  /** 북마클릿이 이 탭을 찾았다. 아직 긁기 전이다 */
-  onConnect(): void
+  /** 북마클릿이 이 탭을 찾았다. 아직 긁기 전이다. ver: 북마크 버전(2 이하는 보내지 않아 2로 친다) */
+  onConnect(ver: number): void
   onProgress(p: Progress): void
   onRows(rows: Row[], meta: ImportMeta): void
   onError(message: string): void
@@ -82,13 +109,13 @@ export interface Incoming {
 export function listen(h: Incoming): () => void {
   const onMessage = (e: MessageEvent) => {
     if (!NEXON_ORIGINS.includes(e.origin)) return       // 다른 사이트가 보낸 것은 버린다
-    const d = e.data as { source?: unknown; kind?: unknown; label?: unknown; message?: unknown } | null
+    const d = e.data as { source?: unknown; kind?: unknown; label?: unknown; message?: unknown; ver?: unknown } | null
     if (!d || typeof d !== 'object' || d.source !== MARK) return
 
     // 받았다고 알려 줘야 북마클릿이 이 탭으로 보내기 시작한다
     try { (e.source as Window | null)?.postMessage({ source: 'maplemvp-app', kind: 'ack' }, e.origin) } catch { /* 이미 닫혔다 */ }
 
-    if (d.kind === 'ping') return void h.onConnect()
+    if (d.kind === 'ping') return void h.onConnect(typeof d.ver === 'number' ? d.ver : 2)
     if (d.kind === 'progress') {
       const p = d as unknown as Progress
       return void h.onProgress({ label: String(p.label ?? ''), done: Number(p.done) || 0,
@@ -98,7 +125,7 @@ export function listen(h: Incoming): () => void {
 
     const rows = parse(d)
     if (!rows) return
-    saveRows(rows)
+    store(rows, d)
     h.onRows(rows, meta(d))
   }
 
@@ -110,7 +137,7 @@ export function listen(h: Incoming): () => void {
       const rows = parse(data)
       if (!rows) return
       e.preventDefault()
-      saveRows(rows)
+      store(rows, data)
       h.onRows(rows, meta(data))
     } catch { /* 우리 것이 아니면 그냥 둔다 */ }
   }

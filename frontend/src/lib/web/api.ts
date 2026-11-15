@@ -54,6 +54,9 @@ export function saveRows(rows: Row[], fresh = true): void {
   const had = new Set(before.map(r => r.id).filter(Boolean))
   // 인게임에 맞춰 날짜를 옮겨 둔 쿠폰은 다시 가져와도 옮긴 쪽을 남긴다. 산 날로 돌아가면 또 어긋난다
   const moved = new Set(before.filter(r => r.bought && r.id).map(r => r.id))
+  // 청약철회로 지운 줄은 어느 쪽에서 왔든 이긴다. 옛 줄을 든 기기와 합쳐도 되살아나지 않게
+  const gone = new Map<string, Row>()
+  for (const r of [...rows, ...before]) if (r.gone && r.id && !gone.has(r.id)) gone.set(r.id, r)
   const seen = new Set<string>()
   const merged: Row[] = []
   // 다만 넥슨쇼핑 쿠폰함에서 등록한 날을 알아 온 것(bought가 붙어 옴)은 그쪽이 더 정확하다
@@ -62,15 +65,71 @@ export function saveRows(rows: Row[], fresh = true): void {
       if (seen.has(r.id)) continue
       seen.add(r.id)
     }
-    merged.push(r)
+    merged.push(r.id && gone.get(r.id) || r)
   }
   merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   save(KEY.rows, merged)
   if (fresh) {
     save('maplemvp.syncedAt', new Date().toISOString())
     // 계정에서 합칠 때는 하지 않는다. 그 기기가 이미 뺀 보정값이 같이 내려온다
-    const moves = settleLate(rows.filter(r => r.id && !had.has(r.id)))
+    const moves = settleLate(rows.filter(r => r.id && !had.has(r.id) && !gone.has(r.id)))
     if (moves.size) moveRows(moves)
+  }
+}
+
+/** 청약철회로 지운 줄을 뺀 것. 계산·구매내역 창은 이것만 본다 */
+export const live = (rows: Row[]): Row[] => rows.filter(r => !r.gone)
+
+/**
+ * 청약철회한 결제를 지운다(북마클릿이 '철회' 줄과 결제번호로 짝지어 보낸 것).
+ *
+ * 저장해 둔 줄은 0원짜리 표시(gone)로 바꾼다. 한 번도 가져온 적 없는 결제도 표시를 남긴다.
+ * 다른 기기가 그 줄을 들고 있다가 합칠 때 지우려면 필요하다.
+ *
+ * 보정값: 인게임 금액 맞추기는 '그 주 인게임 − 그때 수집한 결제'다. 철회한 뒤에 맞췄다면 인게임은 이미
+ * 빠졌는데 이 결제는 수집에 들어 있어서, 그만큼 보정값이 내려가 있다. 결제를 빼면 두 번 빠지므로 되돌린다.
+ * 철회 전에 맞췄으면 그때 인게임에 들어 있던 돈이라 그대로 둔다. 같은 날은 앞뒤를 가를 수 없어서
+ * 보정값이 음수일 때만(수집이 인게임보다 많았다 = 철회가 이미 빠진 상태) 되돌린다.
+ */
+export function withdraw(list: Row[]): void {
+  if (!list.length) return
+  const rows = load<Row[]>(KEY.rows, [])
+  const byId = new Map(rows.map((r, i) => [r.id, i] as const))
+  const pc = load<Record<string, number>>(KEY.pcroom, {})
+  const at = load<Record<string, number>>(KEY.pcroomAt, {})
+  const kst = (t: number) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10)
+  const now = Date.now()
+  let fixed = false
+  let changed = false
+  for (const w of list) {
+    if (!w.id) continue
+    const i = byId.get(w.id)
+    const old = i == null ? null : rows[i]
+    if (old?.gone) continue
+    const price = old ? old.price : w.price
+    const tomb: Row = { date: old?.date ?? w.date, item: old?.item ?? w.item, price: 0, id: w.id,
+                        gone: true, was: price, ...(w.on ? { on: w.on } : {}) }
+    if (i == null) rows.push(tomb)
+    else rows[i] = tomb
+    changed = true
+    // 저장돼 있던(=계산에 들어가 있던) 줄만 보정값에 흔적이 있다
+    if (!old || !price) continue
+    const wk = weekStart(old.date)
+    if (!(wk in pc) || pc[META.unknown + wk] || !at[wk]) continue
+    const day = kst(at[wk])
+    const after = w.on ? (day > w.on || (day === w.on && pc[wk] < 0)) : pc[wk] < 0
+    if (!after) continue
+    pc[wk] += price
+    if (pc[META.gapMax + wk] != null) pc[META.gapMax + wk] += price
+    at[wk] = now
+    fixed = true
+  }
+  if (!changed) return
+  rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  save(KEY.rows, rows)
+  if (fixed) {
+    save(KEY.pcroom, pc)
+    save(KEY.pcroomAt, at)
   }
 }
 
@@ -258,7 +317,7 @@ function raw(): Raw {
     message: null,
     syncedAt: load<string | null>('maplemvp.syncedAt', null),
     demo: false,
-    rows: load<Row[]>(KEY.rows, []),
+    rows: live(load<Row[]>(KEY.rows, [])),
     pcroom: load<Record<string, number>>(KEY.pcroom, {}),
     fixedAt: Math.max(0, ...Object.values(load<Record<string, number>>(KEY.pcroomAt, {}))),
   }
@@ -335,7 +394,7 @@ export const webApi: PyApi = {
   async save_plan(p, auto) { save(KEY.plan, p); if (!auto) save(`${KEY.plan}At`, Date.now()) },
 
   async history(page, size, q, start, end, sort, desc) {
-    const all = load<Row[]>(KEY.rows, [])
+    const all = live(load<Row[]>(KEY.rows, []))
     const rows = sortRows(pick(all, q, start, end), sort, desc)
     // 보관 범위는 걸러낸 것이 아니라 전체 기준이다. 필터를 좁힐 때마다
     // 연도 드롭다운이 줄어들면 고르던 해가 사라진다
@@ -352,7 +411,7 @@ export const webApi: PyApi = {
   },
 
   async export_history(q, start, end, sort, desc) {
-    const rows = sortRows(pick(load<Row[]>(KEY.rows, []), q, start, end), sort, desc)
+    const rows = sortRows(pick(live(load<Row[]>(KEY.rows, [])), q, start, end), sort, desc)
     if (!rows.length) return { error: '내보낼 내역이 없어요.' } as ExportResult
     // 엑셀 만드는 코드는 이 단추를 누를 때만 있으면 된다. 첫 화면에서는 비워 둔다
     const { buildXlsx } = await import('./xlsx')

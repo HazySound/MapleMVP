@@ -33,6 +33,12 @@ function collect(appOrigin: string) {
   const onShop = location.host === SHOP_HOST
   const USAGE = 'https://payment.nexon.com/usage/?pagecode=2'
   const TAB = 'maplemvp'
+  /*
+   * 이 북마크의 버전. 연결할 때(ping)와 MapleMVP 화면에서 눌렀을 때 같이 보낸다.
+   * 브라우저는 북마크바를 보여 주지 않아서, 앱은 누른 북마크가 보내는 이 값으로만 옛 북마크를 알아본다.
+   * 3: 청약철회 거르기. 2 이하는 ping에 버전이 없다
+   */
+  const VER = 3
   const w = window as any
 
   // 두 번 누르면 두 번 긁는다
@@ -70,8 +76,8 @@ function collect(appOrigin: string) {
     if (location.origin === appOrigin) {
       box.remove()
       w.__maplemvpRunning = false
-      if (typeof w.__mvpImport === 'function') w.__mvpImport()
-      else location.href = appOrigin + '/#import'
+      if (typeof w.__mvpImport === 'function') w.__mvpImport(VER)
+      else location.href = appOrigin + '/#import-' + VER
       return
     }
 
@@ -108,7 +114,7 @@ function collect(appOrigin: string) {
   addEventListener('message', e => {
     if (e.origin === appOrigin && (e.data as any)?.source === 'maplemvp-app') acked = true
   })
-  const ping = () => { try { target?.postMessage({ source: MARK, kind: 'ping' }, appOrigin) } catch { /* 아직 안 떴다 */ } }
+  const ping = () => { try { target?.postMessage({ source: MARK, kind: 'ping', ver: VER }, appOrigin) } catch { /* 아직 안 떴다 */ } }
   const send = (msg: Record<string, unknown>) => {
     if (target && acked) try { target.postMessage({ source: MARK, ...msg }, appOrigin) } catch { /* 닫혔다 */ }
   }
@@ -405,23 +411,32 @@ function collect(appOrigin: string) {
         send({ kind: 'progress', label: '넥슨쇼핑', done: 0, count: 0 })
         const shop = await collectShop(now)
         if (!shopLog.ok) {
-          send({ kind: 'rows', rows: [], ver: 2, part: 'shop', shopLog })
+          send({ kind: 'rows', rows: [], ver: VER, part: 'shop', shopLog })
           say(`<b style="color:#ff9aa8">넥슨쇼핑 구매내역을 읽지 못했어요</b><br>`
             + dim(`넥슨쇼핑에 로그인돼 있는지 확인하고 다시 눌러 주세요.<br>무엇이 막혔는지 기록을 남겼어요.`))
           bye(20000)
           return
         }
         if (acked) {
-          send({ kind: 'rows', rows: shop, ver: 2, part: 'shop', shopLog })
+          send({ kind: 'rows', rows: shop, ver: VER, part: 'shop', shopLog })
           say(`<b>넥슨쇼핑 쿠폰 ${shop.length}건</b> 보냈어요.<br>` + dim('MapleMVP 탭에서 확인하세요.'))
           // 넥슨캐시 때처럼 닫고 MapleMVP로 돌아간다. 사용자가 직접 연 탭이면 닫히지 않고 안내만 남는다
           setTimeout(() => { try { target?.focus() } catch { /* 못 해도 닫히면 돌아간다 */ } window.close(); bye(6000) }, 1200)
           return
         }
-        offerCopy(JSON.stringify({ source: MARK, rows: shop, ver: 2, part: 'shop', shopLog }), shop.length)
+        offerCopy(JSON.stringify({ source: MARK, rows: shop, ver: VER, part: 'shop', shopLog }), shop.length)
         return
       }
 
+      /*
+       * 청약철회. 넥슨은 '사용' 줄을 그대로 두고 같은 결제번호(purchaseId)로 '철회' 줄을 하나 더 적는다
+       * (2026-11-15 운영자 계정으로 확인: 쪽지 50원, 두 줄 다 052026111513263000000598797).
+       * 그래서 '사용'만 남기면 철회한 결제가 늘 금액에 들어갔다(문의 #34). 철회 줄의 번호와 같은 '사용' 줄은
+       * 빼고, 뺀 것은 따로 보낸다. 앱은 그걸로 이미 저장해 둔 줄도 지운다.
+       * 철회 날짜는 산 날보다 늦어서(다음 달일 수도 있다) 다 읽은 뒤에 한꺼번에 짝짓는다
+       */
+      const goneOn = new Map<string, string>()
+      const cashStatuses: Record<string, number> = {}
       let empty = 0
       // 몇 달치가 있는지는 넥슨만 안다. 물어볼 방법이 없으니 빈 달이 이어질 때까지
       // 거슬러 올라간다. 미리 정해 둔 개월 수로 끊으면 남아 있는 내역을 두고 온다.
@@ -435,7 +450,13 @@ function collect(appOrigin: string) {
         // 끝을 모르므로 total은 보내지 않는다. 받은 건수로 나아가는 것이 보인다
         send({ kind: 'progress', label: `${y}년 ${m}월`, done: i + 1, count: rows.length })
         const raw = await fetchMonth(y, m)
-        const mine = raw.filter(r => (r.gameName || '').trim() === MAPLE && (r.purchaseStatus || '').trim() === '사용')
+        const maple = raw.filter(r => (r.gameName || '').trim() === MAPLE)
+        for (const r of maple) {
+          const st = (r.purchaseStatus || '').trim()
+          cashStatuses[st] = (cashStatuses[st] ?? 0) + 1
+          if (st === '철회' && r.purchaseId) goneOn.set(String(r.purchaseId), String(r.purchaseDate || '').slice(0, 10))
+        }
+        const mine = maple.filter(r => (r.purchaseStatus || '').trim() === '사용')
         for (const r of mine) {
           rows.push({
             date: String(r.purchaseDate || '').slice(0, 10),
@@ -449,6 +470,16 @@ function collect(appOrigin: string) {
         if (empty >= 6) break
       }
 
+      // 철회한 결제를 뺀다. 뺀 줄에는 철회한 날(on)을 붙여 보낸다
+      const withdrawn: { date: string; item: string; price: number; id: string; on: string }[] = []
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const on = goneOn.get(rows[i].id)
+        if (on == null) continue
+        withdrawn.push({ ...rows[i], on })
+        rows.splice(i, 1)
+      }
+      const cashLog = { statuses: cashStatuses, withdrawn: withdrawn.length, unpaired: goneOn.size - withdrawn.length }
+
       // 넥슨쇼핑에서 산 쿠폰. 여기서 실패해도 위에서 읽은 것은 그대로 보낸다
       send({ kind: 'progress', label: '넥슨쇼핑', done: 0, count: rows.length })
       const shop = await collectShop(now)
@@ -457,7 +488,7 @@ function collect(appOrigin: string) {
       // 여기서는 넥슨쇼핑을 못 읽었다(로그인 토큰이 이 페이지에 없거나 거절됐다).
       // 넥슨캐시 내역은 보내고, 넥슨쇼핑 구매내역 화면에서 북마크를 한 번 더 누르게 한다
       if (acked && !shopLog.ok) {
-        send({ kind: 'rows', rows, ver: 2, shopLog })
+        send({ kind: 'rows', rows, ver: VER, shopLog, withdrawn, cashLog })
         say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>`
           + `<b style="color:#ffc29e">넥슨쇼핑에서 산 쿠폰은 여기서 못 가져왔어요</b><br>`
           + dim(`아래 단추를 누르면 이 탭이<br>넥슨쇼핑 구매내역으로 바뀌어요.<br>${hi('거기서')} 북마크를 한 번 더 눌러 주세요.`)
@@ -470,7 +501,7 @@ function collect(appOrigin: string) {
         return
       }
       if (acked) {
-        send({ kind: 'rows', rows, ver: 2, shopLog })
+        send({ kind: 'rows', rows, ver: VER, shopLog, withdrawn, cashLog })
         say(`<b>메이플 ${rows.length}건</b> 보냈어요.<br>`
           + dim(shopLog.ok ? `넥슨쇼핑 쿠폰 ${shop.length}건 포함` : '넥슨쇼핑은 읽지 못했어요 (기록을 남겼어요)')
           + '<br>' + dim('MapleMVP 탭에서 확인하세요.'))
@@ -478,7 +509,7 @@ function collect(appOrigin: string) {
         setTimeout(() => { window.close(); bye(6000) }, 1200)
         return
       }
-      offerCopy(JSON.stringify({ source: MARK, rows, ver: 2, shopLog }), rows.length)
+      offerCopy(JSON.stringify({ source: MARK, rows, ver: VER, shopLog, withdrawn, cashLog }), rows.length)
     } catch (e) {
       const msg = String((e as Error)?.message || e)
       // 로그인이 풀린 경우는 따로 안내한다 (넥슨이 '세션 만료 유저'로 답한다)
