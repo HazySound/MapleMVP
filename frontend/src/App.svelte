@@ -4,6 +4,7 @@
   import Aurora from './lib/components/Aurora.svelte'
   import DeadlineCard from './lib/components/DeadlineCard.svelte'
   import EffView from './lib/components/EffView.svelte'
+  import HoldView from './lib/components/HoldView.svelte'
   import FixGate from './lib/components/FixGate.svelte'
   import DecayChart from './lib/components/DecayChart.svelte'
   import GradeCard from './lib/components/GradeCard.svelte'
@@ -70,6 +71,8 @@
       {/if}
     {:else if app.data && app.view === 'eff'}
       {#if planner.input}<EffView />{/if}
+    {:else if app.data && app.view === 'hold'}
+      <HoldView />
     {:else if app.data}
       <!-- 인게임 금액 맞추기(보정)를 한 번도 안 했으면 현황판을 어둡게 가리고 맞추기 단추만 둔다.
            휴대폰은 캡처·화면공유가 없어 할 수 없으니 가리지 않는다 -->

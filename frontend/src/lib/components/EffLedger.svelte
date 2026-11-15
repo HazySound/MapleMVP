@@ -5,7 +5,7 @@
    */
   import { app, getBase } from '../store.svelte'
   import { planner, weekNow } from '../plan.svelte'
-  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, overMonthly, payOptions, removeCharge, setMkMeso, thisMonth, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
+  import { addCharge, addCreditBuy, creditItems, eff, feeNow, fillCharges, removeCreditBuy, updateCreditBuy, ledgerOf, nameServer, overMonthly, payOptions, removeCharge, setKept, setMkMeso, thisMonth, setUse, setWeekPrice, setWeekRates, updateCharge } from '../eff.svelte'
   import NumBox from './NumBox.svelte'
   import { tip } from '../tip'
   import { tick } from 'svelte'
@@ -27,7 +27,7 @@
   const tier = $derived(goal?.tier ?? (d.current as TierKey | null))
   const L = $derived.by(() => {
     // eff를 읽어 용도·시세를 바꾸면 다시 센다
-    void eff.tags; void eff.snaps
+    void eff.tags; void eff.snaps; void eff.kept; void eff.sold
     return ledgerOf(getBase()?.rows ?? [], week, feeNow(tier), tier)
   })
   const rate = $derived(L.cost ? L.back / L.cost * 100 : 0)
@@ -151,6 +151,16 @@
           <span class="nm">
             {#if l.parts.length > 1}<button class="exp" aria-expanded={!!openLine[l.key]} onclick={() => (openLine[l.key] = !openLine[l.key])}
               use:tip={'묶인 구매 건을 펼쳐 건마다 용도를 고를 수 있어요'}>{openLine[l.key] ? '▾' : '▸'}</button>{/if}{l.name}{#if l.parts.length > 1}<small class="pc">{l.parts.length}건</small>{/if}
+            {#if l.use === 'sell'}
+              <!-- 보관함(베타): 기본은 그 주에 판 것. 못 판 것은 꺼서 보관함에 둔다. 보관함에서 판 기록은 여기서 못 끈다(2026-11-12 사용자) -->
+              {@const free = l.rows.filter(k => !eff.sold[k])}
+              {@const kc = free.filter(k => eff.kept[k]).length}
+              {#if free.length}
+                <button class="sold" class:off={kc > 0} aria-pressed={kc === 0} onclick={() => setKept(free, kc === 0)}
+                  use:tip={kc === 0 ? '그 주에 판 것으로 셉니다. 아직 들고 있으면 눌러서 보관함으로' : '보관함에 있어요(회수는 그 주 시세로 셉니다). 이미 팔았으면 눌러서 판매 완료로'}>{kc === 0 ? '판매 완료' : kc === free.length && !l.sold ? '보관 중' : `보관 중 ${kc}`}</button>
+              {/if}
+              {#if l.sold}<small class="pc" use:tip={'보관함에서 판매 완료한 개수예요. 그만큼은 판 가격과 그때 엄 시세로 셉니다. 되돌리기는 보관함에서'}>판 값 {l.sold}개</small>{/if}
+            {/if}
           </span>
           <span class="sv">
             {#if l.server && !SERVERS[l.server]}
@@ -361,6 +371,8 @@
   .exp { appearance: none; border: 0; background: none; padding: 0 6px 0 0; font: inherit; font-size: 11px; color: var(--color-tx3); cursor: pointer; }
   .exp:hover { color: var(--color-lav); }
   .pc { margin-left: 6px; font-size: 11px; color: var(--color-tx3); }
+  .sold { appearance: none; margin-left: 6px; padding: 0 7px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--color-mint) 45%, transparent); background: color-mix(in srgb, var(--color-mint) 12%, transparent); color: var(--color-mint); font: inherit; font-size: 11px; line-height: 18px; cursor: pointer; white-space: nowrap; }
+  .sold.off { border-color: color-mix(in srgb, var(--color-peach) 45%, transparent); background: color-mix(in srgb, var(--color-peach) 14%, transparent); color: var(--color-peach); }
   .tr.subrow { background: color-mix(in oklab, var(--color-bg2) 60%, transparent); font-size: 12px; color: var(--color-tx2); }
   .subrow .when { margin: 0 8px 0 14px; color: var(--color-tx3); }
   .subrow select { font-size: 12px; }

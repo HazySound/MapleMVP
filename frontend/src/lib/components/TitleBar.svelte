@@ -38,7 +38,7 @@
   // 손가락 기기에서는 가져오기 자체가 안 된다. 없는 길을 가리키지 않는다
   const needSync = $derived(app.web && !app.data?.syncedAt && !busy && !TOUCH)
 
-  function tab(v: 'dash' | 'plan' | 'eff') {
+  function tab(v: 'dash' | 'plan' | 'eff' | 'hold') {
     leaveBoard()
     app.view = v
   }
@@ -66,9 +66,11 @@
   {#if app.data}
     <nav class="tabs" aria-label="화면">
       <button aria-pressed={app.view === 'dash'} onclick={() => tab('dash')}>현황</button>
-      <button aria-pressed={app.view === 'plan'} onclick={() => tab('plan')}>목표 계획</button>
+      <button aria-pressed={app.view === 'plan'} onclick={() => tab('plan')}><span class="goal">목표&nbsp;</span>계획</button>
       <button aria-pressed={app.view === 'eff'} onclick={() => tab('eff')}>효율표</button>
-      <span class="ind" class:off={app.view === 'qna'} style="--i:{['dash', 'plan', 'eff'].indexOf(app.view)}"></span>
+      <!-- 보관함(베타, 2026-11-12) -->
+      <button aria-pressed={app.view === 'hold'} onclick={() => tab('hold')}>보관함<span class="beta">Beta</span></button>
+      <span class="ind" class:off={app.view === 'qna'} style="--i:{['dash', 'plan', 'eff', 'hold'].indexOf(app.view)}"></span>
     </nav>
   {/if}
 
@@ -173,10 +175,11 @@
   .ttl { font-family: var(--font-display); font-size: 14px; letter-spacing: .03em; }
   .tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--color-panel3); color: var(--color-tx3); }
   .drag { flex: 1; align-self: stretch; }
-  .tabs { position: relative; flex: none; min-width: 0; display: grid; grid-template-columns: repeat(3, 1fr); margin-left: 14px; padding: 3px; border-radius: 12px; background: var(--color-panel); border: 1px solid var(--color-line); }
+  .tabs { position: relative; flex: none; min-width: 0; display: grid; grid-template-columns: repeat(4, 1fr); margin-left: 14px; padding: 3px; border-radius: 12px; background: var(--color-panel); border: 1px solid var(--color-line); }
   .tabs button { position: relative; z-index: 1; appearance: none; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; color: var(--color-tx3); padding: 5px 16px; white-space: nowrap; transition: color .25s; }
   .tabs button[aria-pressed="true"] { color: var(--color-tx); }
-  .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3); transform: translateX(calc(100% * var(--i, 0))); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
+  .tabs .beta { margin-left: 4px; padding: 0 4px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--color-butter) 50%, transparent); font-size: 8.5px; line-height: 12px; font-weight: 600; color: var(--color-butter); vertical-align: 2px; }
+  .ind { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 4); transform: translateX(calc(100% * var(--i, 0))); border-radius: 9px; background: var(--color-panel3); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(184,168,255,.25); transition: transform .35s cubic-bezier(.3,1.4,.5,1); }
   /* 게시판에서는 가리킬 탭이 없다(--i가 -1). 안 보이는 채로 왼쪽으로 밀려 로고 글자를 덮고 클릭을 가로챘다 */
   .ind { pointer-events: none; }
   .ind.off { opacity: 0; }
@@ -275,6 +278,8 @@
     .brand { margin: -4px; padding: 4px; }
     .tabs { margin-left: 0; }
     .tabs button { padding: 5px 9px; font-size: 12.5px; }
+    /* 배지가 폭을 먹으면 탭 넷이 다 넓어져(칸이 같은 폭) 위 줄이 넘친다. 모서리에 겹쳐 띄운다 */
+    .tabs .beta { position: absolute; top: -6px; right: -3px; margin: 0; padding: 0 3px; font-size: 7.5px; line-height: 10px; background: var(--color-panel); }
     .sw { width: 42px; height: 24px; margin-left: 0; }
     .knob { width: 18px; height: 18px; }
     .sw[aria-checked="true"] .knob { transform: translateX(18px); }
@@ -284,7 +289,9 @@
   @media (max-width: 460px) {
     .bar { gap: 4px; padding-left: 8px; }
     .bar:not(:has(.winctl)) { padding-right: 8px; }
-    .tabs button { padding: 5px 7px; font-size: 12px; }
+    .tabs button { padding: 5px 6px; font-size: 12px; }
+    /* 탭이 넷이 되며(보유·판매) 다시 밀렸다. '목표 계획'은 '계획'만 */
+    .tabs .goal { display: none; }
     /* 단추 하나 둘 자리가 없다. 로그인했으면 종만 남긴다(종 메뉴에 게시판 가는 길이 있다) */
     .qna.has-bell { display: none; }
     /* 로그인 전에는 '로그인' 글자 단추와 문의 단추가 같이 선다. 로고는 첫 화면 링크일 뿐이라 이때만 뺀다 */

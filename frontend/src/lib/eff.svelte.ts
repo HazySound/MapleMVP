@@ -8,8 +8,8 @@ import shop from './core/cashshop.json'
 import { CREDIT_RATE, HD_KEY, HD_MONTHLY, HD_RATE, PT_KEY, MONTHLY, PG_ID, rateOf, takeLots, creditWonPer, feeOf, fund, isShort, kneeFit, perWeek, pickAt, planAll, plainRateOf, routesOf, type BarcodeEvent, type PlainMode, type CreditItem, type Route, type RoutePick as Pick, type Sellable, type ShopItem, type WeekResult } from './core/efficiency'
 export type { RoutePick as Pick, WeekPick } from './core/efficiency'
 import type { PlanResult, State, TierKey } from './types'
-import { groupRows, settle, type Prices, type Use } from './core/ledger'
-import { addDays, todayKst, weekStart, type Row } from './core/mvp'
+import { groupRows, matchItem, settle, type Prices, type SoldSum, type Use } from './core/ledger'
+import { CARRY_START, addDays, todayKst, weekStart, type Row } from './core/mvp'
 
 export const SHOP = shop as { updated: string; barcode: BarcodeEvent; items: ShopItem[]; credit: Omit<CreditItem, 'price'>[] }
 
@@ -46,6 +46,9 @@ export interface Snap {
   fund: { cards: Saved['cards']; methods: PayMethod[]; barcodeOn: boolean; barcodeWant: number | null; plainOn: boolean; nexonLast: boolean }
   planned?: { label: string; what: string; pay: number; cost: number; back: number; loss: number }
 }
+
+/** 보관함에서 판매 완료한 구매 한 건. b: 한 번에 판 묶음(되돌리기 단위), price: 판 가격(억), um: 그때 1억당 받은 돈(엄 수수료 뺀 것), fee: 그때 경매장 수수료 */
+export interface Sale { b: string; price: number; um: number; fee: number; at: number }
 
 /** 계산 결과 재사용(입력 → 결과). 최근 것만 둔다 */
 /** 선물식 단위 고르기(캐시) */
@@ -191,6 +194,13 @@ interface Saved {
   keep: RouteSet
   /** 주 시작일 → 그 주에만 바꿔 끼운 루트 종류 */
   weekRoute: Record<string, RouteKind>
+  /**
+   * 보관함(베타, 2026-11-12 사용자). 결산 작용 줄은 기본이 '그 주에 판 것'이다. kept: 결산에서 판매 완료를 끈(아직 들고 있는) 구매 건.
+   * sold: 보관함에서 판매 완료한 구매 건 → 실제 판 값(결산도 이 값으로 센다). holdBase: 들고 있는 회수용 메소(억, 직접 적는 값)
+   */
+  kept: Record<string, true>
+  sold: Record<string, Sale>
+  holdBase: number
 }
 
 function fresh(): Saved {
@@ -204,6 +214,7 @@ function fresh(): Saved {
     hdOn: false, ptOn: false, ptBalance: 0, ptFrom: weekNow(),
     combo: {}, caps: {}, split: false, keep: { want: 'count', salesN: 5, sellCost: 2000, combo: {} },
     weekRoute: {},
+    kept: {}, sold: {}, holdBase: 0,
   }
 }
 
@@ -304,6 +315,9 @@ export const catalog = (): ShopItem[] => [
   ...SHOP.items.filter(x => !x.until || x.until >= new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10)),
   ...eff.custom,
 ]
+
+/** 판매가 끝난 것까지 전부. 지난 주 결산은 그때 산 아이템을 맞춰야 한다 */
+export const allItems = (): ShopItem[] => [...SHOP.items, ...eff.custom]
 
 /** 가격표에 올려 둔 아이템. 계산도 이것만 한다 */
 export const shopItems = (): ShopItem[] => catalog().filter(x => x.id === PG_ID || eff.picked.includes(x.id))
@@ -721,7 +735,7 @@ export function keepSnap(fee: number, planned: Snap['planned'] | undefined, rows
   const s = snapNow(fee, planned ?? old?.planned)
   if (old) {
     const bought = rowsOf(rows, w)
-    const ids = new Set(groupRows(bought, eff.tags, catalog(), true).map(l => l.itemId).filter(Boolean))
+    const ids = new Set(groupRows(bought, eff.tags, catalog(), true, allItems()).map(l => l.itemId).filter(Boolean))
     s.prices.items = [
       ...old.prices.items.filter(i => ids.has(i.id)),
       ...s.prices.items.filter(i => !ids.has(i.id) || !old.prices.items.some(o => o.id === i.id)),
@@ -784,7 +798,7 @@ export function overMonthly() {
 export function ledgerOf(rows: Row[], week: string, fee: number, tier: TierKey | null) {
   const own = eff.snaps[week]
   const s = own ?? snapNow(fee)
-  const lines = groupRows(rowsOf(rows, week), eff.tags, catalog(), s.prices.giftRate > 0)
+  const lines = groupRows(rowsOf(rows, week), eff.tags, catalog(), s.prices.giftRate > 0, allItems())
   const all = lines.reduce((a, l) => a + l.cash, 0), none = lines.filter(l => l.use === 'none').reduce((a, l) => a + l.cash, 0)
   // 충전 기록이 있는 주는 기록대로(먼저 충전한 캐시부터 쓴다). 넥슨쇼핑 쿠폰은 넥슨캐시가 아니라 돈으로 바로 산다
   const flow = cashFlow(rows, weekNow())
@@ -804,13 +818,29 @@ export function ledgerOf(rows: Row[], week: string, fee: number, tier: TierKey |
   const cw = tracked ? creditFlow(rows, weekNow()).weeks[week] ?? null : null
   const buys = tracked ? eff.creditBuys[week] ?? [] : []
   const creditSale = tracked ? buys.reduce((a, b) => a + b.n * b.price, 0) * (1 - s.prices.fee) * s.prices.um : undefined
-  const st = settle(lines, s.prices, cost, mk, creditSale)
+  const st = settle(lines, s.prices, cost, mk, creditSale, soldOf(lines))
   // 지금 설정 시세로 다시 센 회수와 견준다(판 것만, 크레딧 빼고). 수수료는 그 주 것 그대로 둬 시세 차이만 본다(2026-10-20 사용자)
   const nowP = { ...snapNow(fee).prices, fee: s.prices.fee }
   const alt = own ? settle(lines, nowP, cost, mk).lines : st.lines
   const vsNow = st.lines.map((l, i) => ({ name: l.name, use: l.use, then: l.back, now: alt[i].back }))
     .filter(x => x.use !== 'none' && Math.abs(x.then - x.now) >= 1)
   return { ...st, vsNow, vsNowSum: vsNow.reduce((a, x) => a + x.then - x.now, 0), credit: cw, creditBuys: buys, creditTracked: tracked, funding, flow: f ?? null, snap: s, own: !!own, all, charges, chargeWon, estimated: !recs.length, shop }
+}
+
+/** 줄마다 보관함에서 판매 완료한 구매 건을 더한다 */
+function soldOf(lines: { key: string; use: Use; rows: string[] }[]): SoldSum {
+  const out: SoldSum = {}
+  for (const l of lines) {
+    if (l.use !== 'sell') continue
+    for (const k of l.rows) {
+      const s = eff.sold[k]
+      if (!s) continue
+      const x = out[l.key] ??= { n: 0, meso: 0, won: 0 }
+      const m = s.price * (1 - s.fee)
+      x.n++; x.meso += m; x.won += m * s.um
+    }
+  }
+  return out
 }
 
 /** 결산에서 그 주 선물식(캐시 1원당 원) · 메소마켓(1억당 메포) · 억당 받은 돈(엄 수수료 뺀 것)을 고친다 */
@@ -840,7 +870,7 @@ export const feeNow = (tier: TierKey | null) => eff.feeOverride ?? feeOf(tier)
  */
 export function setWeekPrice(week: string, itemId: string, price: number, fee: number) {
   const s = eff.snaps[week] ?? (eff.snaps[week] = snapNow(fee))
-  const x = catalog().find(c => c.id === itemId)
+  const x = allItems().find(c => c.id === itemId)
   if (!x) return
   s.prices.items = s.prices.items.filter(i => i.id !== itemId)
   if (price > 0) s.prices.items.push({ id: x.id, name: x.name, set: x.set, cash: x.cash, ...(x.bundle ? { bundle: true } : {}), price })
@@ -1129,4 +1159,88 @@ function hdIn(thisWeek: string) {
     points: eff.ptOn ? Math.max(0, pointFlow(thisWeek).left) : 0,
     nexonLeft: leftNowCalc().nexon ?? 0,
   }
+}
+
+// ---- 보관함(베타) ----
+// 결산 작용 줄은 기본이 '그 주에 판 것'이다(아무것도 안 건드리면 결산 숫자는 그대로). 못 판 것은 결산에서 판매 완료를 꺼 보관함에 두고,
+// 보관함에서 판매 완료하면 실제 판 값이 결산에 들어간다. 들고 있는 동안 결산은 그 주 시세로 센다(2026-11-12 사용자)
+
+/** 보관함 한 줄: 결산 작용 줄을 산 날마다 나눈 것 중 들고 있는 구매 건 */
+export interface Lot {
+  key: string; week: string; name: string; date: string
+  /** 들고 있는 구매 건 */
+  rows: string[]
+  /** 그 주 1개 가격(억)·수수료·1억당 받은 돈. est: 그 주 시세가 없어 지금 가격표 값 */
+  price: number; fee: number; um: number; est: boolean
+  /** 받은 뒤 써야 하는 기간(일). 0이면 무기한 */
+  days: number
+}
+
+/** 판매 완료 한 묶음 */
+export interface SaleBatch { b: string; week: string; name: string; rows: string[]; price: number; fee: number; at: number }
+
+/** 회수율 셀 주: 새 제도(9.17) 뒤 기록이 있는 주(오래된 것부터) */
+export const holdWeeks = (rows: Row[]) => weeksWithRecords(rows).filter(w => w >= CARRY_START && w <= weekNow()).sort()
+
+/**
+ * from~to 주 결산을 더한다. spent: 실제로 쓴 돈, back: 돌려받은 돈(보관 중인 것은 그 주 시세로), keptWon: 그중 보관 중인 것 몫.
+ * lots: 보관함(기간과 상관없이 전부), sales: 판매 완료 묶음(최근 것부터)
+ */
+export function holdOf(rows: Row[], fee: number, tier: TierKey | null, from = '', to = '9999') {
+  const items = allItems()
+  let spent = 0, back = 0, keptWon = 0
+  const lots: Lot[] = []
+  const sales = new Map<string, SaleBatch>()
+  for (const w of holdWeeks(rows)) {
+    const L = ledgerOf(rows, w, fee, tier)
+    const inRange = w >= from && w <= to
+    if (inRange) { spent += L.cost; back += L.back }
+    const P = L.snap.prices, keep = (1 - P.fee) * P.um
+    for (const l of L.lines) {
+      if (l.use !== 'sell') continue
+      const item = items.find(i => i.id === l.itemId) ?? matchItem(l.parts[0], items)
+      const snapP = item ? P.items.find(i => i.id === item.id)?.price ?? 0 : 0
+      const price = snapP || (item ? eff.prices[item.id] ?? 0 : 0)
+      const by = new Map<string, string[]>()
+      for (const p of l.parts) {
+        const sv = eff.sold[p.key]
+        if (sv) {
+          const x = sales.get(sv.b) ?? { b: sv.b, week: w, name: l.name, rows: [], price: sv.price, fee: sv.fee, at: sv.at }
+          x.rows.push(p.key); sales.set(sv.b, x)
+        } else if (eff.kept[p.key]) by.set(p.date, [...(by.get(p.date) ?? []), p.key])
+      }
+      for (const [date, keys] of [...by].sort()) {
+        lots.push({ key: `${w}|${l.key}|${date}`, week: w, name: l.name, date, rows: keys, price, fee: P.fee, um: P.um, est: !snapP && price > 0, days: item?.days ?? 0 })
+        if (inRange) keptWon += keys.length * snapP * keep
+      }
+    }
+  }
+  return { spent, back, keptWon, lots, sales: [...sales.values()].sort((a, b) => b.at - a.at) }
+}
+
+/** 결산에서 판매 완료를 켜고 끈다. 끄면 보관함으로(판 기록이 있으면 지운다), 켜면 그 주 시세로 판 것으로 */
+export function setKept(keys: string[], kept: boolean) {
+  for (const k of keys) {
+    if (kept) { eff.kept[k] = true; delete eff.sold[k] }
+    else delete eff.kept[k]
+  }
+  saveEff()
+}
+
+/** 보관함에서 판매 완료. 판 때 엄 시세·수수료를 같이 적는다 */
+export function sellRows(keys: string[], price: number, fee: number) {
+  const b = Math.random().toString(36).slice(2, 10), at = Date.now(), um = umNet()
+  for (const k of keys) { delete eff.kept[k]; eff.sold[k] = { b, price, um, fee, at } }
+  saveEff()
+}
+
+/** 판매 완료를 되돌린다(다시 보관함으로) */
+export function undoSale(rows: string[]) {
+  for (const k of rows) { delete eff.sold[k]; eff.kept[k] = true }
+  saveEff()
+}
+
+export function setHoldBase(v: number) {
+  eff.holdBase = Math.max(0, v)
+  saveEff()
 }

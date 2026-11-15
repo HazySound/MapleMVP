@@ -66,4 +66,20 @@ describe('구매내역 결산', () => {
     const s = settle(g, p, { cost: 141000 })
     expect(s.lines[0].meso).toBe(62); expect(s.mk).toBe(139500); expect(s.none).toBe(1500)
   })
+  it('보관함 판매 완료: 적은 개수만 판 가격·그때 엄으로, 나머지는 그 주 시세로(2026-11-12)', () => {
+    const p: Prices = { items: [{ id: 'karma', name: '플가', set: 1, cash: 5900, price: 3 }], um: 2000, mk: 0, giftRate: 0, fee: 0.03, creditPer: 0 }
+    const g = groupRows(Array.from({ length: 10 }, (_, i) => row('플래티넘 카르마의 가위', 5900, `k${i}`)), {}, items, true)
+    const m = 4 * 3.2 * 0.97
+    expect(settle(g, p, { cost: 59000 }).back).toBeCloseTo(10 * 3 * 0.97 * 2000)
+    const s = settle(g, p, { cost: 59000 }, {}, undefined, { [g[0].key]: { n: 4, meso: m, won: m * 1500 } })
+    expect(s.lines[0].sold).toBe(4)
+    expect(s.back).toBeCloseTo(m * 1500 + 6 * 3 * 0.97 * 2000)
+  })
+  it('판매가 끝난 아이템도 match 목록으로 작용 줄 아이템을 맞춘다(용도 짐작은 그대로)', () => {
+    const all = [...items, { id: 'specialluna', name: '스페셜 루나 크리스탈', cash: 3900 }]
+    const r = row('스페셜 루나 크리스탈', 3900, 'l')
+    expect(groupRows([r], { l: 'sell' }, items, true)[0].itemId).toBeUndefined()
+    expect(groupRows([r], { l: 'sell' }, items, true, all)[0].itemId).toBe('specialluna')
+    expect(groupRows([r], {}, items, true, all)[0].use).toBe('none')
+  })
 })

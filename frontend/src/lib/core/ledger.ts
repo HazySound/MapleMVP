@@ -69,7 +69,8 @@ export function splitBundle(name: string, price: number) {
   return { base: m ? m[1].trim() : name, count, unit: price / count }
 }
 
-export function groupRows(rows: Row[], tags: Record<string, Use>, items: Pick<ShopItem, 'id' | 'name' | 'cash'>[], giftOn: boolean): LedgerLine[] {
+/** match: 작용 줄의 아이템을 찾을 목록. 판매가 끝난 아이템도 지난 주 결산에서는 맞춰야 한다(스페셜 루나 크리스탈, 2026-11-09 사용자). 용도 짐작은 items로 */
+export function groupRows(rows: Row[], tags: Record<string, Use>, items: Pick<ShopItem, 'id' | 'name' | 'cash'>[], giftOn: boolean, match = items): LedgerLine[] {
   const m = new Map<string, LedgerLine>()
   for (const r of rows) {
     const k = rowKey(r), server = serverOf(r.id), use = tags[k] ?? guessUse(r, items, giftOn)
@@ -79,7 +80,7 @@ export function groupRows(rows: Row[], tags: Record<string, Use>, items: Pick<Sh
     const x = m.get(g)
     const part = { key: k, date: r.date, item: r.item, price: r.price, ...(r.id ? { id: r.id } : {}) }
     if (x) { x.n += b?.count ?? 1; x.cash += r.price; x.rows.push(k); x.parts.push(part) }
-    else m.set(g, { key: g, name: b?.base ?? r.item, price: b?.unit ?? r.price, n: b?.count ?? 1, cash: r.price, server, use, itemId: use === 'sell' ? matchItem(r, items)?.id : undefined, rows: [k], parts: [part] })
+    else m.set(g, { key: g, name: b?.base ?? r.item, price: b?.unit ?? r.price, n: b?.count ?? 1, cash: r.price, server, use, itemId: use === 'sell' ? matchItem(r, match)?.id : undefined, rows: [k], parts: [part] })
   }
   return [...m.values()].sort((a, b) => b.cash - a.cash)
 }
@@ -103,7 +104,8 @@ export interface Settled {
    * 메소마켓 줄: max는 그 메포로 살 수 있는 최대 메소(억), want는 사용자가 적은 산 메소(없으면 max),
    * spare는 메소마켓에 안 쓴 메포(작 몫에서 빼고 회수 없음으로 센다)
    */
-  lines: (LedgerLine & { back: number; noPrice: boolean; meso: number; max?: number; want?: number; spare?: number })[]
+  /** sold: 보관함에서 판매 완료로 적은 개수(그만큼은 실제 판 값으로 센다) */
+  lines: (LedgerLine & { back: number; noPrice: boolean; meso: number; max?: number; want?: number; spare?: number; sold?: number })[]
   /** 용도별 캐시 */
   sell: number
   gift: number
@@ -127,7 +129,13 @@ export interface Settled {
 /**
  * fundCost: 그 주 결제 전부(회수 없음 포함)를 충전하는 데 든 현금. 작 몫은 금액 비율로 나눠 센다(효율표와 같다)
  */
-export function settle(lines: LedgerLine[], p: Prices, funding: Pick<Funding, 'cost'> | null, mkMeso: Record<string, number> = {}, creditSale?: number): Settled {
+/** 판매 완료 기록 합계(줄 key → 개수, 수수료 뺀 메소(억), 그 메소의 원) */
+export type SoldSum = Record<string, { n: number; meso: number; won: number }>
+
+/**
+ * sold: 보관함에서 판매 완료로 적은 것. 그만큼은 실제로 판 가격·그때 엄 시세로, 나머지는 그 주 시세로 센다(2026-11-12 사용자)
+ */
+export function settle(lines: LedgerLine[], p: Prices, funding: Pick<Funding, 'cost'> | null, mkMeso: Record<string, number> = {}, creditSale?: number, sold: SoldSum = {}): Settled {
   const keep = (1 - p.fee) * p.um
   const out: Settled['lines'] = lines.map(l => {
     if (l.use === 'gift') return { ...l, back: l.cash * p.giftRate, noPrice: !p.giftRate, meso: 0 }
@@ -140,7 +148,9 @@ export function settle(lines: LedgerLine[], p: Prices, funding: Pick<Funding, 'c
     }
     if (l.use === 'none') return { ...l, back: 0, noPrice: false, meso: 0 }
     const price = p.items.find(x => x.id === l.itemId)?.price ?? 0
-    return { ...l, back: l.n * price * keep, noPrice: !price, meso: l.n * price * (1 - p.fee) }
+    const s = sold[l.key], k = s ? Math.min(s.n, l.n) : 0, r = k ? k / s!.n : 0
+    const rest = l.n - k
+    return { ...l, back: (s ? s.won * r : 0) + rest * price * keep, noPrice: rest > 0 && !price, meso: (s ? s.meso * r : 0) + rest * price * (1 - p.fee), ...(k ? { sold: k } : {}) }
   })
   const sum = (u: Use) => out.filter(l => l.use === u).reduce((a, l) => a + l.cash, 0)
   const spare = out.reduce((a, l) => a + (l.spare ?? 0), 0)

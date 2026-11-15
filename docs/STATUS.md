@@ -13,6 +13,7 @@
 - 그 전 475a20e (2026-10-19): 현황 등급 게이지 흰 끝점을 게이지 끝에 ([사이트-화면](topics/사이트-화면.md))
 - 그 전 10/17 노트북 PC에서 배포: wip-plan-eff(7f0b7aa)를 master에 합침 + eba283f 화면 폭·안내 팝업 4장, 9a12e8c·b8d1ca1 목표 계획 동기화 두 건(오래 안 연 기기 계획이 덮던 것, 짤 때 자료 표시 basis로 자동 다시 짜기) ([목표-계획](topics/목표-계획.md))
   - 효율표 위·아래 구조, 주별 결산(EffLedger·core/ledger.ts), 흐름 요약, 메소마켓 1억 단위, 크레딧 흐름, 2번 칸 한 줄 구성, 업데이트 안내 팝업(ID plan-eff-20261016) — 상세는 [효율표](topics/효율표.md)
+- 보류 중(2026-11-15): **보관함(베타)** 4번째 탭 — `wip-hold-beta` 브랜치에만 있음, 운영 안 올림. 결산 작용 줄 기본 '판매 완료'(안 건드리면 결산 숫자 그대로), 끄면 보관함으로, 보관함에서 판 값·그때 엄 시세가 그 주 결산에 들어감, 기간별 회수율. 공개 300 통과·svelte-check 0 오류·비공개 62 중 61(dorolong 시간 초과, 따로 통과)·헤드리스로 운영자 11.05 주 확인함. 사용자가 문의 처리 뒤 다시 보기로 함. 운영자 8주 결산이 원래 코드와 같은지 확인: test/private/hold-real.test.ts(git 밖)
 - 로컬에만 있는 것: 11/06 wrap-up 문서 갱신(STATUS·INDEX·topics·CLAUDE.md)은 커밋 안 함(push하면 배포가 돌아감 — 다음 배포 때 같이). `docs/post/eff-upload/` 게시글용 캡처는 git 밖
 - 시험(11/06): 공개 297 통과(eff.records.test.ts 2개 추가), svelte-check 0 오류(경고 5는 원래 있던 tsconfig 경고). 비공개 60 중 58 한 번에 통과, dorolong·icart(scan-two)는 5초 제한을 0.07~0.36초 넘겨 실패 → 둘만 따로 돌리면 통과(늘 나오는 시간 초과)
 - 운영자 계정 자료: docs/private/me/vault-1105.json(11/05 rows·charges·snaps만), vault-1102.json(11/02 운영 vault 전체, 그 전 vault-1020.json), local-1020.json(localStorage 형식으로 바꾼 것), local-1017.json(10/17 확인용 창 덤프, 바탕화면 MapleMVP-로컬데이터-1017에도 복사)
