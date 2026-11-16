@@ -299,4 +299,12 @@
     .sw { width: 38px; }
     .sw[aria-checked="true"] .knob { transform: translateX(14px); }
   }
+  /* 탭이 넷이 되며(보관함) 375·360px 폰에서 다시 넘쳤다(로그인 15·30px, 로그인 전 9·24px).
+     탭 여백·글자를 조금 더 줄이고, 로그인했으면 로고도 뺀다(첫 화면 링크일 뿐, 로그인 전에도 이미 뺀다) */
+  @media (max-width: 400px) {
+    .tabs button { padding: 5px 4px; font-size: 11.5px; }
+    .sw { width: 34px; }
+    .sw[aria-checked="true"] .knob { transform: translateX(10px); }
+  }
+  @media (max-width: 370px) { .brand { display: none; } }
 </style>
