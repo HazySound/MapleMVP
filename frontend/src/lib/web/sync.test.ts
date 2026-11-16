@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mergeVault, saveRows, snapshot, webApi } from './api'
+import { mergeVault, saveRows, snapshot, webApi, withdraw } from './api'
 
 /** 브라우저 저장소 흉내. 시험마다 비운다 */
 const mem = new Map<string, string>()
@@ -127,5 +127,92 @@ describe('목표 계획 계정 동기화', () => {
     expect(planIn()).toEqual(mine)
     mergeVault([], { pcroom: {}, syncedAt: null, plan, planAt: 300 })
     expect(planIn()).toEqual(plan)
+  })
+})
+
+describe('청약철회 (문의 #34)', () => {
+  const rows = () => JSON.parse(mem.get('maplemvp.rows') ?? '[]')
+  const pc = () => JSON.parse(mem.get('maplemvp.pcroom') ?? '{}')
+  // 11월 12일 목요일 주. 쪽지 50원을 11월 15일에 사고 같은 날 철회했다
+  const note = { date: '2026-11-15', item: '쪽지', price: 50, id: 'P1' }
+  const other = { date: '2026-11-14', item: '부티크 기프트', price: 33_000, id: 'P2' }
+  const gone = { ...note, on: '2026-11-15' }
+
+  it('이미 가져온 줄을 0원 표시로 바꾸고, 계산·구매내역 창에서는 뺀다', async () => {
+    saveRows([note, other])
+    withdraw([gone])
+    expect(rows().find((r: any) => r.id === 'P1')).toMatchObject({ price: 0, gone: true, was: 50, on: '2026-11-15' })
+    const raw = await webApi.get_state()
+    expect((raw as { rows: { id?: string }[] }).rows.map(r => r.id)).toEqual(['P2'])
+    const h = await webApi.history(1, 50, '', '', '', 'date', true)
+    expect(h.total).toBe(1)
+    expect(h.sum).toBe(33_000)
+  })
+
+  it('한 번도 가져온 적 없는 결제도 표시를 남긴다 — 다른 기기의 옛 줄을 지우려고', () => {
+    withdraw([gone])
+    expect(rows()).toEqual([{ date: '2026-11-15', item: '쪽지', price: 0, id: 'P1', gone: true, was: 50, on: '2026-11-15' }])
+  })
+
+  it('옛 줄을 든 기기나 계정과 합쳐도 되살아나지 않는다(어느 쪽에서 오든 표시가 이긴다)', () => {
+    saveRows([note, other])
+    withdraw([gone])
+    mergeVault([note, other], { pcroom: {}, syncedAt: null })
+    expect(rows().find((r: any) => r.id === 'P1').gone).toBe(true)
+    // 반대로 이 기기에 옛 줄이 있고 계정에 표시가 있을 때
+    mem.clear()
+    saveRows([note, other])
+    mergeVault([{ ...note, price: 0, gone: true, was: 50 }], { pcroom: {}, syncedAt: null })
+    expect(rows().find((r: any) => r.id === 'P1').gone).toBe(true)
+    // 예전 북마크로 다시 가져와도(철회 줄을 모르고 사용 줄을 보낸다)
+    saveRows([note])
+    expect(rows().find((r: any) => r.id === 'P1').gone).toBe(true)
+  })
+
+  it('같은 철회를 두 번 받아도 한 번만 처리한다', () => {
+    mem.set('maplemvp.pcroom', JSON.stringify({ '2026-11-12': -50 }))
+    mem.set('maplemvp.pcroomAt', JSON.stringify({ '2026-11-12': Date.parse('2026-11-15T09:00:00Z') }))
+    saveRows([note])
+    withdraw([gone])
+    withdraw([gone])
+    expect(pc()['2026-11-12']).toBe(0)
+  })
+
+  it('철회한 다음 날 인게임을 맞췄으면 보정값에 들어간 만큼 되돌린다', () => {
+    saveRows([{ ...note, date: '2026-11-14' }, other])
+    mem.set('maplemvp.pcroom', JSON.stringify({ '2026-11-12': 1_000, 'gapmax:2026-11-12': 1_200 }))
+    mem.set('maplemvp.pcroomAt', JSON.stringify({ '2026-11-12': Date.parse('2026-11-16T03:00:00Z') }))
+    withdraw([{ ...gone, date: '2026-11-14' }])
+    expect(pc()['2026-11-12']).toBe(1_050)
+    expect(pc()['gapmax:2026-11-12']).toBe(1_250)
+  })
+
+  it('철회하기 전에 맞췄으면 그때 인게임에 들어 있던 돈이라 그대로 둔다', () => {
+    saveRows([note, other])
+    mem.set('maplemvp.pcroom', JSON.stringify({ '2026-11-12': 1_000 }))
+    mem.set('maplemvp.pcroomAt', JSON.stringify({ '2026-11-12': Date.parse('2026-11-14T03:00:00Z') }))
+    withdraw([{ ...gone, on: '2026-11-16' }])
+    expect(pc()['2026-11-12']).toBe(1_000)
+  })
+
+  it('같은 날 맞췄으면 보정값이 음수일 때만(철회가 인게임에서 이미 빠짐) 되돌린다', () => {
+    saveRows([note, other])
+    const at = JSON.stringify({ '2026-11-12': Date.parse('2026-11-15T09:00:00Z') })
+    mem.set('maplemvp.pcroom', JSON.stringify({ '2026-11-12': 0 }))
+    mem.set('maplemvp.pcroomAt', at)
+    withdraw([gone])
+    expect(pc()['2026-11-12']).toBe(0)
+    mem.clear()
+    saveRows([note, other])
+    mem.set('maplemvp.pcroom', JSON.stringify({ '2026-11-12': -50 }))
+    mem.set('maplemvp.pcroomAt', at)
+    withdraw([gone])
+    expect(pc()['2026-11-12']).toBe(0)
+  })
+
+  it('계정에 올리는 것에는 표시가 그대로 들어간다', () => {
+    saveRows([note, other])
+    withdraw([gone])
+    expect(snapshot().rows.find(r => r.id === 'P1')?.gone).toBe(true)
   })
 })

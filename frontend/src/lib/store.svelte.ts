@@ -35,6 +35,8 @@ export const app = $state({
   importNote: '',    // 가져오기는 됐지만 알려 줄 것 (넥슨쇼핑을 못 읽었거나 예전 북마크)
   importNeedShop: false,   // 넥슨캐시 내역은 받았고 넥슨쇼핑 쿠폰만 남았다. 가져오기 창이 넥슨쇼핑 쪽으로 안내한다
   importPoke: 0,     // 북마클릿이 이 화면을 부른 횟수. 다음에 누를 곳을 짚어 준다
+  bmGuide: false,    // 옛 북마크를 썼다. 가져오기 창에서 화면을 어둡게 하고 북마크 단추만 비춰 다시 등록하게 한다
+  bmOk: false,       // 옛 북마크를 쓰던 브라우저에서 새 북마크가 처음 들어왔다. 확인됐다고 알린다
   maximized: false,
   web: false,        // 브라우저에서 도는 중 (넥슨 수집을 직접 못 한다)
   simBusy: false,    // 시뮬레이션 금액이 움직이는 중
@@ -266,6 +268,33 @@ const lastSaved = () => {
 }
 const stamp = (t: number) => { try { localStorage.setItem(SAVED_AT, String(t)) } catch { /* 막혀 있다 */ } }
 
+/**
+ * 북마크 버전. 브라우저는 북마크바를 보여 주지 않아서, 누른 북마크가 보내는 버전으로만 안다.
+ * 마지막으로 본 버전을 이 브라우저에 적어 두고, 옛것이면 가져오기 창을 열 때도 미리 안내한다.
+ * 3: 청약철회한 결제를 거른다(2026-11-15). 버전을 올리면 BM_NOW도 같이 올린다
+ */
+export const BM_NOW = 3
+const BM_KEY = 'maplemvp.bmVer'
+const bmSeen = () => { try { return Number(localStorage.getItem(BM_KEY)) || 0 } catch { return 0 } }
+
+/** 북마크가 연결해 왔다. 옛것이면 안내를 켜고, 옛것을 쓰던 브라우저에 새것이 오면 확인됐다고 알린다 */
+export function seenBookmark(ver: number) {
+  const prev = bmSeen()
+  try { localStorage.setItem(BM_KEY, String(ver)) } catch { /* 막혀 있으면 이번에만 안내한다 */ }
+  if (ver < BM_NOW) { app.bmGuide = true; app.bmOk = false; return }
+  if (app.bmGuide || (prev && prev < BM_NOW)) app.bmOk = true
+  app.bmGuide = false
+}
+
+/** 가져오기 창을 열 때. 이 브라우저가 마지막으로 쓴 북마크가 옛것이면 한 세션에 한 번 미리 안내한다 */
+let bmAsked = false
+export function bmCheckOnOpen() {
+  const v = bmSeen()
+  if (bmAsked || !v || v >= BM_NOW) return
+  bmAsked = true
+  app.bmGuide = true
+}
+
 /** 지금 가진 것을 계정에 올린다. 로그인 전이면 아무 일도 없다 */
 export async function pushUp(): Promise<void> {
   if (!app.user || app.syncingUp) return
@@ -344,22 +373,32 @@ async function listenWeb() {
   claimTab()   // 북마클릿이 이 탭을 이름으로 찾아온다
   // 이 화면에서 북마클릿을 누르면 여기를 부른다. 주소를 건드리지 않는다.
   // 창이 이미 열려 있으면 뜨는 변화가 없으므로, 다음에 누를 단추를 짚어 준다.
-  const openImport = () => {
+  // ver: 북마크 버전. 옛 북마크는 넘기지 않는다
+  const openImport = (ver?: number) => {
+    seenBookmark(ver ?? 2)
     app.showImport = true
     app.importPoke++
   }
   window.__mvpImport = openImport
-  // 앱이 아직 안 떴을 때 북마클릿이 쓰는 길. 주소로 부르고 흔적은 지운다
+  // 앱이 아직 안 떴을 때 북마클릿이 쓰는 길. 주소로 부르고 흔적은 지운다. 새 북마크는 '#import-3'
   const fromHash = () => {
-    if (location.hash !== '#import') return
+    const m = /^#import(?:-(\d+))?$/.exec(location.hash)
+    if (!m) return
     // 이 파일에도 history라는 함수가 있다. 브라우저 쪽을 또렷이 가리킨다
     window.history.replaceState(null, '', location.pathname + location.search)
-    openImport()
+    openImport(m[1] ? Number(m[1]) : undefined)
+  }
+  // 개발용: 콘솔에서 __mvpBmTest(2)면 옛 북마크, (3)이면 새 북마크가 들어온 것처럼 안내를 띄운다
+  if (import.meta.env.DEV) (window as unknown as { __mvpBmTest: (v: number) => void }).__mvpBmTest = v => {
+    seenBookmark(v)
+    app.showImport = true
   }
   window.addEventListener('hashchange', fromHash)
   fromHash()
+  let connVer = 2
   listen({
-    onConnect: () => {
+    onConnect: ver => {
+      connVer = ver
       app.importError = ''
       app.importNote = ''
       app.importNeedShop = false
@@ -372,12 +411,15 @@ async function listenWeb() {
       app.importing = false
       app.progress = null
       // 넥슨쇼핑은 실제 내역으로 확인하지 못한 채 붙였다. 무엇이 왔는지 기록을 남겨 둔다
-      const log = { ...(meta.shopLog ?? {}), ver: meta.ver, at: new Date().toISOString() }
+      // 넥슨캐시 상태값별 건수와 청약철회로 뺀 건수도 같이 남긴다(ver 3부터)
+      const log = { ...(meta.shopLog ?? {}), ...(meta.cashLog ? { cash: meta.cashLog } : {}),
+                    ver: meta.ver, at: new Date().toISOString() }
       const { keepImportLog } = await import('./web/api')
       keepImportLog(log)
       if (app.user) void (await import('./web/account')).sendLog(log)
       const ok = meta.shopLog?.ok === true
       app.importNeedShop = meta.ver >= 2 && !ok
+      seenBookmark(meta.ver)
       app.importNote = meta.ver < 2
         ? '북마크가 예전 버전이라 넥슨쇼핑에서 산 쿠폰은 못 가져왔어요. 아래 단추를 북마크바에 다시 끌어다 놓고 한 번 더 눌러 주세요.'
         : meta.part === 'shop'
@@ -386,14 +428,15 @@ async function listenWeb() {
         : ''
       await reloadWeb()
       void pushUp()
-      // 다 받았으니 바로 대시보드를 보여 준다. 알릴 게 있으면 창을 그대로 둔다
-      app.showImport = !!app.importNote
+      // 다 받았으니 바로 대시보드를 보여 준다. 알릴 게 있으면(옛 북마크 안내·새 북마크 확인 포함) 창을 그대로 둔다
+      app.showImport = !!app.importNote || app.bmGuide || app.bmOk
     },
     onError: message => {
       app.importing = false
       app.progress = null
       app.importError = message
       app.showImport = true
+      seenBookmark(connVer)
     },
     onOther: () => { void reloadWeb() },
   })

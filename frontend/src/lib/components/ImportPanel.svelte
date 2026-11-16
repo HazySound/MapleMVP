@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { app, clearWeb } from '../store.svelte'
+  import { app, bmCheckOnOpen, clearWeb } from '../store.svelte'
+  import BmGuide from './BmGuide.svelte'
   import { bookmarkletUrl } from '../web/bookmarklet'
   import { openNexon } from '../web/import'
   import { spotlight, won } from '../format'
@@ -25,10 +26,32 @@
   const p = $derived(app.progress)
 
   let goBtn = $state<HTMLButtonElement | null>(null)
+  let bmEl = $state<HTMLAnchorElement | null>(null)
 
   onMount(() => {
     url = bookmarkletUrl(location.origin)
-    return () => { app.importPoke = 0 }   // 창을 닫으면 짚어 주기도 끝난다
+    // 이 브라우저가 마지막으로 쓴 북마크가 옛것이면 누르기 전에 미리 안내한다
+    bmCheckOnOpen()
+    // 창을 닫으면 짚어 주기·안내도 끝난다
+    return () => { app.importPoke = 0; app.bmGuide = false; app.bmOk = false }
+  })
+
+  /**
+   * 안내에서 '다 했어요'를 눌렀다. 새 북마크로 가져와야 확인된다.
+   * 앞서 넥슨 페이지를 열어 둔 채라 2번 단추가 '열었어요'로 막혀 있다. 풀고, 다음에 누를 곳으로 짚어 준다
+   */
+  function bmDone() {
+    waiting = false
+    // 넥슨쇼핑 쪽만 남았다고 안내하던 중이어도, 새 북마크는 결제내역 페이지에서 눌러야 청약철회까지 거른다
+    app.importNeedShop = false
+    app.importNote = ''
+    status = '넥슨 결제내역 페이지를 열고 새 북마크를 눌러 주세요. 넥슨 탭이 이미 열려 있으면 거기서 눌러도 돼요.'
+    app.importPoke++
+  }
+
+  // 북마크가 연결해 오면 '열었어요'로 기다리던 것은 끝났다. 가져온 뒤 창이 그대로 남아도(안내·알림) 다시 열 수 있게 푼다
+  $effect(() => {
+    if (busy) { waiting = false; status = '' }
   })
 
   // 창이 길어서 단추가 화면 밖일 수 있다. 짚어 줄 때는 보이는 곳까지만 끌어온다
@@ -93,6 +116,10 @@
     <p class="live bad">
       <span class="livetx"><b>가져오지 못했어요</b><small>{app.importError}</small></span>
     </p>
+  {:else if app.bmOk}
+    <p class="live good">
+      <span class="livetx"><b>새 북마크 확인됐어요</b><small>이제 청약철회한 결제는 금액에서 빠져요. 예전 북마크가 북마크바에 남아 있다면 지워 주세요.</small></span>
+    </p>
   {:else if app.importNote}
     <p class="live warn">
       <span class="livetx"><b>{app.importNeedShop ? '넥슨쇼핑 쿠폰만 남았어요' : '거의 다 가져왔어요'}</b><small>{app.importNote}</small></span>
@@ -111,7 +138,7 @@
       <div>
         <b>아래 단추를 북마크바로 끌어다 놓으세요</b> <em>(처음 한 번만)</em>
         <div class="drop">
-          <a class="bm" href={url} onclick={e => e.preventDefault()}>📥 MapleMVP 가져오기</a>
+          <a class="bm" href={url} bind:this={bmEl} onclick={e => e.preventDefault()}>📥 MapleMVP 가져오기</a>
           <small>북마크바가 없으면 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></small>
         </div>
       </div>
@@ -158,6 +185,8 @@
   </p>
 
   {#if status}<p class="status" class:on={!waiting}>{status}</p>{/if}
+
+  {#if app.bmGuide}<BmGuide target={bmEl} ondone={bmDone} />{/if}
 
   <div class="danger">
     {#if asking}
@@ -245,6 +274,8 @@
   .livetx b { font-size: 13px; color: var(--color-tx); }
   .livetx small { font-size: 11.5px; color: var(--color-tx3); line-height: 1.5; }
   .live.bad .livetx b { color: var(--color-bad); }
+  .live.good { border-color: color-mix(in oklab, var(--color-good) 55%, var(--color-line)); }
+  .live.good .livetx b { color: var(--color-good); }
   .live.warn { border-color: color-mix(in oklab, var(--color-peach) 55%, var(--color-line)); }
   .live.warn .livetx b { color: var(--color-peach); }
   .spin {
