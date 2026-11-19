@@ -9,6 +9,7 @@
 import templates from './ocr.templates.json'
 import gradeTpl from './ocr.anchor.json'
 import { readLine } from './ocrnet'
+import type { TableScan } from './panel'
 
 export const ROWS = 12          // 툴팁 줄 수
 const SPACING = 54.2            // 기준 배율에서의 줄 간격 (픽셀)
@@ -720,6 +721,8 @@ function panelAmounts(g: Gray, spots: Spot[], scale: number): number[] {
 }
 
 export interface ScanResult {
+  /** 2026-11-19 리뉴얼된 MVP 패널 표(core/panel). 표를 찾았으면 있고, 그때는 예전 툴팁 판독은 비어 있다 */
+  table?: TableScan
   readings: number[][]
   /** readings마다 임계값·흐림 조합 몇 개에서 그렇게 읽혔는지. 많을수록 믿을 만하다 */
   votes?: number[]

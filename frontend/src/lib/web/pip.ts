@@ -73,12 +73,12 @@ const STEPS: { shot: string; w: number; h: number; marks: string[]; head: string
   { shot: SHOT.menu.src, w: SHOT.menu.w, h: SHOT.menu.h, marks: [`mvp:${SPOT.mvp}`],
     head: 'ESC를 눌러 메뉴를 열고, 이벤트 › MVP를 누릅니다',
     text: '이벤트 칸의 세 번째 항목이에요.' },
-  { shot: SHOT.panel.src, w: SHOT.panel.w, h: SHOT.panel.h, marks: [`no:${SPOT.amount}`, `ok:${SPOT.hover}`],
+  { shot: SHOT.panel.src, w: SHOT.panel.w, h: SHOT.panel.h, marks: [`ok:${SPOT.hover}`],
     head: 'MVP 패널이 뜹니다',
-    text: '빨간 칸만 피해서, 초록 칸 아무 데나 마우스를 올려 두세요.' },
-  { shot: SHOT.tip.src, w: SHOT.tip.w, h: SHOT.tip.h, marks: [`no:${SPOT.tipAmount}`],
-    head: '12줄 표가 나옵니다',
-    text: '그대로 두면 읽어요. 이때도 빨간 칸이 가려지지 않아야 해요.' },
+    text: '위쪽 등급 게이지나 그 아래 등급 칸에 마우스를 올려 두세요.' },
+  { shot: SHOT.tip.src, w: SHOT.tip.w, h: SHOT.tip.h, marks: [`no:${SPOT.table}`],
+    head: '주차별 표가 나옵니다',
+    text: '그대로 두면 읽어요. 마우스가 표의 숫자를 가리지 않게만 해 주세요.' },
 ]
 
 const SHEET = `
@@ -156,12 +156,11 @@ const BODY = `
     <p id="b"></p>
     <figure id="pfig">
       <img id="pi" src="${SHOT.panel.src}" alt="인게임 MVP 패널">
-      <span class="hl no" id="ha" style="${SPOT.amount}" data-ok="0"></span>
       <span class="hl ok" style="${SPOT.hover}"></span>
     </figure>
     <div class="legend">
-      <span class="a" id="la" data-ok="0">① 이 금액은 가리지 마세요</span>
-      <span class="h">여기 아무 데나 올려 두세요</span>
+      <span class="h">여기에 마우스를 올려 두세요</span>
+      <span class="a" id="la" data-ok="0">표의 숫자는 가리지 마세요</span>
     </div>
     </div>
     <div class="foot">
@@ -207,7 +206,7 @@ export async function openGuide(onStop: () => void, onSave: () => void): Promise
   const el = (id: string) => d.getElementById(id)!
   const [live, steps] = [el('live'), el('steps')]
   const [t, b, n] = [el('t'), el('b'), el('n')]
-  const [ha, la] = [el('ha'), el('la')]
+  const la = el('la')
   const [clock, ct, cf] = [el('c'), el('ct'), el('cf')]
   const RING = 2 * Math.PI * 20
   const [sh, sp, sn, sfig] = [el('sh'), el('sp'), el('sn'), el('sfig')]
@@ -310,10 +309,8 @@ export async function openGuide(onStop: () => void, onSave: () => void): Promise
     b.textContent = v.body
     n.textContent = v.note ?? ''
     if (v.have) {
-      const ok = v.have.panel ? '1' : '0'
-      ha.setAttribute('data-ok', ok)
-      la.setAttribute('data-ok', ok)
-      la.textContent = v.have.panel ? '✓ ① 금액을 읽었어요' : '① 이 금액은 가리지 마세요'
+      la.setAttribute('data-ok', v.have.panel ? '1' : '0')
+      la.textContent = v.have.panel ? '✓ 표를 읽었어요' : '표의 숫자는 가리지 마세요'
     }
     if (v.title === last) return
     last = v.title

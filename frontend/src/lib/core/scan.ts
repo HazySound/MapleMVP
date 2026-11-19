@@ -10,6 +10,7 @@
  * 실험에서 18개 조합 중 오답은 하나도 이 검증을 통과하지 못했다.
  */
 import { BLACK, TIERS } from './mvp'
+import type { TableScan } from './panel'
 import {
   type Known, MAX_WEEK_MINUTES, NO_CARRY, TOOLTIP_ROWS, UNIT, compare, knownRows, lastWeek, middleWeeks, minutesOf, restore,
   notCounted,
@@ -17,6 +18,8 @@ import {
 
 export interface ScanRaw {
   ok?: boolean
+  /** 2026-11-19 리뉴얼된 MVP 패널 표(core/panel). 있으면 툴팁 후보는 비어 있다 */
+  table?: TableScan
   message?: string
   readings: number[][]    // 툴팁 12줄 후보
   /** readings마다 몇 번 그렇게 읽혔는지. 없으면 하나씩으로 본다 */
@@ -48,6 +51,11 @@ export interface Solved {
   choices?: TotalPick[]
   /** choices가 하나뿐인데 확인을 받는다: '등급까지' 글자를 못 찾아 아무 숫자일 수 있고, 그 숫자로 앞쪽 묶음 주가 정해진다 */
   confirm?: boolean
+  /**
+   * 새 MVP 패널(2026-11-19 리뉴얼) 표에서 바로 읽은 13주 실적(12주 전 ~ 이번 주, 반영 + 이월 사용).
+   * 있으면 '유지까지'를 거꾸로 풀지 않는다(core/panel)
+   */
+  weeks?: number[]
 }
 
 /** '○○ 등급까지' 후보 하나: 지금 등급 기준과 거기서 나오는 13주 합계 */

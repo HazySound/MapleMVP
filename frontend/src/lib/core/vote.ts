@@ -36,6 +36,7 @@ export const AGREE = 2
 /** loose: 13주 중 갱신 때 이월이 쓰인 주 (core/scan의 acceptReading 참고) */
 export function createVote(collected: number[], agree = AGREE, loose: boolean[] = [], known: Known = {}): Vote {
   const needsVotes = new Map<string, number>()
+  const tableVotes = new Map<string, number>()
   const hits = new Map<string, number>()   // '등급기준:합계' → 그렇게 읽힌 프레임 수
   // 한 프레임에서 합계 후보가 여럿 나온 경우. 같은 목록이 이어지면 사용자에게 고르게 넘긴다
   const choiceHits = new Map<string, number>()
@@ -95,8 +96,18 @@ export function createVote(collected: number[], agree = AGREE, loose: boolean[] 
 
   function feed(raw: ScanRaw): VoteState {
     frames++
-    if (raw.readings.length || raw.amounts.length) seen++
+    if (raw.table || raw.readings.length || raw.amounts.length) seen++
     if (raw.scale) scale = raw.scale
+
+    // 새 MVP 패널 표: 한 장에 다 있다. 앞뒤가 맞는 같은 표가 두 장 나오면 끝이다
+    const t = raw.table?.solved
+    if (t && !solved) {
+      const key = `table|${t.weeks!.join(',')}|${t.balance}`
+      const n = (tableVotes.get(key) ?? 0) + 1
+      tableVotes.set(key, n)
+      if (n >= agree) { solved = { ...t, scale }; needs = t.needs; partial = solved }
+      return state()
+    }
 
     if (!needs) {
       const s = solveScan(raw, collected, null, loose, known)

@@ -36,9 +36,9 @@ const QUIET = 2500
  */
 const NUDGE: Partial<Record<Stage, { after: number; body: string }>> = {
   blank: { after: 8000, body: 'MVP 패널이 안 보여요. 여는 법은 아래 단추에 있어요.\n게임이 전체화면이면 창 모드로 바꾸거나, 캡처를 찍어 붙여넣어 주세요.' },
-  noTooltip: { after: 8000, body: '표가 보이지 않아요.\n초록 칸에 마우스를 올린 채로 가만히 두세요.' },
+  noTooltip: { after: 8000, body: '표가 보이지 않아요.\n위쪽 등급 게이지에 마우스를 올린 채로 가만히 두세요.' },
   // 멈춘 화면은 몇 번을 읽어도 같은 답이 나온다. 그대로 두라고 하면 영영 안 끝난다
-  tooltip: { after: 5000, body: '표는 보이는데 숫자가 맞지 않아요.\n마우스를 아주 조금만 움직여 주세요.' },
+  tooltip: { after: 5000, body: '표는 보이는데 숫자를 다 못 읽었어요.\n마우스가 표의 숫자를 가리지 않게 게이지 쪽으로 옮겨 주세요.' },
   needTotal: { after: 6000, body: '아직 윗줄 금액을 못 읽었어요.\n마우스를 패널에서 멀리 치우고 잠깐 기다려 주세요.' },
 }
 
@@ -57,13 +57,13 @@ export const STAGE: Record<Stage, { title: string; body: string; tone: Tone }> =
   },
   noTooltip: {
     tone: 'wait',
-    title: '🖱️ 패널 위에 마우스를 올려 주세요',
-    body: '초록 칸 아무 데나 올려 두면 12줄 표가 떠요. 빨간 칸만 가리지 마세요.',
+    title: '🖱️ 등급 게이지에 마우스를 올려 주세요',
+    body: '패널 위쪽 게이지나 그 아래 등급 칸에 올려 두면 주차별 표가 떠요.',
   },
   tooltip: {
     tone: 'wait',
-    title: '👀 12줄 표가 보여요',
-    body: '그대로 두세요. 읽는 중이에요.',
+    title: '👀 주차별 표가 보여요',
+    body: '그대로 두세요. 읽는 중이에요. 마우스가 표의 숫자를 가리지 않게 해 주세요.',
   },
   needTotal: {
     tone: 'good',
@@ -72,7 +72,7 @@ export const STAGE: Record<Stage, { title: string; body: string; tone: Tone }> =
   },
   done: {
     tone: 'good',
-    title: '✅ 다 읽었어요 (2/2)',
+    title: '✅ 다 읽었어요',
     body: '화면으로 돌아오세요.',
   },
 }
@@ -218,7 +218,7 @@ export async function startShare(o: ShareOpts): Promise<ShareHandle> {
   function look(raw: ScanRaw, st: VoteState): Stage {
     if (st.solved) return 'done'
     if (st.needs) return 'needTotal'
-    if (raw.readings.length) return 'tooltip'
+    if (raw.table || raw.readings.length) return 'tooltip'
     if (raw.amounts.length) return 'noTooltip'
     return 'blank'
   }

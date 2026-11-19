@@ -17,17 +17,15 @@ export const SHOT = {
   menu: { src: menuShot, w: 200, h: 298 },
   /** MVP 패널만 */
   panel: { src: panelShot, w: 420, h: 126 },
-  /** 패널 + 마우스를 올렸을 때 뜨는 12줄 표 */
-  tip: { src: tipShot, w: 375, h: 340 },
+  /** 등급 게이지에 마우스를 올렸을 때 뜨는 주차별 표(2026-11-19 리뉴얼, 숫자는 뭉갬) */
+  tip: { src: tipShot, w: 470, h: 317 },
 }
 
 export const SPOT = {
   /** 메뉴: 이벤트 칸의 MVP */
   mvp: 'left:4.5%;top:61.5%;width:39.5%;height:9.7%',
-  /** 패널: 가리면 안 되는 '○○ 등급까지 N 캐시' */
-  amount: 'left:3%;top:63%;width:48%;height:18%',
-  /** 패널: 마우스를 올려 둬도 되는 자리 */
-  hover: 'left:53%;top:42%;width:44%;height:50%',
-  /** 표가 뜬 화면: 여기서도 금액이 안 가려져 있다 */
-  tipAmount: 'left:2.2%;top:16.3%;width:37.5%;height:4.8%',
+  /** 패널: 마우스를 올리면 주차별 표가 뜨는 자리(등급 게이지와 그 아래 등급 칸) */
+  hover: 'left:2%;top:4%;width:96%;height:90%',
+  /** 표가 뜬 화면: 마우스로 가리면 안 되는 숫자 칸 */
+  table: 'left:8.9%;top:11.9%;width:90.7%;height:88.1%',
 }

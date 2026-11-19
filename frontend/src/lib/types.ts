@@ -1,4 +1,5 @@
 import type { Done, Frozen, buildState, makePlan, simulate } from './core/engine'
+import type { TableScan } from './core/panel'
 import type { Row as CoreRow, TierKey as CoreTierKey } from './core/mvp'
 
 export type TierKey = CoreTierKey
@@ -33,6 +34,8 @@ export interface PcRoomRow {
 /** 파이썬 인식기가 뽑아 준 숫자 후보. 어느 것이 맞는지는 core/scan이 고른다 */
 export interface PcRoomScan {
   ok: boolean
+  /** 리뉴얼된 MVP 패널 표(core/panel) */
+  table?: TableScan
   message?: string
   readings: number[][]
   /** 툴팁 맨 오른쪽 '사용 이월 금액' 열 후보. 블랙이 아니면 모두 0이다 */

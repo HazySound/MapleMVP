@@ -12,13 +12,11 @@
   const STATES: { tone: 'warn' | 'wait' | 'good'; title: string; text: string }[] = [
     { tone: 'warn', title: '⚠️ MVP 패널을 못 찾았어요',
       text: '패널이 안 열렸거나, 게임이 전체화면이에요. 창 모드로 바꾸거나 캡처 붙여넣기를 쓰세요.' },
-    { tone: 'wait', title: '🖱️ 패널 위에 마우스를 올려 주세요',
-      text: '패널은 보여요. 초록 칸 아무 데나 올려 두면 표가 뜹니다.' },
-    { tone: 'wait', title: '👀 12줄 표가 보여요',
-      text: '읽는 중이에요. 몇 초 지나도 안 끝나면 마우스를 아주 조금만 움직여 주세요.' },
-    { tone: 'good', title: '✅ 12줄 표를 읽었어요 (1/2)',
-      text: '절반 끝났어요. 이제 마우스를 패널 밖으로 치우세요.' },
-    { tone: 'good', title: '✅ 다 읽었어요 (2/2)',
+    { tone: 'wait', title: '🖱️ 등급 게이지에 마우스를 올려 주세요',
+      text: '패널은 보여요. 위쪽 게이지나 그 아래 등급 칸에 올려 두면 주차별 표가 뜹니다.' },
+    { tone: 'wait', title: '👀 주차별 표가 보여요',
+      text: '읽는 중이에요. 몇 초 지나도 안 끝나면 마우스가 표의 숫자를 가리고 있지 않은지 봐 주세요.' },
+    { tone: 'good', title: '✅ 다 읽었어요',
       text: '끝났습니다. 「탭으로 돌아가기」를 누르면 이 화면으로 옵니다.' },
   ]
 
@@ -37,41 +35,32 @@
       ui: 'live',
     },
     {
-      head: 'MVP 패널 위에 마우스를 올려 둡니다',
-      text: '초록 칸 아무 데나 괜찮아요. 빨간 칸의 금액만 가리지 마세요 — 13주 합계가 거기서 나옵니다.',
-      shot: 'panel', marks: [{ spot: SPOT.amount, kind: 'no' }, { spot: SPOT.hover, kind: 'ok' }],
+      head: 'MVP 패널 위쪽 등급 게이지에 마우스를 올려 둡니다',
+      text: '게이지나 그 아래 등급 칸 아무 데나 괜찮아요. 주차별 표가 뜹니다.',
+      shot: 'panel', marks: [{ spot: SPOT.hover, kind: 'ok' }],
     },
     {
-      head: '12줄 표가 뜨면 그대로 둡니다',
-      text: '읽는 동안 가만히 두세요. 몇 초 지나도 안 끝나면 마우스를 아주 조금만 움직여 주세요.',
-      shot: 'tip', marks: [{ spot: SPOT.tipAmount, kind: 'no' }],
-    },
-    {
-      head: '마우스를 패널 밖으로 치우면 끝입니다',
-      text: '표가 사라져야 가려졌던 윗줄 금액을 읽어요. 다 읽으면 알려 드리고 공유도 알아서 멈춥니다.',
+      head: '표가 뜨면 그대로 둡니다',
+      text: '읽는 동안 가만히 두세요. 마우스가 표의 숫자를 가리지 않게만 해 주세요. 다 읽으면 알려 드리고 공유도 알아서 멈춥니다.',
+      shot: 'tip', marks: [{ spot: SPOT.table, kind: 'no' }],
     },
   ]
 
   const SHOTS: Step[] = [
     {
-      head: 'MVP 패널을 열고 그 위에 마우스를 올립니다',
-      text: '빨간 칸의 금액이 가려지지 않게만 올려 주세요.',
-      shot: 'panel', marks: [{ spot: SPOT.amount, kind: 'no' }, { spot: SPOT.hover, kind: 'ok' }],
+      head: 'MVP 패널을 열고 등급 게이지에 마우스를 올립니다',
+      text: '위쪽 게이지나 그 아래 등급 칸에 올리면 주차별 표가 뜹니다.',
+      shot: 'panel', marks: [{ spot: SPOT.hover, kind: 'ok' }],
     },
     {
-      head: '12줄 표가 뜬 채로 PrintScreen을 누릅니다',
-      text: '화면 전체가 찍혀도 되고, 캡처 도구로 MVP 부분만 잘라도 됩니다.',
-      shot: 'tip', marks: [{ spot: SPOT.tipAmount, kind: 'no' }],
+      head: '표가 뜬 채로 PrintScreen을 누릅니다',
+      text: '마우스가 표의 숫자를 가리지 않게 해 주세요. 화면 전체가 찍혀도 되고, 캡처 도구로 표만 잘라도 됩니다.',
+      shot: 'tip', marks: [{ spot: SPOT.table, kind: 'no' }],
     },
     {
       head: '이 화면으로 돌아와 붙여넣기를 누릅니다',
       text: '창 안 아무 데서나 Ctrl+V 해도 되고, 이미지를 끌어다 놓거나 파일 선택으로 넣어도 같습니다.',
       ui: 'paste',
-    },
-    {
-      head: '윗줄이 가려졌다면 한 장 더',
-      text: '툴팁이 「○○ 등급까지」를 덮었으면 12줄만 읽히고 합계를 모릅니다. '
-        + '마우스를 치운 뒤 한 장 더 찍어 붙여넣으면 나머지가 채워져요.',
     },
   ]
 

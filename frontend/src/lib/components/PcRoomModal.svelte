@@ -143,8 +143,13 @@
     edited = {}
     const b0 = getBase()
     if (!b0) return
-    const [tierTh, total] = anchor(d.tiers.map(t => t.th), nextIndex, num(remainText))
-    const r = restore(needTexts.map(num), tierTh, total, keepText.trim() ? num(keepText) : null, carry)
+    const [tierTh, anchored] = anchor(d.tiers.map(t => t.th), nextIndex, num(remainText))
+    // 새 MVP 패널(2026-11-19 리뉴얼)은 13주 실적을 그대로 보여 준다. 칸을 손으로 고치지 않았으면 거꾸로 풀지 않고 그 값을 쓴다
+    const direct = prev?.weeks && needTexts.every((t, i) => num(t) === prev!.needs[i]) ? prev : null
+    const total = direct ? direct.total : anchored
+    const r = direct
+      ? { weeks: direct.weeks!, unknown: [] as number[], blocks: [], issues: [], ok: true }
+      : restore(needTexts.map(num), tierTh, total, keepText.trim() ? num(keepText) : null, carry)
     if (!r.ok) {
       result = null
       error = r.issues.join(' ')
@@ -326,6 +331,14 @@
         scanMsg = raw.message || '이미지를 읽지 못했어요.'
         return
       }
+      if (raw.table) {
+        // 새 MVP 패널 표. 앞뒤가 맞으면 그대로 쓰고, 안 맞으면 어디가 어긋났는지 말한다
+        if (raw.table.solved) { apply(raw.table.solved); return }
+        scanBad = true
+        scanMsg = `새 MVP 패널 표는 찾았는데 숫자를 확실하게 읽지 못했어요. (${raw.table.issues.slice(0, 2).join(' ')}) `
+          + '표가 가려지지 않게 다시 찍어 주세요. 그래도 안 되면 문의 게시판에 이 캡처를 같이 남겨 주세요.'
+        return
+      }
       const known = knownOf(b)
       const s = solveScan(raw, b.purchases, prev, looseOf(b), known)
       if (!s) {
@@ -337,7 +350,7 @@
           v, b.purchases, carryFor(v, b.purchases, raw.carries, raw.amounts, looseOf(b), known, raw.carryVotes) ?? NO_CARRY, black, looseOf(b),
           known)).length
         scanMsg = !raw.readings.length
-          ? `12줄 표를 찾지 못했어요. MVP 패널 위에 마우스를 올린 채로 찍어 주세요. `
+          ? `주차별 표를 찾지 못했어요. MVP 패널의 등급 게이지에 마우스를 올려 표를 띄운 채로 찍어 주세요. `
             + `(화면에서 숫자 ${raw.amounts.length}개만 봤어요)`
           : ok
             ? `표는 읽었는데 어느 값이 맞는지 가릴 수 없었어요. `
@@ -436,7 +449,13 @@
     carryText = s.carry[0] ? s.carry[0].toLocaleString('ko-KR') : ''
     carryRest = s.carry.slice(1)
     if (f.remaining != null) remainText = f.remaining.toLocaleString('ko-KR')
-    if (topTier(s)) {
+    if (s.weeks) {
+      // 새 MVP 패널: 13주 실적·합계·이월 잔액이 화면에 다 있다. 한 장으로 끝난다
+      scanPartial = false
+      scanMsg = `MVP 패널 표를 읽었어요. 지금 13주 합계 ${(s.total ?? 0).toLocaleString('ko-KR')}원`
+        + (topTier(s) && s.balance != null ? ` · 이월 잔액 ${s.balance.toLocaleString('ko-KR')}원` : '')
+      calc()
+    } else if (topTier(s)) {
       // 블랙은 위 등급이 없어 '○○ 등급까지'가 화면에 없다. 한 장 더 찍어도 나오지 않는다
       scanPartial = false
       scanMsg = '블랙이라 13주 합계가 화면에 안 나와요. 확정하지 못한 주는 아래에 범위로 보여 드려요.'
@@ -525,11 +544,10 @@
   const tell = $derived(guided ? '게임 위 안내 창과 소리로' : '소리로')
   const LIVE_STEPS = $derived([
     '공유 창에서 게임이 있는 화면을 고르세요',
-    `게임에서 MVP 패널을 열고 그 위에 마우스를 올려 두세요 (읽으면 ${tell} 알려 드려요)`,
-    `마우스를 패널 밖으로 치우세요 (다 읽으면 ${tell} 알려 드려요)`,
+    `게임에서 MVP 패널을 열고 등급 게이지에 마우스를 올려 두세요. 표의 숫자는 가리지 마세요 (다 읽으면 ${tell} 알려 드려요)`,
   ])
   const liveStep = $derived(
-    !shareState?.shots ? 0 : !shareState.needs ? 1 : 2)
+    !shareState?.shots ? 0 : !shareState.solved ? 1 : 2)
 
   // 화면에 적는 말과 알림으로 보내는 말이 같아야 한다. 둘 다 share의 판단을 쓴다
   const liveBlank = $derived(!!shareState?.shots && shareState.stage === 'blank')
@@ -629,13 +647,13 @@
         <div class="capmain">
           {#if live1st}
             <b>화면을 공유하면 알아서 읽어 드려요</b>
-            <span>게임에서 MVP 패널을 열고 <b>그 위에 마우스를 올렸다 치우기만</b> 하면 돼요.
+            <span>게임에서 MVP 패널을 열고 <b>등급 게이지에 마우스를 올려 두기만</b> 하면 돼요.
               게임 위에 작은 안내 창이 떠서 지금 무엇을 할 차례인지 알려 줍니다.</span>
             <span class="alt">캡처를 직접 찍어 붙여넣어도 돼요 —
               <kbd>Ctrl</kbd>+<kbd>V</kbd>, 끌어다 놓기, 파일 선택 모두 됩니다.</span>
           {:else}
             <b>게임에서 <kbd>PrintScreen</kbd>을 누른 뒤</b>
-            <span>MVP 패널을 열고 그 위에 마우스를 올린 채로 찍어 주세요.
+            <span>MVP 패널을 열고 등급 게이지에 마우스를 올려 주차별 표를 띄운 채로 찍어 주세요. 마우스가 표의 숫자를 가리지 않게 해 주세요.
               {#if app.web}여기에 <kbd>Ctrl</kbd>+<kbd>V</kbd> 하거나 이미지를 끌어다 놓으면 읽어 드려요.
               {:else}이미지를 끌어다 놓거나 <kbd>Ctrl</kbd>+<kbd>V</kbd>도 돼요.{/if}</span>
           {/if}
@@ -667,8 +685,7 @@
             </ol>
             <span class="hint" class:warn={liveBlank}>{liveHint}</span>
             <div class="marks">
-              <span class="mark" class:on={!!shareState?.needs}>툴팁 12줄</span>
-              <span class="mark" class:on={!!shareState?.solved}>13주 합계</span>
+              <span class="mark" class:on={!!shareState?.solved}>주차별 표</span>
               <small>{shareState?.shots ?? 0}장 확인</small>
             </div>
           </div>
