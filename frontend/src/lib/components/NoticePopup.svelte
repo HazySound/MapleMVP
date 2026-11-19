@@ -15,10 +15,12 @@
   const KEY = 'maplemvp.notice'
   let open = $state((() => { try { return localStorage.getItem(KEY) !== ID } catch { return true } })())
 
-  interface Slide { title: string; img?: string; alt?: string; before?: string; now: string[] }
+  /** mark: 제목에서 초록으로 띄울 말 */
+  interface Slide { title: string; mark?: string; img?: string; alt?: string; before?: string; now: string[] }
   const SLIDES: Slide[] = [
     {
       title: '인게임 금액 맞추기 수정 완료 안내',
+      mark: '수정 완료',
       now: [
         '인게임 MVP 패널 리뉴얼에 따른 <b>인게임 금액 맞추기(PC방 보정) 기능 수정을 완료했습니다.</b>',
         '정상 작동 테스트는 완료한 상태입니다. 다만 리뉴얼 직후인 만큼 인식이 되지 않거나 다양한 변수가 있을 수 있습니다.',
@@ -68,7 +70,7 @@
       </div>
       {#key i}
         <div class="sl" class:bare={!s.img} use:slide>
-          <h2 id="notice-title">{s.title}</h2>
+          <h2 id="notice-title">{#if s.mark && s.title.includes(s.mark)}{s.title.split(s.mark)[0]}<em>{s.mark}</em>{s.title.split(s.mark).slice(1).join(s.mark)}{:else}{s.title}{/if}</h2>
           {#if s.img}<div class="shot"><img src={s.img} alt={s.alt} loading="eager" /></div>{/if}
           {#if s.before}<p class="was"><span>전에는</span>{s.before}</p>{/if}
           <ul class="now">
@@ -119,6 +121,7 @@
   .sl.bare .now { list-style: none; padding: 0; gap: 10px; }
   .sl.bare .now li { font-size: 15px; }
   h2 { font-family: var(--font-display); font-weight: 400; font-size: 21px; margin: 0; text-wrap: balance; }
+  h2 em { font-style: normal; color: var(--color-mint); }
   .shot { border-radius: 14px; overflow: hidden; border: 1px solid var(--color-line); background: var(--color-bg2); display: grid; place-items: center; }
   .shot img { display: block; width: 100%; max-height: min(220px, 30dvh); object-fit: contain; }
   .was { margin: 0; font-size: 13px; line-height: 1.6; color: var(--color-tx3); padding: 8px 12px; border-radius: 10px; background: var(--color-bg2); }
