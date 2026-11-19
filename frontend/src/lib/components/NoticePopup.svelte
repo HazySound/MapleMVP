@@ -5,23 +5,24 @@
    * 2026-09-30: 넥슨이 9/29 차감을 끝냈다. 계산을 고쳤고, 블랙이던 사람은 PC방 보정을 다시 해 달라
    * 2026-10-16: 목표 계획 · 효율표 개편. 넘겨 보는 안내 카드(캡처는 public/notice)
    * 2026-11-19: 넥슨 MVP 패널 리뉴얼로 인게임 금액 맞추기가 안 된다(게시판 공지 36번)
+   * 2026-11-19 오후: 새 패널 판독을 배포했다(5b3b83e). 점검 팝업 대신 수정 완료 안내(공지 36번 위에 덧붙임)
    */
   import gsap from 'gsap'
   import { REDUCED } from '../format'
   import { go as goBoard } from '../qna.svelte'
 
-  const ID = 'panel-20261119'
+  const ID = 'panel-fixed-20261119'
   const KEY = 'maplemvp.notice'
   let open = $state((() => { try { return localStorage.getItem(KEY) !== ID } catch { return true } })())
 
   interface Slide { title: string; img?: string; alt?: string; before?: string; now: string[] }
   const SLIDES: Slide[] = [
     {
-      title: '인게임 금액 맞추기 점검 안내',
+      title: '인게임 금액 맞추기 수정 완료 안내',
       now: [
-        '넥슨 MVP 패널이 리뉴얼되면서 <b>인게임 금액 맞추기(PC방 보정)가 정상적으로 작동하지 않습니다.</b>',
-        '새 MVP 패널을 인식할 수 있도록 빠르게 수정하여 반영할 예정입니다.',
-        '업데이트 이후에도 인식이 되지 않으면 <b>문의 게시판에 MVP 패널 캡처본과 함께</b> 남겨 주세요. 바로 확인하여 반영하겠습니다.',
+        '인게임 MVP 패널 리뉴얼에 따른 <b>인게임 금액 맞추기(PC방 보정) 기능 수정을 완료했습니다.</b>',
+        '정상 작동 테스트는 완료한 상태입니다. 다만 리뉴얼 직후인 만큼 인식이 되지 않거나 다양한 변수가 있을 수 있습니다.',
+        '정상적으로 반영되지 않거나 오류를 발견하시면 <b>문의 게시판</b>에 남겨 주세요. 바로 확인하여 최대한 빠르게 해결해 드리겠습니다.',
       ],
     },
   ]
